@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>자전거 GPS 트래커</title>
+    
+    <!-- 구글맵 API -->
+    <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAP_API_KEY"></script>
+    
+    <!-- 내 스타일 -->
+    <link rel="stylesheet" href="styles.css">
+    
+    <!-- PWA 메니페스트 -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#4CAF50">
+</head>
+<body>
+    <div class="container">
+        <!-- 헤더 -->
+        <header class="header">
+            <h1>🚴 자전거 GPS 트래커</h1>
+            <p class="subtitle">1단계: 기본 지도 + 위치 읽기</p>
+        </header>
+
+        <!-- 상태 표시 -->
+        <div class="status-box">
+            <p id="status">준비 중...</p>
+        </div>
+
+        <!-- 위치 정보 -->
+        <div class="info-box">
+            <div class="info-item">
+                <label>위도</label>
+                <p id="latitude">-</p>
+            </div>
+            <div class="info-item">
+                <label>경도</label>
+                <p id="longitude">-</p>
+            </div>
+            <div class="info-item">
+                <label>정확도</label>
+                <p id="accuracy">-</p>
+            </div>
+        </div>
+
+        <!-- 지도 -->
+        <div id="map" class="map-container"></div>
+
+        <!-- 버튼 -->
+        <div class="button-group">
+            <button id="startBtn" class="btn btn-primary">위치 추적 시작</button>
+            <button id="stopBtn" class="btn btn-danger" disabled>추적 중지</button>
+        </div>
+    </div>
+
+    <!-- 스크립트 -->
+    <script src="config.js"></script>
+    <script src="gps.js"></script>
+    <script src="map.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
