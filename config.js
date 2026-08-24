@@ -4,7 +4,7 @@
 const CONFIG = {
     // 🔑 구글맵 API 키 
     // Vercel 환경 변수에서 가져옴 (안전!)
-    GOOGLE_MAP_API_KEY: process.env.GOOGLE_MAP_API_KEY,
+    KAKAO_MAP_API_KEY: process.env.KAKAO_MAP_API_KEY,
     
     // 🗺️ 지도 초기 설정
     MAP: {
