@@ -5,15 +5,13 @@
     <title>자전거 GPS 트래커</title>
     
     <!-- 카카오맵 동적 로드 -->
-    <script>
-        // 환경 변수에서 API 키 읽기
-        const kakaoAppKey = 'AIzaSyD...';  // 임시로 직접 입력 (나중에 수정)
-        
-        // 스크립트 태그 동적 생성
-        const script = document.createElement('script');
-        script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${kakaoAppKey}`;
-        document.head.appendChild(script);
-    </script>
+    <!-- 카카오맵 로드 -->
+<script>
+    const kakaoAppKey = '9c7...(당신의 JavaScript 키)';  // ← 여기에 실제 키 입력!
+    const script = document.createElement('script');
+    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${d1969342d57a367fa78c8a034f03ad6d}`;
+    document.head.appendChild(script);
+</script>
     
     <!-- 내 스타일 -->
     <link rel="stylesheet" href="styles.css">
