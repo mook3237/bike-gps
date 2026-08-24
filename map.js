@@ -1,52 +1,49 @@
-// 🗺️ 지도 관련 로직
-// 구글맵 초기화, 마커 표시, 이동 등을 담당합니다
+// 🗺️ 카카오맵 관련 로직
+// 카카오맵 초기화, 마커 표시, 경로선 그리기를 담당합니다
 
 class MapManager {
     constructor() {
         this.map = null;
         this.currentMarker = null;  // 현재 위치 마커
         this.polyline = null;  // 경로 선
-        this.infoWindow = null;
         this.pathCoords = [];  // 경로 좌표 저장
     }
 
-    // 🗺️ 지도 초기화
+    // 🗺️ 카카오맵 초기화
     initMap() {
-        log('지도 초기화 중...');
+        log('카카오맵 초기화 중...');
 
         const mapElement = document.getElementById('map');
 
         // 지도 생성
-        this.map = new google.maps.Map(mapElement, {
-            zoom: CONFIG.MAP.initialZoom,
-            center: {
-                lat: CONFIG.MAP.centerLat,
-                lng: CONFIG.MAP.centerLng,
-            },
-            mapTypeControl: true,
-            fullscreenControl: true,
-            zoomControl: true,
+        this.map = new kakao.maps.Map(mapElement, {
+            center: new kakao.maps.LatLng(CONFIG.MAP.centerLat, CONFIG.MAP.centerLng),
+            level: CONFIG.MAP.initialZoom,
         });
 
-        log('지도 초기화 완료');
+        log('카카오맵 초기화 완료');
     }
 
     // 📍 현재 위치 마커 표시/업데이트
     updateCurrentMarker(position) {
         const { latitude, longitude } = position;
-        const location = {
-            lat: latitude,
-            lng: longitude,
-        };
+        
+        const location = new kakao.maps.LatLng(latitude, longitude);
 
         // 첫 번째 마커 생성
         if (!this.currentMarker) {
-            this.currentMarker = new google.maps.Marker({
+            const markerImage = new kakao.maps.MarkerImage(
+                'http://maps.google.com/mapfiles/ms/icons/blue-dot.png',
+                new kakao.maps.Size(32, 32)
+            );
+
+            this.currentMarker = new kakao.maps.Marker({
                 position: location,
-                map: this.map,
+                image: markerImage,
                 title: '현재 위치',
-                icon: 'http://maps.google.com/mapfiles/ms/icons/blue-dot.png',
             });
+
+            this.currentMarker.setMap(this.map);
             log('현재 위치 마커 생성');
         } else {
             // 마커 위치 업데이트
@@ -68,14 +65,15 @@ class MapManager {
 
         if (!this.polyline) {
             // 첫 번째 경로선 생성
-            this.polyline = new google.maps.Polyline({
+            this.polyline = new kakao.maps.Polyline({
                 path: this.pathCoords,
-                geodesic: true,
                 strokeColor: '#FF0000',  // 빨간색
-                strokeOpacity: 0.7,
                 strokeWeight: 3,
-                map: this.map,
+                strokeOpacity: 0.7,
+                strokeStyle: 'solid',
             });
+
+            this.polyline.setMap(this.map);
             log('경로선 생성됨');
         } else {
             // 기존 경로선 업데이트
@@ -89,12 +87,13 @@ class MapManager {
             return;
         }
 
-        const bounds = new google.maps.LatLngBounds();
+        const bounds = new kakao.maps.LatLngBounds();
+        
         this.pathCoords.forEach(coord => {
             bounds.extend(coord);
         });
 
-        this.map.fitBounds(bounds);
+        this.map.setBounds(bounds);
         log('지도 자동 줌 조정');
     }
 
@@ -119,13 +118,31 @@ class MapManager {
     }
 
     // 📍 지도에 마커 추가 (커스텀)
-    addMarker(lat, lng, title = '', color = 'red') {
-        const marker = new google.maps.Marker({
-            position: { lat, lng },
-            map: this.map,
+    addMarker(lat, lng, title = '', color = 'blue') {
+        const location = new kakao.maps.LatLng(lat, lng);
+        
+        let iconUrl = 'http://maps.google.com/mapfiles/ms/icons/';
+        
+        if (color === 'red') {
+            iconUrl += 'red-dot.png';
+        } else if (color === 'yellow') {
+            iconUrl += 'yellow-dot.png';
+        } else {
+            iconUrl += 'blue-dot.png';
+        }
+
+        const markerImage = new kakao.maps.MarkerImage(
+            iconUrl,
+            new kakao.maps.Size(32, 32)
+        );
+
+        const marker = new kakao.maps.Marker({
+            position: location,
+            image: markerImage,
             title: title,
-            icon: `http://maps.google.com/mapfiles/ms/icons/${color}-dot.png`,
         });
+
+        marker.setMap(this.map);
         return marker;
     }
 }
