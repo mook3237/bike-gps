@@ -42,12 +42,12 @@
         </div>
     </div>
 
-    <!-- ✅ 스크립트 로드 순서 (동적 생성 NO, 직접 로드) -->
+    <!-- ✅ 스크립트 로드 순서 -->
     <!-- 1. 설정 -->
     <script src="config.js"></script>
     
-    <!-- 2. 카카오 SDK (HTML 직접, autoload=false 필수!) -->
-    <script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=YOUR_KAKAO_API_KEY_HERE&autoload=false"></script>
+    <!-- 2. 카카오 SDK (&autoload=false 제거됨) -->
+    <script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=YOUR_KAKAO_API_KEY_HERE"></script>
     
     <!-- 3. GPS -->
     <script src="gps.js"></script>
@@ -55,7 +55,7 @@
     <!-- 4. 지도 -->
     <script src="map.js"></script>
     
-    <!-- 5. 메인 앱 (모든 초기화는 여기서) -->
+    <!-- 5. 메인 앱 -->
     <script src="app.js"></script>
 </body>
 </html>
