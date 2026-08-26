@@ -52,7 +52,7 @@ class MapManager {
                 this.currentMarker.setPosition(location);
             }
 
-            this.map.setLevel(21);  // 줌 21 고정 (매우 확대!)
+            this.map.setLevel(3);  // 줌 21 고정 (매우 확대!)
             this.map.panTo(location);
             this.pathCoords.push(location);
 
