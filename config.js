@@ -1,4 +1,4 @@
-// ⚙️ 설정 샘플 (GitHub 예제)
+// ⚙️ 설정 샘플 (로컬 테스트용)
 //
 // 사용 방법:
 // 1. 이 파일을 config.js로 복사
@@ -10,7 +10,9 @@
 
 const CONFIG = {
     // 🔑 카카오 API 키 (https://developers.kakao.com에서 발급)
-   KAKAO_MAP_API_KEY: process.env.KAKAO_MAP_API_KEY,  // ← 로컬에서 본인 키 입력
+    // 로컬 테스트: 여기에 본인의 JavaScript 키 입력
+    // GitHub 배포: Repository Secrets에 KAKAO_MAP_API_KEY 설정
+    KAKAO_MAP_API_KEY: 'KAKAO_API_KEY',
     
     // 🗺️ 지도 설정
     MAP: {
@@ -21,8 +23,8 @@ const CONFIG = {
     
     // 📍 GPS 설정
     GPS: {
-        highAccuracy: true,  // 높은 정확도 사용
-        timeout: 10000,      // 10초 타임아웃
+        highAccuracy: true,  // 높은 정확도
+        timeout: 10000,      // 10초
         maximumAge: 0,       // 캐시 안 함
     },
 };
