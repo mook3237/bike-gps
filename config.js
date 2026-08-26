@@ -1,26 +1,29 @@
-// ⚙️ 설정
-// 
-// ⚠️ 주의: 로컬에서는 여기에 본인의 API 키를 입력하세요.
-// GitHub에는 API 키가 올라가지 않습니다. (.gitignore로 제외)
+// ⚙️ 설정 샘플 (GitHub 예제)
+//
+// 사용 방법:
+// 1. 이 파일을 config.js로 복사
+// 2. config.js에서 YOUR_KAKAO_API_KEY_HERE를 본인의 키로 변경
+// 3. 저장!
+//
+// cp config.example.js config.js
+// # config.js 편집 (본인 키 입력)
 
 const CONFIG = {
-    // 🔑 카카오 API 키
-    // 로컬 테스트: 아래에 본인의 키 입력
-    // GitHub Actions: Secrets에 설정
-    KAKAO_MAP_API_KEY: process.env.KAKAO_MAP_API_KEY,  // ← 로컬에서 본인 키 입력
+    // 🔑 카카오 API 키 (https://developers.kakao.com에서 발급)
+   KAKAO_MAP_API_KEY: process.env.KAKAO_MAP_API_KEY,  // ← 로컬에서 본인 키 입력
     
     // 🗺️ 지도 설정
     MAP: {
-        initialZoom: 3,  // 줌 레벨 (낮을수록 확대 - 동/구 수준)
+        initialZoom: 3,  // 줌 레벨 (1-21, 낮을수록 확대)
         centerLat: 37.4979,
         centerLng: 127.0276,
     },
     
     // 📍 GPS 설정
     GPS: {
-        highAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
+        highAccuracy: true,  // 높은 정확도 사용
+        timeout: 10000,      // 10초 타임아웃
+        maximumAge: 0,       // 캐시 안 함
     },
 };
 
