@@ -42,33 +42,21 @@
         </div>
     </div>
 
-    <!-- ✅ 스크립트 로드 순서 (API 키 보안) -->
-    <!-- 1. 설정 먼저 로드 (config.js에 API 키 입력!) -->
+    <!-- ✅ 스크립트 로드 순서 (동적 생성 NO, 직접 로드) -->
+    <!-- 1. 설정 -->
     <script src="config.js"></script>
     
-    <!-- 2. 카카오 SDK (config.js의 API 키 사용) -->
-    <script>
-        // ⚠️ 주의: config.js에 KAKAO_MAP_API_KEY를 입력해야 합니다!
-        // config.js 편집 후 API 키를 입력하면 아래 코드가 자동으로 SDK를 로드합니다.
-        const script = document.createElement('script');
-        script.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${CONFIG.KAKAO_MAP_API_KEY}&autoload=false`;
-        script.onload = () => {
-            console.log('✅ 카카오 SDK 로드 완료!');
-            window.kakaoReady = true;
-        };
-        script.onerror = () => {
-            console.error('❌ 카카오 SDK 로드 실패! config.js의 API 키를 확인하세요.');
-        };
-        document.head.appendChild(script);
-    </script>
-
-    <!-- 3. GPS 코드 -->
+    <!-- 2. 카카오 SDK (HTML 직접, autoload=false 필수!) -->
+    <script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=KAKAO_MAP_API_KEY=false"></script>
+    
+    <!-- 3. GPS -->
     <script src="gps.js"></script>
-
-    <!-- 4. 지도 매니저 -->
+    
+    <!-- 4. 지도 -->
     <script src="map.js"></script>
-
-    <!-- 5. 메인 앱 (맨 마지막) -->
+    
+    <!-- 5. 메인 앱 (모든 초기화는 여기서) -->
     <script src="app.js"></script>
 </body>
 </html>
+
