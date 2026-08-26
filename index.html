@@ -7,13 +7,6 @@
     <link rel="stylesheet" href="styles.css">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#4CAF50">
-    
-    <!-- 🔐 GitHub Actions에서 자동 주입 (Secrets: KAKAO_MAP_API_KEY) -->
-    <script>
-        // GitHub Actions 환경변수 주입 포인트
-        // workflow에서 sed 또는 envsubst로 아래 값을 교체합니다
-        window.__KAKAO_API_KEY__ = '${{ secrets.KAKAO_MAP_API_KEY }}';
-    </script>
 </head>
 <body>
     <div class="container">
@@ -49,50 +42,20 @@
         </div>
     </div>
 
-    <!-- ✅ 스크립트 로드 순서 중요! -->
-    <!-- 1. 설정 (API 키 포함) -->
+    <!-- ✅ 스크립트 로드 순서 (동적 생성 NO, 직접 로드) -->
+    <!-- 1. 설정 -->
     <script src="config.js"></script>
     
-    <!-- 2. 카카오 SDK (config.js의 API 키 사용) -->
-    <script>
-        // config.js 로드 후 SDK 로드
-        function loadKakaoSDK() {
-            const apiKey = CONFIG.KAKAO_MAP_API_KEY;
-            
-            if (!apiKey || apiKey === 'YOUR_KAKAO_API_KEY_HERE') {
-                console.error('❌ 에러: 카카오 API 키가 설정되지 않았습니다!');
-                console.error('로컬: config.js 수정 후 API 키 입력');
-                console.error('배포: GitHub Secrets에 KAKAO_MAP_API_KEY 추가');
-                return;
-            }
-            
-            const script = document.createElement('script');
-            script.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${apiKey}&autoload=false`;
-            
-            script.onload = () => {
-                console.log('✅ 카카오 SDK 로드 완료!');
-                window.kakaoReady = true;
-            };
-            
-            script.onerror = () => {
-                console.error('❌ 카카오 SDK 로드 실패!');
-                console.error('API 키가 올바른지 확인하세요.');
-            };
-            
-            document.head.appendChild(script);
-        }
-        
-        // 약간의 지연 후 SDK 로드 (config.js 완전 로드 보장)
-        setTimeout(loadKakaoSDK, 100);
-    </script>
-
-    <!-- 3. GPS 코드 -->
+    <!-- 2. 카카오 SDK (HTML 직접, autoload=false 필수!) -->
+    <script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=YOUR_KAKAO_API_KEY_HERE&autoload=false"></script>
+    
+    <!-- 3. GPS -->
     <script src="gps.js"></script>
-
-    <!-- 4. 지도 매니저 -->
+    
+    <!-- 4. 지도 -->
     <script src="map.js"></script>
-
-    <!-- 5. 메인 앱 (맨 마지막) -->
+    
+    <!-- 5. 메인 앱 (모든 초기화는 여기서) -->
     <script src="app.js"></script>
 </body>
 </html>
