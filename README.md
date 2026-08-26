@@ -2,6 +2,42 @@
 
 **현재 기능**: GPS 위치 읽기 + 구글맵 표시
 
+# 🚴 자전거 GPS 트래커
+
+## 📋 설명
+웹 기반 자전거 GPS 추적 앱입니다. 실시간으로 위치를 추적하고 경로를 지도에 표시합니다.
+
+---
+
+## 🚀 시작하기
+
+### 1️⃣ 카카오 API 키 설정
+1. [카카오 Developers](https://developers.kakao.com/) 접속
+2. 애플리케이션 생성
+3. JavaScript 키 복사
+4. `config.js`의 `KAKAO_MAP_API_KEY` 값을 수정
+
+```javascript
+// config.js
+KAKAO_MAP_API_KEY: 'YOUR_KAKAO_API_KEY_HERE',  // ← 여기에 키 입력
+```
+
+### 2️⃣ 로컬 실행
+```bash
+# Python 간단 서버 (포트 8080)
+python -m http.server 8080
+
+# Node.js http-server
+npx http-server -p 8080
+```
+
+브라우저 열기: `http://localhost:8080`
+
+### 3️⃣ 카카오 Developers 설정
+- 플랫폼 추가: `http://localhost:8080` (또는 배포 도메인)
+- 웹 → 사용 설정
+- JavaScript 키가 해당 도메인에서 작동하도록 설정
+
 ---
 
 ## 📂 파일 구조
@@ -48,6 +84,9 @@ GOOGLE_MAP_API_KEY: 'YOUR_GOOGLE_MAP_API_KEY'
 ```javascript
 GOOGLE_MAP_API_KEY: 'AIzaSyD...'
 ```
+
+
+
 
 ---
 
@@ -121,6 +160,31 @@ strokeColor: '#FF0000',  // 빨간색 → '#0000FF'로 바꾸면 파란색
 
 ---
 
+## 🔧 핵심 코드 설명
+
+### GPS 추적 (gps.js)
+```javascript
+gpsTracker.startTracking(onSuccess, onError);
+gpsTracker.stopTracking();
+```
+
+### 지도 관리 (map.js)
+```javascript
+mapManager.initMap();                    // 지도 초기화
+mapManager.updateCurrentMarker(coords);  // 마커 업데이트
+mapManager.updatePolyline();             // 경로선 그리기
+```
+
+### 앱 로직 (app.js)
+```javascript
+app.handleStart();   // 추적 시작
+app.handleStop();    // 추적 중지
+```
+
+---
+
+---
+
 ## 🐛 문제 해결
 
 ### GPS가 안 나온다?
@@ -135,6 +199,27 @@ strokeColor: '#FF0000',  // 빨간색 → '#0000FF'로 바꾸면 파란색
 
 ### "권한이 거부되었습니다" 나온다?
 - iPhone 설정 → Safari → 위치 허용으로 변경
+
+---
+
+## 🐛 문제 해결  2
+
+### 지도가 안 나올 때
+1. **브라우저 콘솔 확인** (F12)
+   - `kakao is not defined` → SDK 로드 실패
+   - `404 error` → API 키 잘못됨 또는 도메인 미등록
+
+2. **API 키 확인**
+   - 카카오 Developers에서 JavaScript 키 재확인
+   - 도메인이 등록되었는지 확인
+
+3. **캐시 삭제**
+   - `Ctrl+Shift+R` (강력 새로고침)
+
+### GPS가 안 될 때
+1. HTTPS 필요 (로컬호스트 제외)
+2. 브라우저에서 위치 권한 허용 필요
+3. GPS 신호 확인 (옥내에서는 약할 수 있음)
 
 ---
 
@@ -158,6 +243,32 @@ strokeColor: '#FF0000',  // 빨간색 → '#0000FF'로 바꾸면 파란색
 
 **실시간 수정하려면**:
 - 코드 수정 → 저장 → 브라우저 새로고침 (Cmd+R)
+
+# 📱 배포
+
+### Vercel 배포
+```bash
+vercel deploy
+```
+
+### GitHub Pages
+1. GitHub에 repository 생성
+2. `gh-pages` 브랜치 설정
+3. 파일 push
+
+---
+
+## 📊 다음 단계 (2-4단계)
+
+- 2단계: 기본 기능 (기록 저장, 속도/거리 계산)
+- 3단계: 고급 기능 (목적지 설정, 속도 기반 색칠)
+- 4단계: 통계 + 기록 화면
+
+---
+
+## 📄 라이선스
+MIT License
+
 
 ---
 
