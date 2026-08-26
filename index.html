@@ -1,40 +1,24 @@
 <!DOCTYPE html>
+<html lang="ko">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>자전거 GPS 트래커</title>
-    
-    <!-- 카카오맵 동적 로드 -->
-    <!-- 카카오맵 로드 -->
-<script>
-    const kakaoAppKey = '9c7...(당신의 JavaScript 키)';  // ← 여기에 실제 키 입력!
-    const script = document.createElement('script');
-    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${카카오키}`;
-             ↑ 백틱 (`)으로 감싸기!
-    document.head.appendChild(script);
-</script>
-    
-    <!-- 내 스타일 -->
     <link rel="stylesheet" href="styles.css">
-    
-    <!-- PWA 메니페스트 -->
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#4CAF50">
 </head>
 <body>
     <div class="container">
-        <!-- 헤더 -->
         <header class="header">
             <h1>🚴 자전거 GPS 트래커</h1>
             <p class="subtitle">1단계: 기본 지도 + 위치 읽기</p>
         </header>
 
-        <!-- 상태 표시 -->
         <div class="status-box">
             <p id="status">준비 중...</p>
         </div>
 
-        <!-- 위치 정보 -->
         <div class="info-box">
             <div class="info-item">
                 <label>위도</label>
@@ -50,20 +34,41 @@
             </div>
         </div>
 
-        <!-- 지도 -->
         <div id="map" class="map-container"></div>
 
-        <!-- 버튼 -->
         <div class="button-group">
             <button id="startBtn" class="btn btn-primary">위치 추적 시작</button>
             <button id="stopBtn" class="btn btn-danger" disabled>추적 중지</button>
         </div>
     </div>
 
-    <!-- 스크립트 -->
+    <!-- ✅ 스크립트 로드 순서 (API 키 보안) -->
+    <!-- 1. 설정 먼저 로드 (config.js에 API 키 입력!) -->
     <script src="config.js"></script>
+    
+    <!-- 2. 카카오 SDK (config.js의 API 키 사용) -->
+    <script>
+        // ⚠️ 주의: config.js에 KAKAO_MAP_API_KEY를 입력해야 합니다!
+        // config.js 편집 후 API 키를 입력하면 아래 코드가 자동으로 SDK를 로드합니다.
+        const script = document.createElement('script');
+        script.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${CONFIG.KAKAO_MAP_API_KEY}&autoload=false`;
+        script.onload = () => {
+            console.log('✅ 카카오 SDK 로드 완료!');
+            window.kakaoReady = true;
+        };
+        script.onerror = () => {
+            console.error('❌ 카카오 SDK 로드 실패! config.js의 API 키를 확인하세요.');
+        };
+        document.head.appendChild(script);
+    </script>
+
+    <!-- 3. GPS 코드 -->
     <script src="gps.js"></script>
+
+    <!-- 4. 지도 매니저 -->
     <script src="map.js"></script>
+
+    <!-- 5. 메인 앱 (맨 마지막) -->
     <script src="app.js"></script>
 </body>
 </html>
