@@ -1,4 +1,11 @@
-// 🗺️ 카카오맵 매니저
+// 🗺️ 지도 관리자 클래스
+
+// 🔧 로그 함수 (config.js 로드 전에 필요)
+function log(message, data = '') {
+    const timestamp = new Date().toLocaleTimeString();
+    console.log(`[${timestamp}] ${message}`, data);
+}
+
 class MapManager {
     constructor() {
         this.map = null;
@@ -8,33 +15,35 @@ class MapManager {
         log('MapManager 생성됨');
     }
 
-    // 🗺️ 지도 초기화 (kakao.maps.load 콜백 후 호출됨)
+    // 🗺️ 지도 초기화
     initMap() {
-        log('initMap 호출');
-
-        const mapElement = document.getElementById('map');
-        if (!mapElement) {
-            log('❌ map 요소 없음');
-            return;
-        }
+        log('🗺️ 지도 초기화 시작...');
 
         try {
-            this.map = new kakao.maps.Map(mapElement, {
+            const mapContainer = document.getElementById('map');
+            
+            if (!mapContainer) {
+                log('❌ 지도 컨테이너를 찾을 수 없음');
+                return;
+            }
+
+            const mapOption = {
                 center: new kakao.maps.LatLng(CONFIG.MAP.centerLat, CONFIG.MAP.centerLng),
                 level: CONFIG.MAP.initialZoom,
-            });
+            };
 
-            log('✅ 지도 초기화 성공!');
+            this.map = new kakao.maps.Map(mapContainer, mapOption);
+            log('✅ 지도 초기화 완료!');
 
         } catch (error) {
             log('❌ 지도 초기화 오류', error.message);
         }
     }
 
-    // 📍 마커 업데이트
+    // 📍 현재 위치 마커 업데이트
     updateCurrentMarker(position) {
         if (!this.map) {
-            log('⚠️ 지도 미준비');
+            log('⚠️ 지도가 준비되지 않음');
             return;
         }
 
@@ -52,8 +61,8 @@ class MapManager {
                 this.currentMarker.setPosition(location);
             }
 
-            this.map.setLevel(3);  // 줌 21 고정 (매우 확대!)
-            this.map.panTo(location);
+            // 지도 중심을 현재 위치로 이동
+            this.map.setCenter(location);
             this.pathCoords.push(location);
 
         } catch (error) {
@@ -61,61 +70,58 @@ class MapManager {
         }
     }
 
-    // 🛣️ 경로선 그리기
+    // 📈 경로 폴리라인 업데이트
     updatePolyline() {
         if (!this.map || this.pathCoords.length < 2) {
             return;
         }
 
         try {
-            if (!this.polyline) {
+            if (this.polyline) {
+                this.polyline.setPath(this.pathCoords);
+            } else {
                 this.polyline = new kakao.maps.Polyline({
                     path: this.pathCoords,
-                    strokeColor: '#FF0000',
                     strokeWeight: 3,
-                    strokeOpacity: 0.7,
+                    strokeColor: '#4CAF50',
+                    strokeOpacity: 0.8,
                     strokeStyle: 'solid',
                     map: this.map,
                 });
-            } else {
-                this.polyline.setPath(this.pathCoords);
             }
         } catch (error) {
-            log('❌ 경로선 오류', error.message);
-        }
-    }
-
-    // 🎯 자동 줌
-    fitBounds() {
-        if (!this.map || this.pathCoords.length < 2) {
-            return;
-        }
-
-        try {
-            const bounds = new kakao.maps.LatLngBounds();
-            this.pathCoords.forEach(coord => bounds.extend(coord));
-            this.map.setBounds(bounds);
-        } catch (error) {
-            log('❌ 자동 줌 오류', error.message);
+            log('❌ 폴리라인 오류', error.message);
         }
     }
 
     // 🔄 초기화
     reset() {
+        this.pathCoords = [];
+        if (this.polyline) {
+            this.polyline.setMap(null);
+            this.polyline = null;
+        }
+        log('🔄 지도 초기화됨');
+    }
+
+    // 📏 경로 범위에 맞게 줌 조정
+    fitBounds() {
+        if (!this.map || this.pathCoords.length === 0) {
+            return;
+        }
+
         try {
-            if (this.currentMarker) {
-                this.currentMarker.setMap(null);
-                this.currentMarker = null;
-            }
-            if (this.polyline) {
-                this.polyline.setMap(null);
-                this.polyline = null;
-            }
-            this.pathCoords = [];
+            const bounds = new kakao.maps.LatLngBounds();
+            this.pathCoords.forEach(coord => {
+                bounds.extend(coord);
+            });
+            this.map.setBounds(bounds);
+            log('✅ 경로에 맞게 줌 조정됨');
         } catch (error) {
-            log('❌ 리셋 오류', error.message);
+            log('❌ 줌 조정 오류', error.message);
         }
     }
 }
 
+// 전역 객체 생성
 const mapManager = new MapManager();
