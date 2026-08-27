@@ -13,16 +13,16 @@ const CONFIG = {
     
     // 🗺️ 지도 설정
     MAP: {
-        initialZoom: 3,  // 줌 레벨 (1-14, 숫자가 작을수록 확대)
+        initialZoom: 3,  // 줌 레벨 (낮을수록 확대)
         centerLat: 37.4979,
         centerLng: 127.0276,
     },
     
     // 📍 GPS 설정
     GPS: {
-        highAccuracy: true,  // 높은 정확도 사용
-        timeout: 10000,      // 10초
-        maximumAge: 0,       // 캐시 안 함
+        highAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
     },
 };
 
