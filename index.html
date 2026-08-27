@@ -8,92 +8,64 @@
     <link rel="manifest" href="manifest.json">
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="favicon.svg">
-    <meta name="theme-color" content="#4CAF50">
+    <meta name="theme-color" content="#121212">
     <meta name="description" content="실시간 자전거 속도 기록 및 경로 추적 웹앱">
     
-    <!-- 🔐 GitHub Actions에서 자동 주입 (Secrets: KAKAO_MAP_API_KEY) -->
     <script>
         window.__KAKAO_API_KEY__ = '${{ secrets.KAKAO_MAP_API_KEY }}';
     </script>
 </head>
 <body>
     <div class="container">
-        <!-- 헤더 -->
-        <header class="header">
-            <h1>🚴 자전거 GPS 트래커</h1>
-            <p class="subtitle">2단계: 속도 + 거리 기록</p>
-        </header>
-
-        <!-- 탭 선택 -->
-        <div class="tabs">
-            <button class="tab-btn active" data-tab="speed">속도 기록 지도</button>
-            <button class="tab-btn" data-tab="map">경로 지도</button>
-        </div>
-
         <!-- 속도 기록 탭 -->
         <div class="tab-content active" id="speed-tab">
-            <!-- 메인 정보 (긴 누름으로 설정 메뉴 오픈) -->
+            <!-- 상단 대시보드 (시간 및 메인 긴 누름 영역) -->
             <div class="main-stats" id="main-stats-long-press">
-                <div class="stat-item">
-                    <label>시간</label>
-                    <p id="elapsed-time" class="big-text">00:00:00</p>
+                <div class="top-dashboard-bar">
+                    <div id="elapsed-time" class="top-time-display">00:00:00</div>
+                    <!-- 빠른 제어 버튼 그룹 -->
+                    <div class="mini-btn-group" style="display: flex; gap: 8px;">
+                        <button id="startBtn" class="btn btn-primary" style="padding: 8px 14px; min-height: 36px; border-radius: 50%;">▶</button>
+                        <button id="stopBtn" class="btn btn-danger" style="padding: 8px 14px; min-height: 36px; border-radius: 50%;" disabled>⏹</button>
+                    </div>
                 </div>
-                <div class="stat-item">
-                    <label>시속</label>
-                    <p id="current-speed" class="big-text">0.0 km/h</p>
+
+                <!-- 속도계 원형 디자인 카드 -->
+                <div class="speedometer-card">
+                    <div class="stat-item">
+                        <label>현재 속도</label>
+                        <p id="current-speed" class="big-text">0.0</p>
+                        <p class="speed-unit">km/h</p>
+                    </div>
+                    <!-- 두 번째 메트릭 (예: 거리 등) -->
+                    <div class="stat-item" style="margin-top: 5px;">
+                        <p id="current-distance" class="sub-speedometer-stat">0.00<span>km</span></p>
+                    </div>
                 </div>
             </div>
 
-            <!-- 설정 메뉴 (긴 누름으로 표시) -->
-            <div class="settings-menu" id="settings-menu">
-                <div class="settings-title">메인 정보 선택</div>
-                <div class="settings-grid">
-                    <button class="settings-btn" data-metric="time">시간</button>
-                    <button class="settings-btn" data-metric="speed">현재 속도</button>
-                    <button class="settings-btn" data-metric="avg-speed">평균 속도</button>
-                    <button class="settings-btn" data-metric="max-speed">최고 속도</button>
-                    <button class="settings-btn" data-metric="distance">거리</button>
-                    <button class="settings-btn" data-metric="altitude">고도</button>
-                </div>
-            </div>
-
-            <!-- 기록 저장 버튼 -->
+            <!-- 기록 저장 버튼 별도 분리 -->
             <div class="button-group">
-                <button id="startBtn" class="btn btn-primary btn-large">위치 추적 시작</button>
                 <button id="saveBtn" class="btn btn-success btn-large" disabled>🔴 기록 저장하기</button>
-                <button id="stopBtn" class="btn btn-danger btn-large" disabled>추적 중지</button>
             </div>
 
-            <!-- 상세 정보 -->
+            <!-- 상세 정보 그리드 (스크린샷의 2단 박스 형태 반영) -->
             <div class="info-grid">
-                <!-- 1행: 평균속도 / 최고속도 -->
                 <div class="info-item">
-                    <label>평균속도</label>
-                    <p id="avg-speed" class="medium-text">0.0 km/h</p>
+                    <label>평균 속도</label>
+                    <p id="avg-speed">0.0 <span style="font-size: 12px; color: var(--text-light);">km/h</span></p>
                 </div>
                 <div class="info-item">
-                    <label>최고속도</label>
-                    <p id="max-speed" class="medium-text">0.0 km/h</p>
+                    <label>최고 속도</label>
+                    <p id="max-speed">0.0 <span style="font-size: 12px; color: var(--text-light);">km/h</span></p>
                 </div>
-
-                <!-- 2행: 현재 거리 / 남은 거리 -->
                 <div class="info-item">
-                    <label>현재 거리</label>
-                    <p id="current-distance" class="medium-text">0.00 km</p>
+                    <label>목표 설정 속도</label>
+                    <input type="number" id="target-speed" class="input-field" placeholder="목표 km/h" min="0" step="1">
                 </div>
                 <div class="info-item">
                     <label>남은 거리</label>
-                    <p id="remaining-distance" class="medium-text">0.00 km</p>
-                </div>
-
-                <!-- 3행: 설정 평균속도 / (비워두기) -->
-                <div class="info-item">
-                    <label>설정 평균</label>
-                    <input type="number" id="target-speed" class="input-field" placeholder="목표 속도 (km/h)" min="0" step="1">
-                </div>
-                <div class="info-item">
-                    <label>GPS 상태</label>
-                    <p id="gps-status" class="medium-text">준비 중...</p>
+                    <p id="remaining-distance">0.00 <span style="font-size: 12px; color: var(--text-light);">km</span></p>
                 </div>
             </div>
 
@@ -108,72 +80,70 @@
                     <p id="longitude">-</p>
                 </div>
                 <div class="info-item">
-                    <label>정확도</label>
+                    <label>정확도 / 상태</label>
                     <p id="accuracy">-</p>
                 </div>
             </div>
+            <div style="text-align: center; font-size: 12px; color: var(--text-light); margin-bottom: 10px;" id="gps-status">준비 중...</div>
         </div>
 
         <!-- 지도 탭 -->
         <div class="tab-content" id="map-tab">
             <div id="map" class="map-container"></div>
         </div>
+
+        <!-- 하단 고정 탭 네비게이션 -->
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="speed">
+                <span>⏱️</span>
+                <span>속도계</span>
+            </button>
+            <button class="tab-btn" data-tab="map">
+                <span>🗺️</span>
+                <span>지도</span>
+            </button>
+        </div>
     </div>
 
-    <!-- ════════════════════════════════════════ -->
-    <!-- 1️⃣ 설정 먼저 로드 -->
-    <!-- ════════════════════════════════════════ -->
+    <!-- 설정 메뉴 모달 -->
+    <div class="settings-menu" id="settings-menu">
+        <div class="settings-title">메인 정보 선택</div>
+        <div class="settings-grid">
+            <button class="settings-btn" data-metric="time">시간</button>
+            <button class="settings-btn" data-metric="speed">현재 속도</button>
+            <button class="settings-btn" data-metric="avg-speed">평균 속도</button>
+            <button class="settings-btn" data-metric="max-speed">최고 속도</button>
+            <button class="settings-btn" data-metric="distance">거리</button>
+            <button class="settings-btn" data-metric="altitude">고도</button>
+        </div>
+    </div>
+
+    <!-- 스크립트 로드 영역 -->
     <script src="config.js"></script>
-
-    <!-- ════════════════════════════════════════ -->
-    <!-- 2️⃣ GPS 추적 코드 (kakao 필요 없음) -->
-    <!-- ════════════════════════════════════════ -->
     <script src="gps.js"></script>
-
-    <!-- ════════════════════════════════════════ -->
-    <!-- 3️⃣ 카카오 SDK 로드 + 모든 스크립트 -->
-    <!-- ════════════════════════════════════════ -->
     <script>
-        // ⭐️ 중요: 먼저 모든 스크립트를 메모리에 로드
         const mapScript = document.createElement('script');
         mapScript.src = 'map.js';
-        
         const appScript = document.createElement('script');
         appScript.src = 'app.js';
 
-        // 카카오 SDK 로드
         function initKakaoSDK() {
             const kakaoScript = document.createElement('script');
             kakaoScript.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${CONFIG.KAKAO_MAP_API_KEY}&autoload=false`;
             
             kakaoScript.onload = () => {
-                console.log('✅ 카카오 SDK 로드 완료!');
-                
-                // 🔑 kakao.maps.load() 콜백에서 map.js, app.js 로드
                 kakao.maps.load(() => {
-                    console.log('✅ kakao.maps 준비 완료!');
                     document.body.appendChild(mapScript);
                     mapScript.onload = () => {
-                        console.log('✅ map.js 로드 완료!');
                         document.body.appendChild(appScript);
                     };
                 });
             };
-            
-            kakaoScript.onerror = () => {
-                console.error('❌ 카카오 SDK 로드 실패!');
-                console.error('config.js의 API 키를 확인하세요.');
-                document.getElementById('gps-status').textContent = '❌ 카카오 SDK 로드 실패';
-            };
-            
             document.head.appendChild(kakaoScript);
         }
 
-        // 설정이 로드되었는지 확인 후 SDK 로드
         if (typeof CONFIG !== 'undefined' && CONFIG.KAKAO_MAP_API_KEY) {
             initKakaoSDK();
-        } else {
-            console.error('❌ 설정 로드 실패: config.js를 확인하세요.');
         }
     </script>
 </body>
