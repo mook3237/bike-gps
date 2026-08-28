@@ -134,7 +134,12 @@
         </div>
     </div>
 
-    <!-- ✅ 스크립트 순서대로 정석 로드 (defer 제거 및 순차 삽입) -->
+    <!-- ✅ GitHub Secrets 주입용 임시 변수 할당 -->
+    <script>
+        window.__KAKAO_API_KEY__ = '${{ secrets.KAKAO_MAP_API_KEY }}';
+    </script>
+
+    <!-- ✅ 스크립트 순서대로 정석 로드 -->
     <script src="config.js"></script>
     <script>
         // 동기식으로 카카오맵 SDK 안전하게 로드
