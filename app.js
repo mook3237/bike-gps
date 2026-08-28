@@ -1,444 +1,170 @@
-// 🎯 메인 앱 클래스
-class BikeGPSApp {
+// 🚴 APP.JS - 메인 애플리케이션
+
+class BikeApp {
     constructor() {
-        log('BikeGPSApp 생성됨');
-
-        // ═══════════════════ UI 요소 ═══════════════════
-        // 버튼
-        this.startBtn = document.getElementById('startBtn');
-        this.stopBtn = document.getElementById('stopBtn');
-        this.saveBtn = document.getElementById('saveBtn');
-
-        // 통계 (큰 글씨)
-        this.elapsedTimeEl = document.getElementById('elapsed-time');
-        this.currentSpeedEl = document.getElementById('current-speed');
-
-        // 상세 정보
-        this.avgSpeedEl = document.getElementById('avg-speed');
-        this.maxSpeedEl = document.getElementById('max-speed');
-        this.currentDistanceEl = document.getElementById('current-distance');
-        this.remainingDistanceEl = document.getElementById('remaining-distance');
-        this.targetSpeedInput = document.getElementById('target-speed');
-        this.gpsStatusEl = document.getElementById('gps-status');
-
-        // GPS 정보
-        this.latitudeEl = document.getElementById('latitude');
-        this.longitudeEl = document.getElementById('longitude');
-        this.accuracyEl = document.getElementById('accuracy');
-
-        // 탭
-        this.tabBtns = document.querySelectorAll('.tab-btn');
-        this.tabContents = document.querySelectorAll('.tab-content');
-
-        // 설정 메뉴
-        this.settingsMenu = document.getElementById('settings-menu');
-        this.mainStatsLongPress = document.getElementById('main-stats-long-press');
-        this.settingsBtns = document.querySelectorAll('.settings-btn');
-
-        // 선택된 메트릭 (기본값: 시간, 속도)
-        this.mainMetrics = ['time', 'speed'];  // 왼쪽, 오른쪽
-
-        // ═══════════════════ 상태 변수 ═══════════════════
-        this.isTracking = false;
-        this.startTime = null;
-        this.elapsedSeconds = 0;
-        this.totalDistance = 0; // km
-        this.speeds = []; // 속도 기록
-        this.lastLocation = null;
-        this.lastAltitude = null;  // 고도
-        this.maxSpeed = 0;
+        this.isRunning = false;
+        this.elapsedTime = 0;
         this.timerInterval = null;
 
-        // 이벤트 리스너
-        this.startBtn.addEventListener('click', () => this.handleStart());
-        this.stopBtn.addEventListener('click', () => this.handleStop());
-        this.saveBtn.addEventListener('click', () => this.handleSave());
+        this.$startBtn = document.getElementById('startBtn');
+        this.$stopBtn = document.getElementById('stopBtn');
+        this.$saveBtn = document.getElementById('saveBtn');
+        this.$elapsedTime = document.getElementById('elapsed-time');
 
-        // 탭 전환
-        this.tabBtns.forEach(btn => {
-            btn.addEventListener('click', (e) => this.switchTab(e.target.dataset.tab));
-        });
-
-        // 긴 누름 (메인 정보)
-        this.setupLongPress();
-
-        log('✅ 앱 생성 완료');
+        this.init();
     }
 
-    // 🔧 긴 누름 설정
-    setupLongPress() {
-        let longPressTimer = null;
-
-        this.mainStatsLongPress.addEventListener('mousedown', () => {
-            longPressTimer = setTimeout(() => {
-                this.openSettingsMenu();
-            }, 500);  // 0.5초 = 긴 누름
-        });
-
-        this.mainStatsLongPress.addEventListener('mouseup', () => {
-            clearTimeout(longPressTimer);
-        });
-
-        this.mainStatsLongPress.addEventListener('mouseleave', () => {
-            clearTimeout(longPressTimer);
-        });
-
-        // 터치 장치용
-        this.mainStatsLongPress.addEventListener('touchstart', () => {
-            longPressTimer = setTimeout(() => {
-                this.openSettingsMenu();
-            }, 500);
-        });
-
-        this.mainStatsLongPress.addEventListener('touchend', () => {
-            clearTimeout(longPressTimer);
-        });
-
-        // 설정 메뉴 버튼
-        this.settingsBtns.forEach((btn, index) => {
-            btn.addEventListener('click', () => {
-                const metric = btn.dataset.metric;
-                const position = index < 3 ? 0 : 1;  // 첫 3개는 왼쪽, 나머지는 오른쪽
-                this.selectMetric(metric, position);
-                this.closeSettingsMenu();
+    init() {
+        // 탭 전환
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const tabName = e.currentTarget.dataset.tab;
+                this.switchTab(tabName);
+                
+                // 지도 탭 진입 시 맵 클릭 이벤트 설정
+                if (tabName === 'map' && typeof bikeNav !== 'undefined') {
+                    bikeNav.setupMapClick();
+                }
             });
         });
 
-        // 메뉴 외부 클릭으로 닫기
-        this.settingsMenu.addEventListener('click', (e) => {
-            if (e.target === this.settingsMenu) {
-                this.closeSettingsMenu();
-            }
-        });
-    }
+        // 버튼 이벤트
+        this.$startBtn.addEventListener('click', () => this.start());
+        this.$stopBtn.addEventListener('click', () => this.stop());
+        this.$saveBtn.addEventListener('click', () => this.saveRecord());
 
-    // 📋 설정 메뉴 열기
-    openSettingsMenu() {
-        this.settingsMenu.classList.add('active');
-        document.body.style.overflow = 'hidden';
-    }
-
-    // 📋 설정 메뉴 닫기
-    closeSettingsMenu() {
-        this.settingsMenu.classList.remove('active');
-        document.body.style.overflow = 'auto';
-    }
-
-    // 📊 메트릭 선택
-    selectMetric(metric, position) {
-        this.mainMetrics[position] = metric;
-        localStorage.setItem('mainMetrics', JSON.stringify(this.mainMetrics));
-        this.updateMainDisplay();
-    }
-
-    // 🎨 메인 정보 업데이트
-    updateMainDisplay() {
-        const stats = this.mainStatsLongPress.querySelectorAll('.stat-item');
-
-        this.mainMetrics.forEach((metric, index) => {
-            const label = stats[index].querySelector('label');
-            const value = stats[index].querySelector('.big-text');
-
-            switch (metric) {
-                case 'time':
-                    label.textContent = '시간';
-                    value.textContent = this.formatTime(this.elapsedSeconds);
-                    break;
-                case 'speed':
-                    label.textContent = '시속';
-                    value.textContent = (this.speeds.length > 0
-                        ? this.speeds.slice(-10).reduce((a, b) => a + b, 0) / Math.min(this.speeds.length, 10)
-                        : 0).toFixed(1) + ' km/h';
-                    break;
-                case 'avg-speed':
-                    label.textContent = '평균속도';
-                    const avgSpeed = this.elapsedSeconds > 0
-                        ? (this.totalDistance / (this.elapsedSeconds / 3600))
-                        : 0;
-                    value.textContent = avgSpeed.toFixed(1) + ' km/h';
-                    break;
-                case 'max-speed':
-                    label.textContent = '최고속도';
-                    value.textContent = this.maxSpeed.toFixed(1) + ' km/h';
-                    break;
-                case 'distance':
-                    label.textContent = '거리';
-                    value.textContent = this.totalDistance.toFixed(2) + ' km';
-                    break;
-                case 'altitude':
-                    label.textContent = '고도';
-                    value.textContent = this.lastAltitude ? this.lastAltitude.toFixed(0) + ' m' : '-';
-                    break;
-            }
-        });
-    }
-
-    // 🗺️ 지도 초기화
-    initMap() {
-        log('🗺️ 지도 초기화');
-        mapManager.initMap();
-        this.updateGPSStatus('준비 완료! 시작 버튼을 클릭하세요.');
-    }
-
-    // ▶️ 추적 시작
-    handleStart() {
-        log('▶️ 추적 시작 버튼 클릭');
-
-        this.isTracking = true;
-        this.startTime = Date.now();
-        this.elapsedSeconds = 0;
-        this.totalDistance = 0;
-        this.speeds = [];
-        this.lastLocation = null;
-        this.lastAltitude = null;
-        this.maxSpeed = 0;
-
-        // 저장된 메트릭 로드
-        const saved = localStorage.getItem('mainMetrics');
-        if (saved) {
-            this.mainMetrics = JSON.parse(saved);
+        // 지도 초기화
+        if (typeof mapManager !== 'undefined') {
+            mapManager.initMap();
+            log('✅ 지도 준비됨');
         }
 
-        // 초기화
-        mapManager.reset();
-        gpsTracker.reset();
-
-        // GPS 시작
-        gpsTracker.startTracking(
-            (coords) => this.onLocationUpdate(coords),
-            (error) => this.onGPSError(error)
-        );
-
-        // 타이머 시작
-        this.startTimer();
-
-        // UI 업데이트
-        this.startBtn.disabled = true;
-        this.stopBtn.disabled = false;
-        this.saveBtn.disabled = false;
-        this.updateGPSStatus('📍 위치 추적 중...');
-        this.updateMainDisplay();
-    }
-
-    // ⏹️ 추적 중지
-    handleStop() {
-        log('⏹️ 추적 중지 버튼 클릭');
-
-        this.isTracking = false;
-        gpsTracker.stopTracking();
-        this.stopTimer();
-
-        this.startBtn.disabled = false;
-        this.stopBtn.disabled = true;
-        this.updateGPSStatus('✅ 추적 완료');
-
-        mapManager.fitBounds();
-    }
-
-    // 💾 기록 저장
-    handleSave() {
-        log('💾 기록 저장');
-
-        const recordData = {
-            distance: this.totalDistance,
-            time: this.elapsedSeconds,
-            avgSpeed: this.totalDistance / (this.elapsedSeconds / 3600),
-            maxSpeed: this.maxSpeed,
-            timestamp: new Date().toISOString(),
-        };
-
-        console.log('기록 저장됨:', recordData);
-        alert(`✅ 기록 저장!
-거리: ${this.totalDistance.toFixed(2)} km
-시간: ${this.formatTime(this.elapsedSeconds)}
-평균속도: ${(this.totalDistance / (this.elapsedSeconds / 3600)).toFixed(1)} km/h`);
-    }
-
-    // 📍 위치 업데이트
-        // 📍 위치 업데이트
-    onLocationUpdate(coords) {
-        const { latitude, longitude, accuracy } = coords;
-
-        // GPS 정보 표시
-        this.latitudeEl.textContent = latitude.toFixed(6);
-        this.longitudeEl.textContent = longitude.toFixed(6);
-        this.accuracyEl.textContent = Math.round(accuracy) + ' m';
-
-        // 🚨 정확도가 너무 나쁘면(예: 30m 이상) 위치 휨으로 판단하고 무시
-        if (accuracy > 30) {
-            log('⚠️ GPS 정확도 불량으로 무시됨: ' + accuracy + 'm');
-            return;
-        }
-
-        // 거리 계산
-        if (this.lastLocation) {
-            const distance = this.calculateDistance(
-                this.lastLocation.latitude,
-                this.lastLocation.longitude,
-                latitude,
-                longitude
-            );
-
-            // 시간 간격 계산 (초 단위)
-            const now = Date.now();
-            const timeDiff = this.lastTime ? (now - this.lastTime) / 1000 : 5;
-            this.lastTime = now;
-
-            if (timeDiff > 0) {
-                const speed = (distance / timeDiff) * 3600; // km/h
-
-                // 🚨 자전거 현실 속도계 한계 설정 (예: 시속 70km 이상은 GPS 휨으로 간주)
-                if (speed < 70) {
-                    this.totalDistance += distance;
-                    this.speeds.push(speed);
-                    if (speed > this.maxSpeed) {
-                        this.maxSpeed = speed;
-                    }
-                } else {
-                    log('⚠️ 비정상적인 속도 감지 및 무시: ' + speed.toFixed(1) + ' km/h');
-                }
-            }
-        } else {
-            this.lastTime = Date.now();
-        }
-
-        this.lastLocation = { latitude, longitude };
-
-        // 지도 업데이트
-        mapManager.updateCurrentMarker(coords);
-        mapManager.updatePolyline();
-
-        // 통계 업데이트
-        this.updateStats();
-    }
-
-
-    // ❌ GPS 오류
-    onGPSError(error) {
-        log('❌ GPS 오류', error);
-        this.updateGPSStatus('❌ 오류: ' + error);
-        this.handleStop();
-    }
-
-    // ═══════════════════ 계산 함수 ═══════════════════
-
-    // 📏 두 GPS 좌표 간 거리 (Haversine 공식)
-    calculateDistance(lat1, lon1, lat2, lon2) {
-        const R = 6371; // 지구 반지름 (km)
-        const dLat = (lat2 - lat1) * Math.PI / 180;
-        const dLon = (lon2 - lon1) * Math.PI / 180;
-        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                  Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-                  Math.sin(dLon / 2) * Math.sin(dLon / 2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return R * c;
-    }
-
-    // 통계 업데이트
-    updateStats() {
-        // 현재 속도 (평균값)
-        const avgRecentSpeed = this.speeds.length > 0
-            ? this.speeds.slice(-10).reduce((a, b) => a + b, 0) / Math.min(this.speeds.length, 10)
-            : 0;
-
-        this.currentSpeedEl.textContent = avgRecentSpeed.toFixed(1) + ' km/h';
-
-        // 평균속도
-        const avgSpeed = this.elapsedSeconds > 0
-            ? (this.totalDistance / (this.elapsedSeconds / 3600))
-            : 0;
-        this.avgSpeedEl.textContent = avgSpeed.toFixed(1) + ' km/h';
-
-        // 최고속도
-        this.maxSpeedEl.textContent = this.maxSpeed.toFixed(1) + ' km/h';
-
-        // 현재 거리
-        this.currentDistanceEl.textContent = this.totalDistance.toFixed(2) + ' km';
-
-        // 남은 거리 (목표속도 기반)
-        const targetSpeed = parseFloat(this.targetSpeedInput.value) || 0;
-        let remainingDistance = 0;
-        if (targetSpeed > 0 && this.elapsedSeconds > 0) {
-            const predictedTotal = avgSpeed * (this.elapsedSeconds / 3600) + targetSpeed * 2; // 예상: 2시간 더
-            remainingDistance = Math.max(0, predictedTotal - this.totalDistance);
-        }
-        this.remainingDistanceEl.textContent = remainingDistance.toFixed(2) + ' km';
-
-        // 메인 정보 업데이트
-        this.updateMainDisplay();
-    }
-
-    // ⏱️ 타이머
-    startTimer() {
-        this.timerInterval = setInterval(() => {
-            this.elapsedSeconds++;
-            this.elapsedTimeEl.textContent = this.formatTime(this.elapsedSeconds);
-            this.updateStats();
-        }, 1000);
-    }
-
-    stopTimer() {
-        if (this.timerInterval) {
-            clearInterval(this.timerInterval);
-        }
-    }
-
-    // 시간 포맷
-    formatTime(seconds) {
-        const hours = Math.floor(seconds / 3600);
-        const minutes = Math.floor((seconds % 3600) / 60);
-        const secs = seconds % 60;
-        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-    }
-
-    // GPS 상태 메시지
-    updateGPSStatus(message) {
-        this.gpsStatusEl.textContent = message;
+        log('✅ 앱 초기화 완료');
     }
 
     // 탭 전환
     switchTab(tabName) {
-        log(`📋 탭 전환: ${tabName}`);
+        document.querySelectorAll('.tab-content').forEach(tab => {
+            tab.classList.remove('active');
+        });
+        document.getElementById(`${tabName}-tab`).classList.add('active');
 
-        // 탭 버튼 스타일
-        this.tabBtns.forEach(btn => {
+        document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.classList.remove('active');
-            if (btn.dataset.tab === tabName) {
-                btn.classList.add('active');
-            }
         });
+        document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+    }
 
-        // 탭 컨텐츠
-        this.tabContents.forEach(content => {
-            content.classList.remove('active');
-            if (content.id === `${tabName}-tab`) {
-                content.classList.add('active');
+    // ▶️ 시작
+    start() {
+        if (this.isRunning) return;
 
-                // 지도 탭이면 리사이즈
-                if (tabName === 'map' && mapManager.map) {
-                    setTimeout(() => {
-                        kakao.maps.event.addListener(mapManager.map, 'tilesloaded', () => {
-                            mapManager.map.relayout();
-                        });
-                    }, 100);
+        this.isRunning = true;
+        this.$startBtn.disabled = true;
+        this.$stopBtn.disabled = false;
+        this.$saveBtn.disabled = true;
+
+        // GPS 트래킹 시작
+        if (typeof gpsTracker !== 'undefined') {
+            gpsTracker.reset();
+            gpsTracker.startTracking(
+                (position) => {
+                    const { latitude, longitude } = position;
+                    if (typeof mapManager !== 'undefined') {
+                        mapManager.updateCurrentMarker({ latitude, longitude });
+                        mapManager.updatePolyline();
+                    }
+                    if (typeof bikeNav !== 'undefined') {
+                        bikeNav.updateLocation(latitude, longitude);
+                    }
+                },
+                (error) => {
+                    log('❌ GPS 오류: ' + error);
+                    alert(error);
                 }
-            }
-        });
+            );
+        }
+
+        // 시간 계산 시작
+        this.timerInterval = setInterval(() => {
+            this.elapsedTime++;
+            this.updateTimeDisplay();
+        }, 1000);
+
+        log('▶️ 기록 시작');
+    }
+
+    // ⏹️ 정지
+    stop() {
+        if (!this.isRunning) return;
+
+        this.isRunning = false;
+        this.$startBtn.disabled = false;
+        this.$stopBtn.disabled = true;
+        this.$saveBtn.disabled = false;
+
+        // GPS 트래킹 정지
+        if (typeof gpsTracker !== 'undefined') {
+            gpsTracker.stopTracking();
+        }
+
+        // 시간 계산 정지
+        clearInterval(this.timerInterval);
+
+        log('⏹️ 기록 정지');
+    }
+
+    // 💾 기록 저장
+    saveRecord() {
+        if (typeof gpsTracker === 'undefined') return;
+
+        const record = {
+            timestamp: new Date().toISOString(),
+            duration: this.elapsedTime,
+            distance: ((gpsTracker.positions.length || 0) * 0.1).toFixed(2),
+            pointCount: gpsTracker.positions.length,
+        };
+
+        let records = JSON.parse(localStorage.getItem('bikeRecords') || '[]');
+        records.push(record);
+        localStorage.setItem('bikeRecords', JSON.stringify(records));
+
+        alert(`기록 저장됨!\n위치 데이터: ${record.pointCount}개\n시간: ${Math.floor(this.elapsedTime / 60)}분`);
+
+        // 초기화
+        this.reset();
+
+        log('💾 기록 저장됨:', record);
+    }
+
+    // 🔄 초기화
+    reset() {
+        this.elapsedTime = 0;
+        this.$elapsedTime.textContent = '00:00:00';
+        this.$startBtn.disabled = false;
+        this.$stopBtn.disabled = true;
+        this.$saveBtn.disabled = true;
+
+        if (typeof gpsTracker !== 'undefined') {
+            gpsTracker.reset();
+        }
+
+        if (typeof mapManager !== 'undefined') {
+            mapManager.reset();
+        }
+
+        log('🔄 데이터 초기화');
+    }
+
+    // ⏱️ 시간 표시
+    updateTimeDisplay() {
+        const hours = Math.floor(this.elapsedTime / 3600);
+        const minutes = Math.floor((this.elapsedTime % 3600) / 60);
+        const seconds = this.elapsedTime % 60;
+
+        this.$elapsedTime.textContent = 
+            `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
     }
 }
 
-// ====== 앱 초기화 (kakao.maps.load 제거!) ======
-log('app.js 로드됨');
-
-// DOM이 완전히 로드되면 앱 시작
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-        log('✅ DOM 로드 완료 - 앱 시작!');
-        const app = new BikeGPSApp();
-        app.initMap();
-    });
-} else {
-    log('✅ DOM 이미 로드됨 - 앱 시작!');
-    const app = new BikeGPSApp();
-    app.initMap();
-}
+const app = new BikeApp();
