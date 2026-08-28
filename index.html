@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>자전거 GPS 트래커</title>
-    <link rel="stylesheet" href="styles.css?v=3">
+    <link rel="stylesheet" href="styles.css?v=4">
     <link rel="manifest" href="manifest.json">
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="favicon.svg">
@@ -85,11 +85,12 @@
             <div style="text-align: center; font-size: 12px; color: var(--text-light); margin-bottom: 10px;" id="gps-status">준비 중...</div>
         </div>
 
-        <!-- 2️⃣ 지도 화면 탭 (상단 오버레이, 편도/왕복 설정, 플로팅 버튼 포함) -->
+        <!-- 2️⃣ 지도 화면 탭 -->
         <div class="tab-content" id="map-tab">
-            <div id="map" class="map-container"></div>
+            <!-- 지도가 그려질 영역 (절대 위치로 전체 채우기) -->
+            <div id="map" style="width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 1;"></div>
 
-            <!-- 상단 오버레이 (시간, 거리, 속도, 재생/정지) -->
+            <!-- 상단 오버레이 -->
             <div class="map-top-overlay">
                 <div class="map-top-bar">
                     <button class="map-float-btn" id="mapMenuBtn" style="width: 36px; height: 36px; font-size: 14px;">☰</button>
@@ -119,7 +120,7 @@
                 </div>
             </div>
 
-            <!-- 우측 하단 플로팅 버튼 (현재위치, 설정) -->
+            <!-- 우측 하단 플로팅 버튼 -->
             <div class="map-float-controls">
                 <button class="map-float-btn" id="mapCurrentLocBtn" title="현재 위치">📍</button>
                 <button class="map-float-btn" id="mapSettingsBtn" title="지도 설정">⚙️</button>
