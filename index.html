@@ -11,16 +11,15 @@
     <meta name="theme-color" content="#121212">
     <meta name="description" content="실시간 자전거 속도 기록 및 경로 추적 웹앱">
     
-    <!-- ✅ Vercel 환경변수 주입 스크립트 (Vercel 대시보드 설정 연동) -->
     <script>
-        // Vercel 환경 변수 명명 규칙에 맞춰 전역 객체 할당
-        window.__KAKAO_API_KEY__ = window.env?.KAKAO_MAP_API_KEY || '';
+        window.__KAKAO_API_KEY__ = '${{ secrets.KAKAO_MAP_API_KEY }}';
     </script>
 </head>
 <body>
     <div class="container">
         <!-- 1️⃣ 속도계 화면 탭 -->
         <div class="tab-content active" id="speed-tab">
+            <!-- 상단 대시보드 (시간 및 메인 긴 누름 영역) -->
             <div class="main-stats" id="main-stats-long-press">
                 <div class="top-dashboard-bar">
                     <div id="elapsed-time" class="top-time-display">00:00:00</div>
@@ -30,6 +29,7 @@
                     </div>
                 </div>
 
+                <!-- 속도계 원형 디자인 카드 -->
                 <div class="speedometer-card">
                     <div class="stat-item">
                         <label>현재 속도</label>
@@ -42,10 +42,12 @@
                 </div>
             </div>
 
+            <!-- 기록 저장 버튼 -->
             <div class="button-group">
                 <button id="saveBtn" class="btn btn-success btn-large" disabled>🔴 기록 저장하기</button>
             </div>
 
+            <!-- 상세 정보 그리드 -->
             <div class="info-grid">
                 <div class="info-item">
                     <label>평균 속도</label>
@@ -65,6 +67,7 @@
                 </div>
             </div>
 
+            <!-- GPS 상세 정보 -->
             <div class="gps-info">
                 <div class="info-item">
                     <label>위도</label>
@@ -82,32 +85,12 @@
             <div style="text-align: center; font-size: 12px; color: var(--text-light); margin-bottom: 10px;" id="gps-status">준비 중...</div>
         </div>
 
-        <!-- 2️⃣ 지도 화면 탭 -->
+        <!-- 2️⃣ 지도 화면 탭 (완전 분리된 전체 화면) -->
         <div class="tab-content" id="map-tab">
-            <div class="nav-control-panel" id="nav-control-panel">
-                <div class="nav-toggle-group">
-                    <button class="nav-toggle-btn active" data-mode="single">편도</button>
-                    <button class="nav-toggle-btn" data-mode="round">왕복</button>
-                </div>
-                <div class="nav-input-group">
-                    <input type="text" id="destination-input" class="nav-input" placeholder="목적지 입력 또는 지도 클릭">
-                    <button id="clear-nav-btn" class="nav-btn-clear">✕</button>
-                </div>
-                <div class="nav-info-panel">
-                    <div class="nav-info-item">
-                        <span class="nav-label">거리</span>
-                        <span id="nav-distance" class="nav-value">-</span>
-                    </div>
-                    <div class="nav-info-item">
-                        <span class="nav-label">예상 시간</span>
-                        <span id="nav-time" class="nav-value">-</span>
-                    </div>
-                </div>
-            </div>
-            
             <div id="map" class="map-container"></div>
         </div>
 
+        <!-- 하단 고정 탭 네비게이션 -->
         <div class="tabs">
             <button class="tab-btn active" data-tab="speed">
                 <span>⏱️</span>
@@ -120,6 +103,7 @@
         </div>
     </div>
 
+    <!-- 설정 메뉴 모달 -->
     <div class="settings-menu" id="settings-menu">
         <div class="settings-title">메인 정보 선택</div>
         <div class="settings-grid">
@@ -132,42 +116,33 @@
         </div>
     </div>
 
-    <!-- ✅ 스크립트 순서대로 정석 로드 -->
+    <!-- 스크립트 로드 영역 -->
     <script src="config.js"></script>
-    <script>
-        if (typeof CONFIG !== 'undefined' && CONFIG.KAKAO_MAP_API_KEY) {
-            document.write(`<script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=${CONFIG.KAKAO_MAP_API_KEY}&autoload=false"><\/script>`);
-        } else {
-            console.error('❌ CONFIG.KAKAO_MAP_API_KEY가 없습니다.');
-        }
-    </script>
     <script src="gps.js"></script>
-    <script src="map.js"></script>
-    <script src="navigation.js"></script>
-    <script src="app.js"></script>
-
     <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const tabButtons = document.querySelectorAll('.tab-btn');
-            tabButtons.forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const targetTab = btn.getAttribute('data-tab');
-                    
-                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-                    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-                    
-                    btn.classList.add('active');
-                    const targetContent = document.getElementById(targetTab + '-tab');
-                    if (targetContent) targetContent.classList.add('active');
+        const mapScript = document.createElement('script');
+        mapScript.src = 'map.js';
+        const appScript = document.createElement('script');
+        appScript.src = 'app.js';
 
-                    if (targetTab === 'map' && window.mapManager && window.mapManager.map) {
-                        setTimeout(() => {
-                            window.mapManager.map.relayout();
-                        }, 100);
-                    }
+        function initKakaoSDK() {
+            const kakaoScript = document.createElement('script');
+            kakaoScript.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${CONFIG.KAKAO_MAP_API_KEY}&autoload=false`;
+            
+            kakaoScript.onload = () => {
+                kakao.maps.load(() => {
+                    document.body.appendChild(mapScript);
+                    mapScript.onload = () => {
+                        document.body.appendChild(appScript);
+                    };
                 });
-            });
-        });
+            };
+            document.head.appendChild(kakaoScript);
+        }
+
+        if (typeof CONFIG !== 'undefined' && CONFIG.KAKAO_MAP_API_KEY) {
+            initKakaoSDK();
+        }
     </script>
 </body>
 </html>
