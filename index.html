@@ -85,9 +85,45 @@
             <div style="text-align: center; font-size: 12px; color: var(--text-light); margin-bottom: 10px;" id="gps-status">준비 중...</div>
         </div>
 
-        <!-- 2️⃣ 지도 화면 탭 (완전 분리된 전체 화면) -->
+        <!-- 2️⃣ 지도 화면 탭 (상단 오버레이, 편도/왕복 설정, 플로팅 버튼 포함) -->
         <div class="tab-content" id="map-tab">
             <div id="map" class="map-container"></div>
+
+            <!-- 상단 오버레이 (시간, 거리, 속도, 재생/정지) -->
+            <div class="map-top-overlay">
+                <div class="map-top-bar">
+                    <button class="map-float-btn" id="mapMenuBtn" style="width: 36px; height: 36px; font-size: 14px;">☰</button>
+                    <div id="map-elapsed-time" class="map-top-time">0:00:00</div>
+                    <button id="mapStartBtn" class="btn btn-primary" style="padding: 6px 12px; min-height: 32px; border-radius: 20px;">▶</button>
+                </div>
+                <div class="map-sub-stats">
+                    <div class="map-stat-box">
+                        <span id="map-current-distance" class="val">0.00</span>
+                        <span class="label">km</span>
+                    </div>
+                    <div class="map-stat-box">
+                        <span id="map-current-speed" class="val">0.0</span>
+                        <span class="label">km/h</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 목적지 및 편도/왕복 설정 패널 -->
+            <div class="route-control-panel">
+                <div style="display: flex; gap: 6px;">
+                    <select id="routeType" style="flex: 1;">
+                        <option value="one-way">편도 코스</option>
+                        <option value="round-trip">왕복 코스 (반환점)</option>
+                    </select>
+                    <button id="setDestBtn" class="btn btn-primary" style="padding: 6px 10px; font-size: 12px; min-height: 30px;">목적지 지정</button>
+                </div>
+            </div>
+
+            <!-- 우측 하단 플로팅 버튼 (현재위치, 설정) -->
+            <div class="map-float-controls">
+                <button class="map-float-btn" id="mapCurrentLocBtn" title="현재 위치">📍</button>
+                <button class="map-float-btn" id="mapSettingsBtn" title="지도 설정">⚙️</button>
+            </div>
         </div>
 
         <!-- 하단 고정 탭 네비게이션 -->
