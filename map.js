@@ -15,33 +15,45 @@ class MapManager {
         log('MapManager 생성됨');
     }
 
-    // 🗺️ 지도 초기화
+    // 🗺️ 지도 초기화 (kakao.maps.load로 감싸서 안전하게 로드)
     initMap() {
         log('🗺️ 지도 초기화 시작...');
 
-        try {
-            const mapContainer = document.getElementById('map');
-            
-            if (!mapContainer) {
-                log('❌ 지도 컨테이너를 찾을 수 없음');
-                return;
-            }
-
-            const mapOption = {
-                center: new kakao.maps.LatLng(CONFIG.MAP.centerLat, CONFIG.MAP.centerLng),
-                level: CONFIG.MAP.initialZoom,
-            };
-
-            this.map = new kakao.maps.Map(mapContainer, mapOption);
-            log('✅ 지도 초기화 완료!');
-
-        } catch (error) {
-            log('❌ 지도 초기화 오류', error.message);
+        if (typeof kakao === 'undefined' || !kakao.maps) {
+            log('❌ 카카오맵 SDK가 아직 로드되지 않았습니다.');
+            return;
         }
+
+        kakao.maps.load(() => {
+            try {
+                const mapContainer = document.getElementById('map');
+                
+                if (!mapContainer) {
+                    log('❌ 지도 컨테이너를 찾을 수 없음');
+                    return;
+                }
+
+                const mapOption = {
+                    center: new kakao.maps.LatLng(CONFIG.MAP.centerLat, CONFIG.MAP.centerLng),
+                    level: CONFIG.MAP.initialZoom,
+                };
+
+                this.map = new kakao.maps.Map(mapContainer, mapOption);
+                log('✅ 지도 초기화 완료!');
+
+                // 초기 생성 직후 레이아웃 강제 새로고침 (탭 전환 시 안 깨지도록)
+                setTimeout(() => {
+                    this.map.relayout();
+                }, 200);
+
+            } catch (error) {
+                log('❌ 지도 초기화 오류', error.message);
+            }
+        });
     }
 
-    // 📍 현재 위치 마커 업데이트
-    updateCurrentMarker(position) {
+    // 📍 현재 위치 마커 업데이트 및 속도별 자동 줌 적용
+    updateCurrentMarker(position, currentSpeed = 0) {
         if (!this.map) {
             log('⚠️ 지도가 준비되지 않음');
             return;
@@ -65,8 +77,18 @@ class MapManager {
             this.map.setCenter(location);
             this.pathCoords.push(location);
 
+            // 🚀 30km/h 기준 자동 줌 레벨 조절 (카카오맵: 1=확대, 2=축소)
+            // config.js에 설정된 값이 있다면 그 값을 쓰고, 없으면 기본값 적용
+            const slowZoom = (CONFIG.MAP.ZOOM_LEVELS && CONFIG.MAP.ZOOM_LEVELS.SLOW) || 1;
+            const fastZoom = (CONFIG.MAP.ZOOM_LEVELS && CONFIG.MAP.ZOOM_LEVELS.FAST) || 2;
+
+            const targetZoom = currentSpeed < 30 ? slowZoom : fastZoom;
+            if (this.map.getLevel() !== targetZoom) {
+                this.map.setLevel(targetZoom);
+            }
+
         } catch (error) {
-            log('❌ 마커 오류', error.message);
+            log('❌ 마커 및 줌 업데이트 오류', error.message);
         }
     }
 
