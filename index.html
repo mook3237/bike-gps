@@ -10,6 +10,12 @@
     <link rel="apple-touch-icon" href="favicon.svg">
     <meta name="theme-color" content="#121212">
     <meta name="description" content="실시간 자전거 속도 기록 및 경로 추적 웹앱">
+    
+    <!-- ✅ Vercel 환경변수 주입 스크립트 (Vercel 대시보드 설정 연동) -->
+    <script>
+        // Vercel 환경 변수 명명 규칙에 맞춰 전역 객체 할당
+        window.__KAKAO_API_KEY__ = window.env?.KAKAO_MAP_API_KEY || '';
+    </script>
 </head>
 <body>
     <div class="container">
@@ -126,13 +132,7 @@
         </div>
     </div>
 
-    <!-- ✅ 깃허브 시크릿 및 Vercel 연동용 API 키 주입부 -->
-    <script>
-        window.__KAKAI_API_KEY__ = ''; // 기본값 빈 문자열
-        // GitHub Actions 빌드 시 치환되거나 Vercel 환경변수에서 주입됨
-        window.__KAKAO_API_KEY__ = '${{ secrets.KAKAO_MAP_API_KEY }}';
-    </script>
-
+    <!-- ✅ 스크립트 순서대로 정석 로드 -->
     <script src="config.js"></script>
     <script>
         if (typeof CONFIG !== 'undefined' && CONFIG.KAKAO_MAP_API_KEY) {
