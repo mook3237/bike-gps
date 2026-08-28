@@ -140,26 +140,38 @@
 
     <!-- 🗺️ Kakao SDK 동적 로드 -->
     <script src="config.js"></script>
-    <script>
-        function initKakaoSDK() {
-            const kakaoScript = document.createElement('script');
-            kakaoScript.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${CONFIG.KAKAO_MAP_API_KEY}&autoload=false`;
-            
-            kakaoScript.onload = () => {
-                console.log('✅ Kakao SDK 로드됨');
-                kakao.maps.load(() => {
-                    console.log('✅ kakao.maps 로드 완료');
-                    // 이제 다른 스크립트 로드
-                    loadScripts();
-                });
-            };
-            
-            kakaoScript.onerror = () => {
-                console.error('❌ Kakao SDK 로드 실패');
-            };
-            
-            document.head.appendChild(kakaoScript);
+<script>
+    // Kakao SDK 동적 로드
+    const kakaoScript = document.createElement('script');
+    kakaoScript.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${CONFIG.KAKAO_MAP_API_KEY}&autoload=false`;
+    
+    kakaoScript.onload = () => {
+        kakao.maps.load(() => {
+            console.log('✅ Kakao SDK 준비됨');
+            // 이제 순차적으로 로드
+            loadScriptsSequentially(['gps.js', 'map.js', 'navigation.js', 'app.js'], 0);
+        });
+    };
+    
+    document.head.appendChild(kakaoScript);
+
+    // 순차 로드 함수
+    function loadScriptsSequentially(scripts, index) {
+        if (index >= scripts.length) {
+            console.log('✅ 모든 스크립트 로드 완료');
+            return;
         }
+        
+        const script = document.createElement('script');
+        script.src = scripts[index];
+        script.onload = () => {
+            console.log(`✅ ${scripts[index]} 로드됨`);
+            loadScriptsSequentially(scripts, index + 1);
+        };
+        script.onerror = () => console.error(`❌ ${scripts[index]} 로드 실패`);
+        document.body.appendChild(script);
+    }
+</script>
 
         function loadScripts() {
             const scripts = ['gps.js', 'map.js', 'navigation.js', 'app.js'];
