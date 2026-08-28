@@ -1,7 +1,7 @@
-// ⚙️ GitHub 배포용 설정
+// ⚙️ 자전거 GPS 트래커 설정 파일
 const CONFIG = {
-    // 🔑 GitHub Secrets에서 주입된 키 또는 전역 윈도우 객체에서 가져옴
-    KAKAO_MAP_API_KEY: window.__KAKAO_API_KEY__ || '',
+    // 🔑 Vercel 환경 변수 또는 전역 설정에서 안전하게 로드
+    KAKAO_MAP_API_KEY: window.VITE_KAKAO_MAP_API_KEY || window.__KAKAO_API_KEY__ || '',
     
     // 🗺️ 지도 설정
     MAP: {
