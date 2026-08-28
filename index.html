@@ -116,7 +116,7 @@
         </div>
     </div>
 
-    <!-- 스크립트 로드 영역 -->
+    <!-- 스크립트 로드 영역 (원래의 안전한 비동기 로드 구조 복구) -->
     <script src="config.js"></script>
     <script src="gps.js"></script>
     <script>
@@ -126,8 +126,11 @@
         appScript.src = 'app.js';
 
         function initKakaoSDK() {
+            // config.js에 키가 없거나 __KAKAO_API_KEY__를 직접 쓸 경우 대비한 안전 처리
+            const apiKey = (typeof CONFIG !== 'undefined' && CONFIG.KAKAO_MAP_API_KEY) ? CONFIG.KAKAO_MAP_API_KEY : window.__KAKAO_API_KEY__;
+            
             const kakaoScript = document.createElement('script');
-            kakaoScript.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${CONFIG.KAKAO_MAP_API_KEY}&autoload=false`;
+            kakaoScript.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${apiKey}&autoload=false`;
             
             kakaoScript.onload = () => {
                 kakao.maps.load(() => {
@@ -140,9 +143,32 @@
             document.head.appendChild(kakaoScript);
         }
 
-        if (typeof CONFIG !== 'undefined' && CONFIG.KAKAO_MAP_API_KEY) {
+        // DOM이 로드된 후 SDK 초기화 실행
+        document.addEventListener('DOMContentLoaded', () => {
             initKakaoSDK();
-        }
+
+            // 하단 탭 전환 이벤트 리스너 안전하게 장착
+            const tabButtons = document.querySelectorAll('.tab-btn');
+            tabButtons.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const targetTab = btn.getAttribute('data-tab');
+                    
+                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                    
+                    btn.classList.add('active');
+                    const targetContent = document.getElementById(targetTab + '-tab');
+                    if (targetContent) targetContent.classList.add('active');
+
+                    // 지도 탭으로 전환 시 카카오맵 크기 재조정
+                    if (targetTab === 'map' && window.mapManager && window.mapManager.map) {
+                        setTimeout(() => {
+                            window.mapManager.map.relayout();
+                        }, 100);
+                    }
+                });
+            });
+        });
     </script>
 </body>
 </html>
