@@ -1,11 +1,10 @@
-/* ═══════════════════ 지도 탭 오버레이 레이아웃 ═══════════════════ */
+/* ═══════════════════ 지도 탭 오버레이 및 컨트롤 레이아웃 ═══════════════════ */
 #map-tab {
     position: relative;
     overflow: hidden;
     padding: 0;
 }
 
-/* 지도를 전체 채우되 위아래 여백 느낌을 주기 위한 컨테이너 */
 .map-container {
     width: 100%;
     height: 100%;
@@ -15,23 +14,23 @@
     z-index: 1;
 }
 
-/* 지도 상단 오버레이 대시보드 (시간, 속도, 거리) */
+/* 지도 상단 오버레이 대시보드 */
 .map-top-overlay {
     position: absolute;
     top: 0;
     left: 0;
     right: 0;
     z-index: 10;
-    background: linear-gradient(to bottom, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0) 100%);
+    background: linear-gradient(to bottom, rgba(18,18,18,0.95) 0%, rgba(18,18,18,0.7) 70%, rgba(18,18,18,0) 100%);
     padding: 10px 15px 25px 15px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    pointer-events: none; /* 터치 이벤트가 지도에 닿도록 설정 */
+    pointer-events: none;
 }
 
 .map-top-overlay * {
-    pointer-events: auto; /* 내부 버튼 등은 클릭 가능하게 */
+    pointer-events: auto;
 }
 
 .map-top-bar {
@@ -45,7 +44,7 @@
 .map-top-time {
     font-size: 32px;
     font-weight: 700;
-    color: white;
+    color: var(--text-dark);
     letter-spacing: -1px;
 }
 
@@ -68,15 +67,15 @@
 .map-stat-box .val {
     font-size: 28px;
     font-weight: 700;
-    color: white;
+    color: var(--text-dark);
     letter-spacing: -1px;
 }
 
-/* 지도 우측 하단 플로팅 버튼 (현재위치, 설정) */
+/* 우측 하단 플로팅 버튼 (현재위치, 설정 등) */
 .map-float-controls {
     position: absolute;
     right: 15px;
-    bottom: 80px; /* 하단 탭바 위쪽으로 배치 */
+    bottom: 80px;
     z-index: 10;
     display: flex;
     flex-direction: column;
@@ -102,7 +101,7 @@
     background: #444;
 }
 
-/* 목적지 및 편도/왕복 설정 패널 (지도 하단 또는 모달) */
+/* 목적지 및 편도/왕복 설정 패널 */
 .route-control-panel {
     position: absolute;
     bottom: 70px;
@@ -112,18 +111,19 @@
     background: rgba(30, 30, 30, 0.95);
     border: 1px solid var(--border-color);
     border-radius: 12px;
-    padding: 12px;
+    padding: 10px;
     backdrop-filter: blur(5px);
     display: flex;
     flex-direction: column;
     gap: 8px;
 }
 
-.route-control-panel select, .route-control-panel input {
+.route-control-panel select {
     background: #222;
     color: white;
     border: 1px solid var(--border-color);
     padding: 6px 10px;
     border-radius: 6px;
     font-size: 13px;
+    outline: none;
 }
