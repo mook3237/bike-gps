@@ -1,343 +1,129 @@
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-}
-
-:root {
-    --primary: #00B4D8;
-    --primary-dark: #0077B6;
-    --primary-light: #90E0EF;
-    --text-dark: #FFFFFF;
-    --text-light: #A0AAB2;
-    --bg-light: #121212;
-    --bg-white: #1E1E1E;
-    --border-color: #2D2D2D;
-    --success: #4CAF50;
-    --warning: #FF9800;
-    --error: #FF4D4D;
-    --info: #00B4D8;
-}
-
-body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: var(--bg-light);
-    color: var(--text-dark);
-    line-height: 1.6;
-    overflow-x: hidden;
-}
-
-.container {
-    max-width: 100%;
-    padding: 0;
-    margin: 0 auto;
-}
-
-/* ═══════════════════ 탭 컨텐츠 및 화면 분리 ═══════════════════ */
-.tab-content {
-    display: none;
-    width: 100%;
-    height: calc(100vh - 60px); /* 하단 탭바 높이 60px 제외한 전체 화면 */
-    overflow-y: auto;          /* 속도계 화면은 스크롤 가능 */
-}
-
-.tab-content.active {
-    display: block;
-}
-
-/* 속도계 탭 전용 */
-#speed-tab {
-    padding: 15px 15px 30px 15px;
-}
-
-/* 지도 탭 전용 스타일 (스크롤 방지 및 전체 화면 채우기) */
+/* ═══════════════════ 지도 탭 오버레이 레이아웃 ═══════════════════ */
 #map-tab {
+    position: relative;
     overflow: hidden;
     padding: 0;
 }
 
+/* 지도를 전체 채우되 위아래 여백 느낌을 주기 위한 컨테이너 */
 .map-container {
     width: 100%;
     height: 100%;
-    border-radius: 0;
-    border: none;
-    background: #E8E8E8;
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
 }
 
-/* ═══════════════════ 상단 메인 게이지 영역 ═══════════════════ */
-.main-stats {
-    background: var(--bg-light);
-    padding: 10px 5px 15px 5px;
+/* 지도 상단 오버레이 대시보드 (시간, 속도, 거리) */
+.map-top-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0) 100%);
+    padding: 10px 15px 25px 15px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    position: relative;
-    user-select: none;
+    pointer-events: none; /* 터치 이벤트가 지도에 닿도록 설정 */
 }
 
-/* 상단 컨트롤러 (시간, 재생/정지 버튼 배치용 바) */
-.top-dashboard-bar {
+.map-top-overlay * {
+    pointer-events: auto; /* 내부 버튼 등은 클릭 가능하게 */
+}
+
+.map-top-bar {
     width: 100%;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 15px;
-    padding: 0 5px;
-}
-
-.top-time-display {
-    font-size: 32px;
-    font-weight: 700;
-    letter-spacing: -1px;
-    color: var(--text-dark);
-}
-
-/* 원형 속도계 느낌을 주는 카드 디자인 */
-.speedometer-card {
-    width: 100%;
-    max-width: 360px;
-    background: radial-gradient(circle, #2A2A2A 0%, #1A1A1A 100%);
-    border: 2px solid #333;
-    border-radius: 50% 50% 20px 20px / 40% 40% 20px 20px;
-    padding: 30px 20px 25px 20px;
-    text-align: center;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-    margin-bottom: 15px;
-}
-
-.speedometer-card .stat-item {
-    background: transparent;
-    border: none;
-    box-shadow: none;
-    padding: 0;
-}
-
-.speedometer-card .stat-item label {
-    font-size: 13px;
-    color: var(--text-light);
     margin-bottom: 5px;
 }
 
-.big-text {
-    font-size: 56px;
+.map-top-time {
+    font-size: 32px;
     font-weight: 700;
-    color: var(--text-dark);
-    line-height: 1.1;
-    letter-spacing: -2px;
-}
-
-.speed-unit {
-    font-size: 16px;
-    color: var(--text-light);
-    margin-bottom: 15px;
-    font-weight: 500;
-}
-
-.sub-speedometer-stat {
-    font-size: 26px;
-    font-weight: 600;
-    color: var(--text-dark);
-    letter-spacing: -0.5px;
-}
-
-.sub-speedometer-stat span {
-    font-size: 12px;
-    color: var(--text-light);
-    display: inline-block;
-    margin-left: 2px;
-}
-
-/* ═══════════════════ 버튼 그룹 스타일 개편 ═══════════════════ */
-.button-group {
-    display: flex;
-    gap: 10px;
-    padding: 0 5px;
-    margin-bottom: 20px;
-}
-
-.btn {
-    flex: 1;
-    padding: 12px;
-    border: none;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.25s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 44px;
-}
-
-.btn-primary {
-    background: var(--info);
     color: white;
+    letter-spacing: -1px;
 }
 
-.btn-success {
-    background: #E63946;
-    color: white;
-}
-
-.btn-danger {
-    background: #457B9D;
-    color: white;
-}
-
-.btn:disabled {
-    background: #2C2C2C;
-    color: #555;
-    cursor: not-allowed;
-}
-
-/* ═══════════════════ 정보 그리드 (2열 카드 형태) ═══════════════════ */
-.info-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1px;
-    background: var(--border-color);
-    border-top: 1px solid var(--border-color);
-    border-bottom: 1px solid var(--border-color);
-    margin-bottom: 20px;
-}
-
-.info-item {
-    background: var(--bg-white);
-    padding: 18px 15px;
-    border: none;
-    box-shadow: none;
-    border-radius: 0;
-}
-
-.info-item label {
-    display: block;
-    font-size: 12px;
-    color: var(--text-light);
-    font-weight: 500;
-    margin-bottom: 8px;
-}
-
-.info-item p {
-    font-size: 22px;
-    font-weight: 600;
-    color: var(--text-dark);
-    margin: 0;
-    letter-spacing: -0.5px;
-}
-
-/* 입력 필드 다크 테마 */
-.input-field {
+.map-sub-stats {
     width: 100%;
-    padding: 8px 10px;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    font-size: 14px;
-    background: #2A2A2A;
-    color: var(--text-dark);
+    display: flex;
+    justify-content: space-between;
+    padding: 0 10px;
 }
 
-.input-field:focus {
-    outline: none;
-    border-color: var(--primary);
+.map-stat-box {
+    text-align: center;
 }
 
-/* ═══════════════════ GPS 상세 정보 ═══════════════════ */
-.gps-info {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
-    background: var(--bg-white);
-    margin: 0 0 20px 0;
-    padding: 12px;
-    border-radius: 8px;
-    border: 1px solid var(--border-color);
-}
-
-.gps-info .info-item {
-    background: transparent;
-    padding: 0;
-}
-
-.gps-info label {
-    font-size: 10px !important;
-}
-
-.gps-info p {
-    font-size: 12px;
-}
-
-/* ═══════════════════ 하단 고정 탭 바 ═══════════════════ */
-.tabs {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    background: #181818;
-    border-top: 1px solid var(--border-color);
-    z-index: 100;
-    height: 60px;
-}
-
-.tab-btn {
-    background: transparent;
-    border: none;
+.map-stat-box .label {
+    font-size: 11px;
     color: var(--text-light);
-    font-size: 12px;
-    font-weight: 500;
+}
+
+.map-stat-box .val {
+    font-size: 28px;
+    font-weight: 700;
+    color: white;
+    letter-spacing: -1px;
+}
+
+/* 지도 우측 하단 플로팅 버튼 (현재위치, 설정) */
+.map-float-controls {
+    position: absolute;
+    right: 15px;
+    bottom: 80px; /* 하단 탭바 위쪽으로 배치 */
+    z-index: 10;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    gap: 4px;
+    gap: 10px;
 }
 
-.tab-btn.active {
-    color: #FF5C5C;
-    background: transparent;
-}
-
-/* ═══════════════════ 설정 메뉴 모달 ═══════════════════ */
-.settings-menu {
-    display: none !important;
-    position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0, 0, 0, 0.8);
-    z-index: 1000;
-}
-
-.settings-menu.active {
-    display: flex !important;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-}
-
-.settings-title {
+.map-float-btn {
+    width: 45px;
+    height: 45px;
+    border-radius: 50%;
+    background: #2A2A2A;
+    border: 1px solid var(--border-color);
     color: white;
     font-size: 18px;
-    font-weight: 700;
-    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+    cursor: pointer;
 }
 
-.settings-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 12px;
-    padding: 20px;
-    width: 90%;
-    max-width: 400px;
+.map-float-btn:active {
+    background: #444;
 }
 
-.settings-btn {
-    padding: 16px;
-    background: #2A2A2A;
+/* 목적지 및 편도/왕복 설정 패널 (지도 하단 또는 모달) */
+.route-control-panel {
+    position: absolute;
+    bottom: 70px;
+    left: 15px;
+    right: 75px;
+    z-index: 10;
+    background: rgba(30, 30, 30, 0.95);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 12px;
+    backdrop-filter: blur(5px);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.route-control-panel select, .route-control-panel input {
+    background: #222;
     color: white;
     border: 1px solid var(--border-color);
-    border-radius: 10px;
-    font-size: 14px;
-    cursor: pointer;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 13px;
 }
