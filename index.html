@@ -6,20 +6,13 @@
     <title>자전거 GPS 트래커</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="manifest" href="manifest.json">
-    <link rel="icon" href="favicon.svg" type="image/svg+xml">
-    <link rel="apple-touch-icon" href="favicon.svg">
     <meta name="theme-color" content="#121212">
     <meta name="description" content="실시간 자전거 속도 기록 및 경로 추적 웹앱">
-    
-    <script>
-        window.__KAKAO_API_KEY__ = '${{ secrets.KAKAO_MAP_API_KEY }}';
-    </script>
 </head>
 <body>
     <div class="container">
         <!-- 1️⃣ 속도계 화면 탭 -->
         <div class="tab-content active" id="speed-tab">
-            <!-- 상단 대시보드 (시간 및 메인 긴 누름 영역) -->
             <div class="main-stats" id="main-stats-long-press">
                 <div class="top-dashboard-bar">
                     <div id="elapsed-time" class="top-time-display">00:00:00</div>
@@ -29,7 +22,6 @@
                     </div>
                 </div>
 
-                <!-- 속도계 원형 디자인 카드 -->
                 <div class="speedometer-card">
                     <div class="stat-item">
                         <label>현재 속도</label>
@@ -42,12 +34,10 @@
                 </div>
             </div>
 
-            <!-- 기록 저장 버튼 -->
             <div class="button-group">
                 <button id="saveBtn" class="btn btn-success btn-large" disabled>🔴 기록 저장하기</button>
             </div>
 
-            <!-- 상세 정보 그리드 -->
             <div class="info-grid">
                 <div class="info-item">
                     <label>평균 속도</label>
@@ -67,7 +57,6 @@
                 </div>
             </div>
 
-            <!-- GPS 상세 정보 -->
             <div class="gps-info">
                 <div class="info-item">
                     <label>위도</label>
@@ -85,9 +74,9 @@
             <div style="text-align: center; font-size: 12px; color: var(--text-light); margin-bottom: 10px;" id="gps-status">준비 중...</div>
         </div>
 
-        <!-- 2️⃣ 지도 화면 탭 (완전 분리된 전체 화면) -->
+        <!-- 2️⃣ 지도 화면 탭 -->
         <div class="tab-content" id="map-tab">
-            <div id="map" class="map-container"></div>
+            <div id="map" class="map-container" style="width: 100%; height: 100%; position: absolute;"></div>
         </div>
 
         <!-- 하단 고정 탭 네비게이션 -->
@@ -116,38 +105,20 @@
         </div>
     </div>
 
-    <!-- 스크립트 로드 영역 (원래의 안전한 비동기 로드 구조 복구) -->
+    <!-- 필수 라이브러리 및 스크립트 정석 로드 -->
     <script src="config.js"></script>
-    <script src="gps.js"></script>
+    <!-- 카카오맵 SDK를 동기식으로 안전하게 불러오기 -->
     <script>
-        const mapScript = document.createElement('script');
-        mapScript.src = 'map.js';
-        const appScript = document.createElement('script');
-        appScript.src = 'app.js';
+        const apiKey = (typeof CONFIG !== 'undefined' && CONFIG.KAKAO_MAP_API_KEY) ? CONFIG.KAKAO_MAP_API_KEY : '${{ secrets.KAKAO_MAP_API_KEY }}';
+        document.write(`<script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=${apiKey}&autoload=false"><\/script>`);
+    </script>
+    <script src="gps.js"></script>
+    <script src="map.js"></script>
+    <script src="app.js"></script>
 
-        function initKakaoSDK() {
-            // config.js에 키가 없거나 __KAKAO_API_KEY__를 직접 쓸 경우 대비한 안전 처리
-            const apiKey = (typeof CONFIG !== 'undefined' && CONFIG.KAKAO_MAP_API_KEY) ? CONFIG.KAKAO_MAP_API_KEY : window.__KAKAO_API_KEY__;
-            
-            const kakaoScript = document.createElement('script');
-            kakaoScript.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${apiKey}&autoload=false`;
-            
-            kakaoScript.onload = () => {
-                kakao.maps.load(() => {
-                    document.body.appendChild(mapScript);
-                    mapScript.onload = () => {
-                        document.body.appendChild(appScript);
-                    };
-                });
-            };
-            document.head.appendChild(kakaoScript);
-        }
-
-        // DOM이 로드된 후 SDK 초기화 실행
+    <!-- 탭 전환 이벤트 보장 스크립트 -->
+    <script>
         document.addEventListener('DOMContentLoaded', () => {
-            initKakaoSDK();
-
-            // 하단 탭 전환 이벤트 리스너 안전하게 장착
             const tabButtons = document.querySelectorAll('.tab-btn');
             tabButtons.forEach(btn => {
                 btn.addEventListener('click', () => {
@@ -160,7 +131,6 @@
                     const targetContent = document.getElementById(targetTab + '-tab');
                     if (targetContent) targetContent.classList.add('active');
 
-                    // 지도 탭으로 전환 시 카카오맵 크기 재조정
                     if (targetTab === 'map' && window.mapManager && window.mapManager.map) {
                         setTimeout(() => {
                             window.mapManager.map.relayout();
