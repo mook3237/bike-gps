@@ -10,10 +10,6 @@
     <link rel="apple-touch-icon" href="favicon.svg">
     <meta name="theme-color" content="#121212">
     <meta name="description" content="실시간 자전거 속도 기록 및 경로 추적 웹앱">
-    
-    <script>
-        window.__KAKAO_API_KEY__ = '${{ secrets.KAKAO_MAP_API_KEY }}';
-    </script>
 </head>
 <body>
     <div class="container">
@@ -138,40 +134,44 @@
         </div>
     </div>
 
-    <!-- ✅ 스크립트 로드 순서 중요! -->
+    <!-- ✅ 스크립트 순서대로 정석 로드 (defer 제거 및 순차 삽입) -->
     <script src="config.js"></script>
     <script>
-        // Kakao SDK 로드 대기
-        function initKakao() {
-            const kakaoScript = document.createElement('script');
-            kakaoScript.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${CONFIG.KAKAO_MAP_API_KEY}&autoload=false`;
-            
-            kakaoScript.onload = () => {
-                console.log('✅ Kakao SDK 스크립트 로드됨');
-                kakao.maps.load(() => {
-                    console.log('✅ kakao.maps 초기화됨');
-                });
-            };
-            
-            kakaoScript.onerror = () => {
-                console.error('❌ Kakao SDK 로드 실패');
-            };
-            
-            document.head.appendChild(kakaoScript);
-        }
-        
-        // DOM 로드 완료 후 실행
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', initKakao);
+        // 동기식으로 카카오맵 SDK 안전하게 로드
+        if (typeof CONFIG !== 'undefined' && CONFIG.KAKAO_MAP_API_KEY) {
+            document.write(`<script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=${CONFIG.KAKAO_MAP_API_KEY}&autoload=false"><\/script>`);
         } else {
-            initKakao();
+            console.error('❌ CONFIG.KAKAO_MAP_API_KEY가 없습니다.');
         }
     </script>
-    
-    <!-- defer 사용으로 순차 로드 -->
-    <script src="gps.js" defer></script>
-    <script src="map.js" defer></script>
-    <script src="navigation.js" defer></script>
-    <script src="app.js" defer></script>
+    <script src="gps.js"></script>
+    <script src="map.js"></script>
+    <script src="navigation.js"></script>
+    <script src="app.js"></script>
+
+    <!-- 탭 전환 UI 보장 스크립트 -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const tabButtons = document.querySelectorAll('.tab-btn');
+            tabButtons.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const targetTab = btn.getAttribute('data-tab');
+                    
+                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                    
+                    btn.classList.add('active');
+                    const targetContent = document.getElementById(targetTab + '-tab');
+                    if (targetContent) targetContent.classList.add('active');
+
+                    if (targetTab === 'map' && window.mapManager && window.mapManager.map) {
+                        setTimeout(() => {
+                            window.mapManager.map.relayout();
+                        }, 100);
+                    }
+                });
+            });
+        });
+    </script>
 </body>
 </html>
