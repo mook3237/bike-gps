@@ -2,14 +2,11 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>자전거 GPS 트래커</title>
-    <link rel="stylesheet" href="styles.css?v=5">
+    <link rel="stylesheet" href="styles.css?v=6">
     <link rel="manifest" href="manifest.json">
-    <link rel="icon" href="favicon.svg" type="image/svg+xml">
-    <link rel="apple-touch-icon" href="favicon.svg">
     <meta name="theme-color" content="#121212">
-    <meta name="description" content="실시간 자전거 속도 기록 및 경로 추적 웹앱">
     
     <script>
         window.__KAKAO_API_KEY__ = '${{ secrets.KAKAO_MAP_API_KEY }}';
@@ -19,7 +16,6 @@
     <div class="container">
         <!-- 1️⃣ 속도계 화면 탭 -->
         <div class="tab-content active" id="speed-tab">
-            <!-- 상단 대시보드 (시간 및 메인 긴 누름 영역) -->
             <div class="main-stats" id="main-stats-long-press">
                 <div class="top-dashboard-bar">
                     <div id="elapsed-time" class="top-time-display">00:00:00</div>
@@ -29,7 +25,6 @@
                     </div>
                 </div>
 
-                <!-- 속도계 원형 디자인 카드 -->
                 <div class="speedometer-card">
                     <div class="stat-item">
                         <label>현재 속도</label>
@@ -42,12 +37,10 @@
                 </div>
             </div>
 
-            <!-- 기록 저장 버튼 -->
             <div class="button-group">
                 <button id="saveBtn" class="btn btn-success btn-large" disabled>🔴 기록 저장하기</button>
             </div>
 
-            <!-- 상세 정보 그리드 -->
             <div class="info-grid">
                 <div class="info-item">
                     <label>평균 속도</label>
@@ -67,7 +60,6 @@
                 </div>
             </div>
 
-            <!-- GPS 상세 정보 -->
             <div class="gps-info">
                 <div class="info-item">
                     <label>위도</label>
@@ -86,10 +78,9 @@
         </div>
 
         <!-- 2️⃣ 지도 화면 탭 -->
-        <div class="tab-content" id="map-tab">
-            <div id="map" class="map-container"></div>
+        <div class="tab-content" id="map-tab" style="position: relative; padding: 0;">
+            <div id="map" style="width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 1;"></div>
 
-            <!-- 상단 오버레이 (시간, 거리, 속도) -->
             <div class="map-top-overlay">
                 <div class="map-top-bar">
                     <button class="map-float-btn" id="mapMenuBtn" style="width: 36px; height: 36px; font-size: 14px;">☰</button>
@@ -108,7 +99,7 @@
                 </div>
             </div>
 
-            <!-- 목적지 및 편도/왕복 설정 패널 -->
+            <!-- 편도/왕복 및 목적지 설정 패널 -->
             <div class="route-control-panel">
                 <div style="display: flex; gap: 6px;">
                     <select id="routeType" style="flex: 1;">
@@ -119,14 +110,13 @@
                 </div>
             </div>
 
-            <!-- 우측 하단 플로팅 버튼 (현재위치, 설정) -->
             <div class="map-float-controls">
                 <button class="map-float-btn" id="mapCurrentLocBtn" title="현재 위치">📍</button>
                 <button class="map-float-btn" id="mapSettingsBtn" title="지도 설정">⚙️</button>
             </div>
         </div>
 
-        <!-- 하단 고정 탭 네비게이션 (속도계 / 지도) -->
+        <!-- 하단 고정 탭 바 -->
         <div class="tabs">
             <button class="tab-btn active" data-tab="speed">
                 <span>⏱️</span>
@@ -152,33 +142,25 @@
         </div>
     </div>
 
-    <!-- 스크립트 로드 영역 -->
+    <!-- 스크립트 로드 -->
     <script src="config.js"></script>
     <script src="gps.js"></script>
+    <script src="map.js"></script>
+    <script src="app.js"></script>
     <script>
-        const mapScript = document.createElement('script');
-        mapScript.src = 'map.js';
-        const appScript = document.createElement('script');
-        appScript.src = 'app.js';
-
-        function initKakaoSDK() {
-            const kakaoScript = document.createElement('script');
-            kakaoScript.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${CONFIG.KAKAO_MAP_API_KEY}&autoload=false`;
-            
-            kakaoScript.onload = () => {
-                kakao.maps.load(() => {
-                    document.body.appendChild(mapScript);
-                    mapScript.onload = () => {
-                        document.body.appendChild(appScript);
-                    };
-                });
-            };
-            document.head.appendChild(kakaoScript);
-        }
-
-        if (typeof CONFIG !== 'undefined' && CONFIG.KAKAO_MAP_API_KEY) {
-            initKakaoSDK();
-        }
+        // 카카오 맵 SDK 동적 로드 안전장치
+        window.addEventListener('DOMContentLoaded', () => {
+            if (typeof CONFIG !== 'undefined' && CONFIG.KAKAO_MAP_API_KEY) {
+                const kakaoScript = document.createElement('script');
+                kakaoScript.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${CONFIG.KAKAO_MAP_API_KEY}&autoload=false`;
+                kakaoScript.onload = () => {
+                    kakao.maps.load(() => {
+                        console.log("카카오 맵 로드 완료");
+                    });
+                };
+                document.head.appendChild(kakaoScript);
+            }
+        });
     </script>
 </body>
 </html>
