@@ -15,7 +15,6 @@
     <div class="container">
         <!-- 1️⃣ 속도계 화면 탭 -->
         <div class="tab-content active" id="speed-tab">
-            <!-- 상단 대시보드 (시간 및 메인 긴 누름 영역) -->
             <div class="main-stats" id="main-stats-long-press">
                 <div class="top-dashboard-bar">
                     <div id="elapsed-time" class="top-time-display">00:00:00</div>
@@ -25,7 +24,6 @@
                     </div>
                 </div>
 
-                <!-- 속도계 원형 디자인 카드 -->
                 <div class="speedometer-card">
                     <div class="stat-item">
                         <label>현재 속도</label>
@@ -38,12 +36,10 @@
                 </div>
             </div>
 
-            <!-- 기록 저장 버튼 -->
             <div class="button-group">
                 <button id="saveBtn" class="btn btn-success btn-large" disabled>🔴 기록 저장하기</button>
             </div>
 
-            <!-- 상세 정보 그리드 -->
             <div class="info-grid">
                 <div class="info-item">
                     <label>평균 속도</label>
@@ -63,7 +59,6 @@
                 </div>
             </div>
 
-            <!-- GPS 상세 정보 -->
             <div class="gps-info">
                 <div class="info-item">
                     <label>위도</label>
@@ -83,7 +78,6 @@
 
         <!-- 2️⃣ 지도 화면 탭 -->
         <div class="tab-content" id="map-tab">
-            <!-- 네비게이션 컨트롤 패널 -->
             <div class="nav-control-panel" id="nav-control-panel">
                 <div class="nav-toggle-group">
                     <button class="nav-toggle-btn active" data-mode="single">편도</button>
@@ -108,7 +102,6 @@
             <div id="map" class="map-container"></div>
         </div>
 
-        <!-- 하단 고정 탭 네비게이션 -->
         <div class="tabs">
             <button class="tab-btn active" data-tab="speed">
                 <span>⏱️</span>
@@ -121,7 +114,6 @@
         </div>
     </div>
 
-    <!-- 설정 메뉴 모달 -->
     <div class="settings-menu" id="settings-menu">
         <div class="settings-title">메인 정보 선택</div>
         <div class="settings-grid">
@@ -134,15 +126,15 @@
         </div>
     </div>
 
-    <!-- ✅ GitHub Secrets 주입용 임시 변수 할당 -->
+    <!-- ✅ 깃허브 시크릿 및 Vercel 연동용 API 키 주입부 -->
     <script>
+        window.__KAKAI_API_KEY__ = ''; // 기본값 빈 문자열
+        // GitHub Actions 빌드 시 치환되거나 Vercel 환경변수에서 주입됨
         window.__KAKAO_API_KEY__ = '${{ secrets.KAKAO_MAP_API_KEY }}';
     </script>
 
-    <!-- ✅ 스크립트 순서대로 정석 로드 -->
     <script src="config.js"></script>
     <script>
-        // 동기식으로 카카오맵 SDK 안전하게 로드
         if (typeof CONFIG !== 'undefined' && CONFIG.KAKAO_MAP_API_KEY) {
             document.write(`<script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=${CONFIG.KAKAO_MAP_API_KEY}&autoload=false"><\/script>`);
         } else {
@@ -154,7 +146,6 @@
     <script src="navigation.js"></script>
     <script src="app.js"></script>
 
-    <!-- 탭 전환 UI 보장 스크립트 -->
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const tabButtons = document.querySelectorAll('.tab-btn');
