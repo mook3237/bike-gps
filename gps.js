@@ -12,6 +12,12 @@ class GPSTracker {
         this.positions = [];
         this.lastUpdateTime = null;
         this.lastTimestamp = null;
+        this.speeds = [];
+        this.targetSpeedReached = false;
+        
+        // DOM 캐싱
+        this.$targetSpeedInput = document.getElementById('target-speed');
+        
         log('GPSTracker 생성됨');
     }
 
@@ -41,6 +47,9 @@ class GPSTracker {
                 this.positions.push(coords);
 
                 onSuccess(coords);
+                
+                // 🆕 목표속도 체크
+                this.checkTargetSpeed(position.coords);
             },
             (error) => {
                 let errorMsg = '';
@@ -72,11 +81,64 @@ class GPSTracker {
         }
     }
 
+    // 🆕 목표속도 체크
+    checkTargetSpeed(coords) {
+        const targetSpeed = parseFloat(this.$targetSpeedInput.value);
+        if (!targetSpeed || targetSpeed <= 0) return;
+
+        // 현재 속도 계산 (m/s -> km/h)
+        if (this.positions.length >= 2) {
+            const last = this.positions[this.positions.length - 1];
+            const prev = this.positions[this.positions.length - 2];
+            
+            const distance = this.calculateDistance(
+                prev.latitude, prev.longitude,
+                last.latitude, last.longitude
+            );
+            
+            const speed = (distance / this.lastUpdateTime) * 3.6; // m/s to km/h
+            
+            if (speed >= 0 && speed < 100) {
+                this.speeds.push(speed);
+                if (this.speeds.length > 100) this.speeds.shift();
+            }
+
+            // 목표속도 도달 체크
+            if (speed >= targetSpeed && !this.targetSpeedReached) {
+                this.targetSpeedReached = true;
+                log('🚀 목표속도 도달!');
+                
+                // 네비게이션 마커 색상 변경
+                if (typeof bikeNav !== 'undefined') {
+                    bikeNav.markTargetReached();
+                }
+            } else if (speed < targetSpeed && this.targetSpeedReached) {
+                this.targetSpeedReached = false;
+            }
+        }
+    }
+
+    // 거리 계산 (Haversine)
+    calculateDistance(lat1, lng1, lat2, lng2) {
+        const R = 6371000;
+        const rad = Math.PI / 180;
+        const dLat = (lat2 - lat1) * rad;
+        const dLng = (lng2 - lng1) * rad;
+        
+        const a = Math.sin(dLat / 2) ** 2 +
+                  Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLng / 2) ** 2;
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        
+        return R * c;
+    }
+
     // 초기화
     reset() {
         this.positions = [];
         this.lastUpdateTime = null;
         this.lastTimestamp = null;
+        this.speeds = [];
+        this.targetSpeedReached = false;
     }
 }
 
