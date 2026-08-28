@@ -255,6 +255,7 @@ class BikeGPSApp {
     }
 
     // 📍 위치 업데이트
+        // 📍 위치 업데이트
     onLocationUpdate(coords) {
         const { latitude, longitude, accuracy } = coords;
 
@@ -262,6 +263,12 @@ class BikeGPSApp {
         this.latitudeEl.textContent = latitude.toFixed(6);
         this.longitudeEl.textContent = longitude.toFixed(6);
         this.accuracyEl.textContent = Math.round(accuracy) + ' m';
+
+        // 🚨 정확도가 너무 나쁘면(예: 30m 이상) 위치 휨으로 판단하고 무시
+        if (accuracy > 30) {
+            log('⚠️ GPS 정확도 불량으로 무시됨: ' + accuracy + 'm');
+            return;
+        }
 
         // 거리 계산
         if (this.lastLocation) {
@@ -271,16 +278,28 @@ class BikeGPSApp {
                 latitude,
                 longitude
             );
-            this.totalDistance += distance;
 
-            // 속도 계산 (마지막 위치 업데이트 이후 시간)
-            const timeDiff = gpsTracker.lastUpdateTime || 5; // 기본값 5초
-            const speed = (distance / timeDiff) * 3600; // km/h
+            // 시간 간격 계산 (초 단위)
+            const now = Date.now();
+            const timeDiff = this.lastTime ? (now - this.lastTime) / 1000 : 5;
+            this.lastTime = now;
 
-            this.speeds.push(speed);
-            if (speed > this.maxSpeed) {
-                this.maxSpeed = speed;
+            if (timeDiff > 0) {
+                const speed = (distance / timeDiff) * 3600; // km/h
+
+                // 🚨 자전거 현실 속도계 한계 설정 (예: 시속 70km 이상은 GPS 휨으로 간주)
+                if (speed < 70) {
+                    this.totalDistance += distance;
+                    this.speeds.push(speed);
+                    if (speed > this.maxSpeed) {
+                        this.maxSpeed = speed;
+                    }
+                } else {
+                    log('⚠️ 비정상적인 속도 감지 및 무시: ' + speed.toFixed(1) + ' km/h');
+                }
             }
+        } else {
+            this.lastTime = Date.now();
         }
 
         this.lastLocation = { latitude, longitude };
@@ -292,6 +311,7 @@ class BikeGPSApp {
         // 통계 업데이트
         this.updateStats();
     }
+
 
     // ❌ GPS 오류
     onGPSError(error) {
