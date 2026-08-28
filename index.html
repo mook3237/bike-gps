@@ -17,13 +17,12 @@
 </head>
 <body>
     <div class="container">
-        <!-- 속도 기록 탭 -->
+        <!-- 1️⃣ 속도계 화면 탭 -->
         <div class="tab-content active" id="speed-tab">
             <!-- 상단 대시보드 (시간 및 메인 긴 누름 영역) -->
             <div class="main-stats" id="main-stats-long-press">
                 <div class="top-dashboard-bar">
                     <div id="elapsed-time" class="top-time-display">00:00:00</div>
-                    <!-- 빠른 제어 버튼 그룹 -->
                     <div class="mini-btn-group" style="display: flex; gap: 8px;">
                         <button id="startBtn" class="btn btn-primary" style="padding: 8px 14px; min-height: 36px; border-radius: 50%;">▶</button>
                         <button id="stopBtn" class="btn btn-danger" style="padding: 8px 14px; min-height: 36px; border-radius: 50%;" disabled>⏹</button>
@@ -37,19 +36,18 @@
                         <p id="current-speed" class="big-text">0.0</p>
                         <p class="speed-unit">km/h</p>
                     </div>
-                    <!-- 두 번째 메트릭 (예: 거리 등) -->
                     <div class="stat-item" style="margin-top: 5px;">
                         <p id="current-distance" class="sub-speedometer-stat">0.00<span>km</span></p>
                     </div>
                 </div>
             </div>
 
-            <!-- 기록 저장 버튼 별도 분리 -->
+            <!-- 기록 저장 버튼 -->
             <div class="button-group">
                 <button id="saveBtn" class="btn btn-success btn-large" disabled>🔴 기록 저장하기</button>
             </div>
 
-            <!-- 상세 정보 그리드 (스크린샷의 2단 박스 형태 반영) -->
+            <!-- 상세 정보 그리드 -->
             <div class="info-grid">
                 <div class="info-item">
                     <label>평균 속도</label>
@@ -87,7 +85,7 @@
             <div style="text-align: center; font-size: 12px; color: var(--text-light); margin-bottom: 10px;" id="gps-status">준비 중...</div>
         </div>
 
-        <!-- 지도 탭 -->
+        <!-- 2️⃣ 지도 화면 탭 (완전 분리된 전체 화면) -->
         <div class="tab-content" id="map-tab">
             <div id="map" class="map-container"></div>
         </div>
