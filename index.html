@@ -1,15 +1,28 @@
+
 <!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>자전거 GPS 트래커</title>
-    <link rel="stylesheet" href="styles.css">
-    <link rel="manifest" href="manifest.json">
-    <link rel="icon" data-icon="bikeicon">
-    <meta name="theme-color" content="#121212">
-    <meta name="description" content="실시간 자전거 속도 기록 및 경로 추적 웹앱">
+    <title>Bike GPS App</title>
+    <!-- CSS 파일들 -->
+    <link rel="stylesheet" href="style.css">
 </head>
+<body>
+    <!-- UI 컨텐츠들... -->
+    <div id="gps-status">준비중...</div>
+
+    <!-- 1. 카카오 지도 SDK를 비동기(autoload=false)로 불러오기 -->
+    <script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=YOUR_API_KEY&autoload=false"></script>
+    
+    <!-- 2. 의존 순서대로 스크립트를 안전하게 로드하는 로더 혹은 순차적 스크립트 태그 -->
+    <script src="config.js"></script>
+    <script src="gps.js"></script>
+    <script src="map.js"></script>
+    <script src="navigation.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
 <body>
     <div class="container">
         <!-- 1️⃣ 속도계 화면 탭 -->
