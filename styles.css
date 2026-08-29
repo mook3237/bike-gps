@@ -52,13 +52,24 @@ body {
 
 /* 지도 탭 전용 스타일 (스크롤 방지 및 전체 화면 채우기) */
 #map-tab {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: calc(100vh - 60px); /* 상단 메뉴나 하단 탭바 높이(예: 60px)를 뺀 나머지 전체 화면 */
     overflow: hidden;
     padding: 0;
+    display: none; /* 탭 전환용 기본 숨김 */
+}
+
+/* 탭이 활성화되었을 때 보이도록 처리 (만약 클래스로 제어한다면) */
+#map-tab.active {
+    display: block; 
 }
 
 .map-container {
     width: 100%;
-    height: 100%;
+    height: 100%; /* 부모(#map-tab)의 높이를 온전히 채움 */
     border-radius: 0;
     border: none;
     background: #E8E8E8;
