@@ -405,25 +405,26 @@ class BikeGPSApp {
             if (content.id === `${tabName}-tab`) {
                 content.classList.add('active');
 
-                // 지도 탭으로 전환될 때 회색 화면 방지 및 크기 재계산
-                if (tabName === 'map' && typeof mapManager !== 'undefined') {
+                // 🗺️ 지도 탭을 누른 순간에 화면이 확실히 눈에 보일 때 생성/새로고침
+                if (tabName === 'map') {
                     setTimeout(() => {
-                        if (mapManager.map) {
-                            mapManager.map.relayout();
-                            // 만약 저장된 마지막 위치나 현재 위치가 있다면 중심 재잡기
-                            if (this.lastLocation) {
-                                mapManager.map.setCenter(new kakao.maps.LatLng(this.lastLocation.latitude, this.lastLocation.longitude));
+                        if (typeof mapManager !== 'undefined') {
+                            if (!mapManager.map) {
+                                // 지도가 아직 생성 안 됐으면 지금 생성! (크기가 0이 아닐 때 만들어짐)
+                                mapManager.initMap();
+                            } else {
+                                // 이미 생성되어 있다면 레이아웃 재계산 및 중심 이동
+                                mapManager.map.relayout();
+                                if (this.lastLocation) {
+                                    mapManager.map.setCenter(new kakao.maps.LatLng(this.lastLocation.latitude, this.lastLocation.longitude));
+                                }
                             }
-                        } else {
-                            // 지도가 아직 생성 전이었다면 여기서 초기화
-                            mapManager.initMap();
                         }
-                    }, 150);
+                    }, 100);
                 }
             }
         });
     }
-}
 
 // ====== 앱 초기화 ======
 log('app.js 로드됨');
