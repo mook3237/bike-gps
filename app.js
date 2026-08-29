@@ -1,3 +1,13 @@
+console.log('1단계: app.js 파일 파싱 시작됨');
+
+window.addEventListener('error', function(e) {
+    console.error('🚨 [전역 에러 감지]:', e.message, '파일:', e.filename, '라인:', e.lineno);
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('2단계: DOMContentLoaded 이벤트 발생 완료');
+});
+
 // 🎯 메인 앱 클래스
 class BikeGPSApp {
     constructor() {
@@ -182,7 +192,7 @@ class BikeGPSApp {
         });
     }
 
-  // 🗺️ 지도 초기화
+    // 🗺️ 지도 초기화
     initMap() {
         log('🗺️ 지도 초기화');
         if (typeof mapManager !== 'undefined' && typeof mapManager.initMap === 'function') {
@@ -388,7 +398,7 @@ class BikeGPSApp {
         if (this.gpsStatusEl) this.gpsStatusEl.textContent = message;
     }
 
-   // 탭 전환
+    // 탭 전환
     switchTab(tabName) {
         if (!tabName) return;
         log(`📋 탭 전환: ${tabName}`);
@@ -425,6 +435,7 @@ class BikeGPSApp {
             }
         });
     }
+} // ⬅️ 여기에 빠져 있던 클래스 닫는 괄호 추가 완료
 
 // ====== 앱 초기화 ======
 log('app.js 로드됨');
@@ -434,10 +445,8 @@ if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
         log('✅ DOM 로드 완료 - 앱 시작!');
         bikeApp = new BikeGPSApp();
-        // ⚠️ 앱 시작 시점에 지도를 바로 만들지 않고, 지도 탭을 눌렀을 때 생성되도록 생략합니다.
     });
 } else {
     log('✅ DOM 이미 로드됨 - 앱 시작!');
     bikeApp = new BikeGPSApp();
-    // ⚠️ 마찬가지로 여기도 app.initMap();을 호출하지 않습니다.
 }
