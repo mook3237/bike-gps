@@ -6,7 +6,7 @@
     <title>자전거 GPS 트래커</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="manifest" href="manifest.json">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚲</text></svg>">
+    <link rel="icon" data-icon="bikeicon">
     <meta name="theme-color" content="#121212">
     <meta name="description" content="실시간 자전거 속도 기록 및 경로 추적 웹앱">
 </head>
@@ -113,48 +113,102 @@
         </div>
     </div>
 
-    <!-- ✅ 1. 설정 및 API 키 주입 -->
+    <!-- ✅ 1. 설정 로드 -->
     <script>
         window.__KAKAO_API_KEY__ = '${{ secrets.KAKAO_MAP_API_KEY }}';
     </script>
     <script src="config.js"></script>
 
-    <!-- ✅ 2. 카카오맵 SDK 동적 로드 -->
+    <!-- ✅ 2. 카카오맵 SDK 동적 로드 (콜백 방식) -->
     <script>
-        try {
-            // 로컬 테스트 시 임시 키가 있다면 넣고 테스트 가능, 깃허브 액션 빌드 시 자동 치환됨
-            const apiKey = (window.CONFIG && window.CONFIG.KAKAO_MAP_API_KEY) || window.__KAKAO_API_KEY__ || '';
-            if (apiKey && !apiKey.includes('secrets.')) {
-                document.write(`<script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=${apiKey}&autoload=false"><\/script>`);
-                console.log('✅ 카카오맵 SDK 로드 시도');
-            } else {
-                console.warn('⚠️ 깃허브 시크릿 키가 아직 치환되지 않았거나 비어있습니다. (로컬 환경)');
-            }
-        } catch (e) {
-            console.error('❌ 카카오맵 SDK 로드 에러:', e);
+        console.log('🚀 카카오 SDK 로드 시작...');
+        
+        function loadScriptsAfterKakao() {
+            console.log('🔌 나머지 스크립트 로드 시작...');
+            
+            const scripts = ['gps.js', 'map.js', 'navigation.js', 'app.js'];
+            let loaded = 0;
+            
+            scripts.forEach(src => {
+                const script = document.createElement('script');
+                script.src = src;
+                script.onload = () => {
+                    loaded++;
+                    console.log(`✅ ${src} 로드 완료 (${loaded}/${scripts.length})`);
+                    
+                    if (loaded === scripts.length) {
+                        console.log('🎉 모든 스크립트 로드 완료!');
+                    }
+                };
+                script.onerror = () => {
+                    console.error(`❌ ${src} 로드 실패!`);
+                };
+                document.body.appendChild(script);
+            });
+        }
+
+        // 카카오 SDK 로드
+        if (CONFIG && CONFIG.KAKAO_MAP_API_KEY && !CONFIG.KAKAO_MAP_API_KEY.includes('secrets')) {
+            const kakaoScript = document.createElement('script');
+            kakaoScript.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${CONFIG.KAKAO_MAP_API_KEY}&autoload=false`;
+            
+            kakaoScript.onload = () => {
+                console.log('✅ 카카오 SDK 로드됨');
+                kakao.maps.load(() => {
+                    console.log('✅ kakao.maps 초기화됨');
+                    loadScriptsAfterKakao();
+                });
+            };
+            
+            kakaoScript.onerror = () => {
+                console.error('❌ 카카오 SDK 로드 실패');
+                loadScriptsAfterKakao(); // API 키 없어도 일단 진행
+            };
+            
+            document.head.appendChild(kakaoScript);
+        } else {
+            console.warn('⚠️ API 키 없음 (깃허브 환경 변수 대기 중)');
+            setTimeout(loadScriptsAfterKakao, 1000);
         }
     </script>
 
-    <!-- ✅ 3. 핵심 로직 파일 순서대로 직접 로드 -->
-    <script src="gps.js"></script>
-    <script src="map.js"></script>
-    <script src="navigation.js"></script>
-    <script src="app.js"></script>
-
-    <!-- ✅ 4. 전체 시스템 진단 스크립트 -->
+    <!-- ✅ 3. 전체 시스템 진단 -->
     <script>
         window.addEventListener('error', function(event) {
-            console.error(`🚨 [전역 에러] 파일: ${event.filename} | 라인: ${event.lineno} | 내용: ${event.message}`);
+            console.error(`🚨 [에러] ${event.filename}:${event.lineno} - ${event.message}`);
         });
 
-        document.addEventListener('DOMContentLoaded', () => {
-            console.log('🔍 [DOM 체크] 모든 스크립트 로드 완료 및 DOM 검사 시작');
-            const checkElements = ['startBtn', 'stopBtn', 'saveBtn', 'current-speed', 'map'];
-            checkElements.forEach(id => {
-                const el = document.getElementById(id);
-                if (!el) console.warn(`⚠️ [요소 경고] ID '${id}'를 찾을 수 없습니다.`);
-                else console.log(`✔️ [요소 확인] ID '${id}' 정상`);
-            });
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                console.log('🔍 [최종 체크]');
+                const checks = [
+                    { id: 'startBtn', name: '시작 버튼' },
+                    { id: 'stopBtn', name: '중지 버튼' },
+                    { id: 'saveBtn', name: '저장 버튼' },
+                    { id: 'map', name: '지도' }
+                ];
+                
+                checks.forEach(check => {
+                    const el = document.getElementById(check.id);
+                    if (el) {
+                        console.log(`✅ ${check.name} 발견`);
+                    } else {
+                        console.error(`❌ ${check.name} 없음!`);
+                    }
+                });
+                
+                if (typeof gpsTracker !== 'undefined') {
+                    console.log('✅ gpsTracker 로드됨');
+                } else {
+                    console.error('❌ gpsTracker 없음!');
+                }
+                
+                if (typeof mapManager !== 'undefined') {
+                    console.log('✅ mapManager 로드됨');
+                } else {
+                    console.error('❌ mapManager 없음!');
+                }
+            }, 2000);
         });
     </script>
 </body>
