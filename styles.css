@@ -5,18 +5,18 @@
 }
 
 :root {
-    --primary: #00B4D8;
-    --primary-dark: #0077B6;
-    --primary-light: #90E0EF;
-    --text-dark: #FFFFFF;
-    --text-light: #A0AAB2;
-    --bg-light: #121212;
-    --bg-white: #1E1E1E;
-    --border-color: #2D2D2D;
+    --primary: #4CAF50;
+    --primary-dark: #388E3C;
+    --primary-light: #81C784;
+    --text-dark: #2C3E50;
+    --text-light: #7F8C8D;
+    --bg-light: #FAFAFA;
+    --bg-white: #FFFFFF;
+    --border-color: #E8E8E8;
     --success: #4CAF50;
     --warning: #FF9800;
-    --error: #FF4D4D;
-    --info: #00B4D8;
+    --error: #F44336;
+    --info: #2196F3;
 }
 
 body {
@@ -30,207 +30,299 @@ body {
     max-width: 100%;
     padding: 0;
     margin: 0 auto;
-    padding-bottom: 70px; /* 하단 탭바 공간 확보 */
 }
 
-/* ═══════════════════ 헤더 숨김 또는 미니멀하게 처리 (선택) ═══════════════════ */
+/* ═══════════════════ 헤더 ═══════════════════ */
 .header {
-    display: none; /* 스크린샷처럼 상단 헤더를 없애고 계기판에 집중 */
-}
-
-/* ═══════════════════ 상단 메인 게이지 영역 ═══════════════════ */
-.main-stats {
-    background: var(--bg-light);
-    padding: 20px 15px 15px 15px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    position: relative;
-    user-select: none;
-}
-
-/* 상단 컨트롤러 (시간, 재생/정지 버튼 배치용 바) */
-.top-dashboard-bar {
-    width: 100%;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 15px;
-    padding: 0 10px;
-}
-
-.top-time-display {
-    font-size: 32px;
-    font-weight: 700;
-    letter-spacing: -1px;
-    color: var(--text-dark);
-}
-
-/* 원형 속도계 느낌을 주는 카드 디자인 */
-.speedometer-card {
-    width: 100%;
-    max-width: 360px;
-    background: radial-gradient(circle, #2A2A2A 0%, #1A1A1A 100%);
-    border: 2px solid #333;
-    border-radius: 50% 50% 20px 20px / 40% 40% 20px 20px;
-    padding: 30px 20px 25px 20px;
     text-align: center;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-    margin-bottom: 15px;
+    padding: 25px 20px;
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+    color: white;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
 }
 
-.speedometer-card .stat-item {
-    background: transparent;
-    border: none;
-    box-shadow: none;
-    padding: 0;
-}
-
-.speedometer-card .stat-item label {
-    font-size: 13px;
-    color: var(--text-light);
-    margin-bottom: 5px;
-}
-
-.big-text {
-    font-size: 56px;
+.header h1 {
+    font-size: 28px;
     font-weight: 700;
-    color: var(--text-dark);
-    line-height: 1.1;
-    letter-spacing: -2px;
-}
-
-.speed-unit {
-    font-size: 16px;
-    color: var(--text-light);
-    margin-bottom: 15px;
-    font-weight: 500;
-}
-
-.sub-speedometer-stat {
-    font-size: 26px;
-    font-weight: 600;
-    color: var(--text-dark);
+    margin-bottom: 5px;
     letter-spacing: -0.5px;
 }
 
-.sub-speedometer-stat span {
-    font-size: 12px;
-    color: var(--text-light);
-    display: inline-block;
-    margin-left: 2px;
+.header .subtitle {
+    font-size: 13px;
+    opacity: 0.9;
+    font-weight: 400;
 }
 
-/* ═══════════════════ 버튼 그룹 스타일 개편 ═══════════════════ */
+/* ═══════════════════ 탭 ═══════════════════ */
+.tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    background: var(--bg-white);
+    padding: 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.tab-btn {
+    padding: 16px 20px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-light);
+    transition: all 0.25s ease;
+    position: relative;
+    letter-spacing: 0.3px;
+}
+
+.tab-btn:hover {
+    color: var(--text-dark);
+    background: rgba(76, 175, 80, 0.04);
+}
+
+.tab-btn.active {
+    color: var(--primary);
+    background: transparent;
+}
+
+.tab-btn.active::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--primary);
+}
+
+/* ═══════════════════ 탭 컨텐츠 ═══════════════════ */
+.tab-content {
+    display: none;
+    padding: 20px;
+    animation: fadeIn 0.3s ease;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ═══════════════════ 메인 통계 (큼!) ═══════════════════ */
+.main-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+    margin-bottom: 25px;
+    user-select: none;
+}
+
+.stat-item {
+    background: var(--bg-white);
+    padding: 25px 20px;
+    border-radius: 12px;
+    text-align: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    border: 1px solid var(--border-color);
+}
+
+.stat-item label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-light);
+    font-weight: 600;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.big-text {
+    font-size: 36px;
+    font-weight: 700;
+    color: var(--primary);
+    line-height: 1.2;
+    letter-spacing: -1px;
+}
+
+.medium-text {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-dark);
+}
+
+/* ═══════════════════ 버튼 그룹 ═══════════════════ */
 .button-group {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr;
     gap: 10px;
-    padding: 0 15px;
-    margin-bottom: 20px;
+    margin-bottom: 25px;
 }
 
 .btn {
-    flex: 1;
-    padding: 12px;
+    padding: 16px 20px;
     border: none;
     border-radius: 8px;
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.25s ease;
+    letter-spacing: 0.3px;
+    min-height: 50px;
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 44px;
 }
 
 .btn-primary {
     background: var(--info);
     color: white;
+    box-shadow: 0 2px 6px rgba(33, 150, 243, 0.2);
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: #1976D2;
+    box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
+    transform: translateY(-1px);
+}
+
+.btn-primary:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+.btn-primary:disabled {
+    background: #BDBDBD;
+    cursor: not-allowed;
+    opacity: 0.6;
 }
 
 .btn-success {
-    background: #E63946;
+    background: #FF6B6B;
     color: white;
+    box-shadow: 0 2px 6px rgba(255, 107, 107, 0.2);
+}
+
+.btn-success:hover:not(:disabled) {
+    background: #FF5252;
+    box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
+    transform: translateY(-1px);
+}
+
+.btn-success:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+.btn-success:disabled {
+    background: #BDBDBD;
+    cursor: not-allowed;
+    opacity: 0.6;
 }
 
 .btn-danger {
-    background: #457B9D;
+    background: #EF5350;
     color: white;
+    box-shadow: 0 2px 6px rgba(244, 67, 54, 0.2);
 }
 
-.btn:disabled {
-    background: #2C2C2C;
-    color: #555;
+.btn-danger:hover:not(:disabled) {
+    background: #E53935;
+    box-shadow: 0 4px 12px rgba(244, 67, 54, 0.3);
+    transform: translateY(-1px);
+}
+
+.btn-danger:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+.btn-danger:disabled {
+    background: #BDBDBD;
     cursor: not-allowed;
+    opacity: 0.6;
 }
 
-/* ═══════════════════ 정보 그리드 (2열 카드 형태) ═══════════════════ */
+.btn-large {
+    min-height: 56px;
+    font-size: 16px;
+    font-weight: 700;
+}
+
+/* ═══════════════════ 정보 그리드 ═══════════════════ */
 .info-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 1px;
-    background: var(--border-color); /* 그리드 테두리 효과 */
-    border-top: 1px solid var(--border-color);
-    border-bottom: 1px solid var(--border-color);
+    gap: 12px;
     margin-bottom: 20px;
 }
 
 .info-item {
     background: var(--bg-white);
-    padding: 18px 15px;
-    border: none;
-    box-shadow: none;
-    border-radius: 0;
+    padding: 16px;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
 }
 
 .info-item label {
     display: block;
-    font-size: 12px;
+    font-size: 11px;
     color: var(--text-light);
-    font-weight: 500;
+    font-weight: 600;
     margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
 .info-item p {
-    font-size: 22px;
-    font-weight: 600;
+    font-size: 16px;
+    font-weight: 700;
     color: var(--text-dark);
     margin: 0;
-    letter-spacing: -0.5px;
 }
 
-/* 입력 필드 다크 테마 */
+/* 입력 필드 */
 .input-field {
     width: 100%;
-    padding: 8px 10px;
+    padding: 10px 12px;
     border: 1px solid var(--border-color);
     border-radius: 6px;
     font-size: 14px;
-    background: #2A2A2A;
+    font-weight: 500;
+    background: var(--bg-white);
     color: var(--text-dark);
+    transition: all 0.2s ease;
 }
 
 .input-field:focus {
     outline: none;
     border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.1);
+    background: white;
 }
 
-/* ═══════════════════ GPS 상세 정보 ═══════════════════ */
+.input-field::placeholder {
+    color: var(--text-light);
+}
+
+/* ═══════════════════ GPS 정보 ═══════════════════ */
 .gps-info {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 10px;
     background: var(--bg-white);
-    margin: 0 15px 20px 15px;
-    padding: 12px;
-    border-radius: 8px;
+    padding: 15px;
+    border-radius: 10px;
     border: 1px solid var(--border-color);
 }
 
 .gps-info .info-item {
     background: transparent;
+    border: none;
     padding: 0;
+    box-shadow: none;
 }
 
 .gps-info label {
@@ -238,77 +330,37 @@ body {
 }
 
 .gps-info p {
-    font-size: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-dark);
 }
 
-/* ═══════════════════ 하단 고정 탭 바 (스크린샷 스타일) ═══════════════════ */
-.tabs {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    background: #181818;
-    border-top: 1px solid var(--border-color);
-    z-index: 100;
-    height: 60px;
-}
-
-.tab-btn {
-    background: transparent;
-    border: none;
-    color: var(--text-light);
-    font-size: 12px;
-    font-weight: 500;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    gap: 4px;
-}
-
-.tab-btn.active {
-    color: #FF5C5C; /* 스크린샷 하단 활성 아이콘 색상 포인트 */
-    background: transparent;
-}
-
-.tab-btn.active::after {
-    display: none;
-}
-
-/* ═══════════════════ 지도 탭 ═══════════════════ */
+/* ═══════════════════ 지도 ═══════════════════ */
 .map-container {
     width: 100%;
-    height: calc(100vh - 60px);
-    border-radius: 0;
-    border: none;
+    height: 500px;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    background: #E8E8E8;
+    border: 1px solid var(--border-color);
 }
 
-.tab-content {
-    padding: 0;
-}
-
-.tab-content.active {
-    display: block;
-}
-
-#speed-tab {
-    padding-bottom: 20px;
-}
-
-/* ═══════════════════ 설정 메뉴 모달 ═══════════════════ */
+/* ═══════════════════ 설정 메뉴 ═══════════════════ */
 .settings-menu {
-    display: none !important;
+    display: none;
     position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0, 0, 0, 0.8);
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
     z-index: 1000;
+    animation: fadeIn 0.2s ease;
 }
 
 .settings-menu.active {
-    display: flex !important;
+    display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
@@ -319,6 +371,7 @@ body {
     font-size: 18px;
     font-weight: 700;
     margin-bottom: 20px;
+    text-align: center;
 }
 
 .settings-grid {
@@ -331,11 +384,149 @@ body {
 }
 
 .settings-btn {
-    padding: 16px;
-    background: #2A2A2A;
+    padding: 16px 20px;
+    background: var(--primary);
     color: white;
-    border: 1px solid var(--border-color);
+    border: none;
     border-radius: 10px;
     font-size: 14px;
+    font-weight: 600;
     cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+}
+
+.settings-btn:hover {
+    background: var(--primary-dark);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(76, 175, 80, 0.4);
+}
+
+.settings-btn:active {
+    transform: translateY(0);
+}
+
+.settings-btn.active {
+    background: var(--primary-dark);
+    border: 2px solid white;
+}
+
+/* ═══════════════════ 반응형 ═══════════════════ */
+@media (max-width: 600px) {
+    .header {
+        padding: 20px 16px;
+    }
+
+    .header h1 {
+        font-size: 24px;
+    }
+
+    .header .subtitle {
+        font-size: 12px;
+    }
+
+    .tab-content {
+        padding: 16px;
+    }
+
+    .big-text {
+        font-size: 32px;
+    }
+
+    .main-stats {
+        gap: 12px;
+        margin-bottom: 20px;
+    }
+
+    .stat-item {
+        padding: 20px 16px;
+    }
+
+    .info-grid {
+        gap: 10px;
+        margin-bottom: 16px;
+    }
+
+    .info-item {
+        padding: 14px;
+    }
+
+    .btn {
+        padding: 14px 16px;
+        font-size: 14px;
+        min-height: 48px;
+    }
+
+    .btn-large {
+        min-height: 52px;
+        font-size: 15px;
+    }
+
+    .map-container {
+        height: 400px;
+    }
+
+    .gps-info {
+        grid-template-columns: repeat(2, 1fr);
+        padding: 12px;
+        gap: 8px;
+    }
+
+    .gps-info p {
+        font-size: 12px;
+    }
+}
+
+@media (max-width: 400px) {
+    .header h1 {
+        font-size: 20px;
+    }
+
+    .big-text {
+        font-size: 28px;
+    }
+
+    .medium-text {
+        font-size: 16px;
+    }
+
+    .info-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .tabs {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .tab-btn {
+        padding: 14px 12px;
+        font-size: 12px;
+    }
+
+    .map-container {
+        height: 300px;
+    }
+
+    .gps-info {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
+}
+
+/* ═══════════════════ 스크롤바 스타일 ═══════════════════ */
+::-webkit-scrollbar {
+    width: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-light);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--text-light);
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--text-dark);
 }
