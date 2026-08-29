@@ -388,7 +388,7 @@ class BikeGPSApp {
         if (this.gpsStatusEl) this.gpsStatusEl.textContent = message;
     }
 
-    // 탭 전환
+   // 탭 전환
     switchTab(tabName) {
         if (!tabName) return;
         log(`📋 탭 전환: ${tabName}`);
@@ -405,12 +405,20 @@ class BikeGPSApp {
             if (content.id === `${tabName}-tab`) {
                 content.classList.add('active');
 
-                if (tabName === 'map' && typeof mapManager !== 'undefined' && mapManager.map) {
+                // 지도 탭으로 전환될 때 회색 화면 방지 및 크기 재계산
+                if (tabName === 'map' && typeof mapManager !== 'undefined') {
                     setTimeout(() => {
-                        try {
+                        if (mapManager.map) {
                             mapManager.map.relayout();
-                        } catch (e) {}
-                    }, 100);
+                            // 만약 저장된 마지막 위치나 현재 위치가 있다면 중심 재잡기
+                            if (this.lastLocation) {
+                                mapManager.map.setCenter(new kakao.maps.LatLng(this.lastLocation.latitude, this.lastLocation.longitude));
+                            }
+                        } else {
+                            // 지도가 아직 생성 전이었다면 여기서 초기화
+                            mapManager.initMap();
+                        }
+                    }, 150);
                 }
             }
         });
