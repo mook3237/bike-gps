@@ -6,48 +6,14 @@
     <title>자전거 GPS 트래커</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="manifest" href="manifest.json">
-    <link rel="icon" href="favicon.svg" type="image/svg+xml">
-    <link rel="apple-touch-icon" href="favicon.svg">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚲</text></svg>">
     <meta name="theme-color" content="#121212">
     <meta name="description" content="실시간 자전거 속도 기록 및 경로 추적 웹앱">
 </head>
 <body>
-    <!-- 🔍 디버그 패널 (항상 보임!) -->
-    <div id="debug-panel" style="
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        background: #000;
-        color: #0f0;
-        font-family: monospace;
-        font-size: 10px;
-        max-height: 150px;
-        overflow-y: auto;
-        z-index: 9999;
-        border-bottom: 2px solid #0f0;
-        padding: 5px;
-        display: none;
-    ">
-        <div style="font-weight: bold; margin-bottom: 5px;">🔧 DEBUG LOG</div>
-        <div id="debug-log"></div>
-        <button onclick="document.getElementById('debug-panel').style.display='none'" style="
-            position: absolute;
-            top: 2px;
-            right: 2px;
-            background: #0f0;
-            color: #000;
-            border: none;
-            padding: 2px 5px;
-            cursor: pointer;
-            font-size: 10px;
-        ">✕</button>
-    </div>
-
-    <div class="container" style="margin-top: 150px;">
+    <div class="container">
         <!-- 1️⃣ 속도계 화면 탭 -->
         <div class="tab-content active" id="speed-tab">
-            <!-- 상단 대시보드 (시간 및 메인 긴 누름 영역) -->
             <div class="main-stats" id="main-stats-long-press">
                 <div class="top-dashboard-bar">
                     <div id="elapsed-time" class="top-time-display">00:00:00</div>
@@ -57,7 +23,6 @@
                     </div>
                 </div>
 
-                <!-- 속도계 원형 디자인 카드 -->
                 <div class="speedometer-card">
                     <div class="stat-item">
                         <label>현재 속도</label>
@@ -70,12 +35,10 @@
                 </div>
             </div>
 
-            <!-- 기록 저장 버튼 -->
             <div class="button-group">
                 <button id="saveBtn" class="btn btn-success btn-large" disabled>🔴 기록 저장하기</button>
             </div>
 
-            <!-- 상세 정보 그리드 -->
             <div class="info-grid">
                 <div class="info-item">
                     <label>평균 속도</label>
@@ -95,7 +58,6 @@
                 </div>
             </div>
 
-            <!-- GPS 상세 정보 -->
             <div class="gps-info">
                 <div class="info-item">
                     <label>위도</label>
@@ -115,10 +77,30 @@
 
         <!-- 2️⃣ 지도 화면 탭 -->
         <div class="tab-content" id="map-tab">
+            <div class="nav-control-panel" id="nav-control-panel">
+                <div class="nav-toggle-group">
+                    <button class="nav-toggle-btn active" data-mode="single">편도</button>
+                    <button class="nav-toggle-btn" data-mode="round">왕복</button>
+                </div>
+                <div class="nav-input-group">
+                    <input type="text" id="destination-input" class="nav-input" placeholder="목적지 입력 또는 지도 클릭">
+                    <button id="clear-nav-btn" class="nav-btn-clear">✕</button>
+                </div>
+                <div class="nav-info-panel">
+                    <div class="nav-info-item">
+                        <span class="nav-label">거리</span>
+                        <span id="nav-distance" class="nav-value">-</span>
+                    </div>
+                    <div class="nav-info-item">
+                        <span class="nav-label">예상 시간</span>
+                        <span id="nav-time" class="nav-value">-</span>
+                    </div>
+                </div>
+            </div>
+            
             <div id="map" class="map-container"></div>
         </div>
 
-        <!-- 하단 고정 탭 네비게이션 -->
         <div class="tabs">
             <button class="tab-btn active" data-tab="speed">
                 <span>⏱️</span>
@@ -131,170 +113,49 @@
         </div>
     </div>
 
-    <!-- 🔧 디버그 시스템 -->
+    <!-- ✅ 1. 설정 및 API 키 주입 -->
     <script>
-        // 디버그 로그를 UI와 콘솔에 동시 출력
-        window.debugLog = [];
-        window.showDebug = function() {
-            document.getElementById('debug-panel').style.display = 'block';
-        };
-
-        window.addDebug = function(msg) {
-            const time = new Date().toLocaleTimeString();
-            const log = `[${time}] ${msg}`;
-            window.debugLog.push(log);
-            console.log(log);
-            
-            // UI에 표시
-            const logDiv = document.getElementById('debug-log');
-            if (logDiv) {
-                logDiv.innerHTML += log + '<br>';
-                logDiv.scrollTop = logDiv.scrollHeight;
-            }
-            
-            // 자동으로 패널 표시
-            if (!document.getElementById('debug-panel').style.display || document.getElementById('debug-panel').style.display === 'none') {
-                showDebug();
-            }
-        };
-
-        // 페이지 로드 시작
-        addDebug('📄 index.html 로드 시작');
-        addDebug('🌐 브라우저: ' + navigator.userAgent.substring(0, 50));
-    </script>
-
-    <!-- config.js -->
-    <script>
-        addDebug('⏳ config.js 로드 시작...');
+        window.__KAKAO_API_KEY__ = '${{ secrets.KAKAO_MAP_API_KEY }}';
     </script>
     <script src="config.js"></script>
+
+    <!-- ✅ 2. 카카오맵 SDK 동적 로드 -->
     <script>
-        addDebug('✅ config.js 로드 완료');
-        if (typeof CONFIG === 'undefined') {
-            addDebug('❌ ERROR: CONFIG 미정의!');
-        } else {
-            addDebug('✅ CONFIG 존재: ' + JSON.stringify(CONFIG.MAP));
+        try {
+            // 로컬 테스트 시 임시 키가 있다면 넣고 테스트 가능, 깃허브 액션 빌드 시 자동 치환됨
+            const apiKey = (window.CONFIG && window.CONFIG.KAKAO_MAP_API_KEY) || window.__KAKAO_API_KEY__ || '';
+            if (apiKey && !apiKey.includes('secrets.')) {
+                document.write(`<script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=${apiKey}&autoload=false"><\/script>`);
+                console.log('✅ 카카오맵 SDK 로드 시도');
+            } else {
+                console.warn('⚠️ 깃허브 시크릿 키가 아직 치환되지 않았거나 비어있습니다. (로컬 환경)');
+            }
+        } catch (e) {
+            console.error('❌ 카카오맵 SDK 로드 에러:', e);
         }
     </script>
 
-    <!-- Kakao SDK 로드 -->
-    <script>
-        addDebug('⏳ Kakao SDK 로드 시작...');
-        const kakaoScript = document.createElement('script');
-        
-        if (!CONFIG || !CONFIG.KAKAO_MAP_API_KEY) {
-            addDebug('❌ ERROR: Kakao API 키 없음!');
-            kakaoScript.src = '//dapi.kakao.com/v2/maps/sdk.js?appkey=YOUR_KEY&autoload=false';
-        } else {
-            kakaoScript.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${CONFIG.KAKAO_MAP_API_KEY}&autoload=false`;
-            addDebug('✅ API 키 설정됨');
-        }
+    <!-- ✅ 3. 핵심 로직 파일 순서대로 직접 로드 -->
+    <script src="gps.js"></script>
+    <script src="map.js"></script>
+    <script src="navigation.js"></script>
+    <script src="app.js"></script>
 
-        kakaoScript.onload = function() {
-            addDebug('✅ Kakao SDK 스크립트 로드됨');
-            kakao.maps.load(function() {
-                addDebug('✅ kakao.maps 초기화됨');
-                loadNextScripts();
+    <!-- ✅ 4. 전체 시스템 진단 스크립트 -->
+    <script>
+        window.addEventListener('error', function(event) {
+            console.error(`🚨 [전역 에러] 파일: ${event.filename} | 라인: ${event.lineno} | 내용: ${event.message}`);
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('🔍 [DOM 체크] 모든 스크립트 로드 완료 및 DOM 검사 시작');
+            const checkElements = ['startBtn', 'stopBtn', 'saveBtn', 'current-speed', 'map'];
+            checkElements.forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) console.warn(`⚠️ [요소 경고] ID '${id}'를 찾을 수 없습니다.`);
+                else console.log(`✔️ [요소 확인] ID '${id}' 정상`);
             });
-        };
-
-        kakaoScript.onerror = function() {
-            addDebug('❌ ERROR: Kakao SDK 로드 실패!');
-        };
-
-        document.head.appendChild(kakaoScript);
+        });
     </script>
-
-    <!-- 나머지 스크립트 순차 로드 -->
-    <script>
-        function loadNextScripts() {
-            addDebug('⏳ gps.js 로드 시작...');
-            
-            const gpsScript = document.createElement('script');
-            gpsScript.src = 'gps.js';
-            gpsScript.onload = function() {
-                addDebug('✅ gps.js 로드됨');
-                if (typeof gpsTracker === 'undefined') {
-                    addDebug('❌ ERROR: gpsTracker 미정의!');
-                } else {
-                    addDebug('✅ gpsTracker 존재');
-                }
-                
-                addDebug('⏳ map.js 로드 시작...');
-                const mapScript = document.createElement('script');
-                mapScript.src = 'map.js';
-                mapScript.onload = function() {
-                    addDebug('✅ map.js 로드됨');
-                    if (typeof mapManager === 'undefined') {
-                        addDebug('❌ ERROR: mapManager 미정의!');
-                    } else {
-                        addDebug('✅ mapManager 존재');
-                    }
-                    
-                    addDebug('⏳ app.js 로드 시작...');
-                    const appScript = document.createElement('script');
-                    appScript.src = 'app.js';
-                    appScript.onload = function() {
-                        addDebug('✅ app.js 로드됨');
-                        addDebug('🎉 모든 스크립트 로드 완료!');
-                    };
-                    appScript.onerror = function() {
-                        addDebug('❌ ERROR: app.js 로드 실패!');
-                    };
-                    document.body.appendChild(appScript);
-                };
-                mapScript.onerror = function() {
-                    addDebug('❌ ERROR: map.js 로드 실패!');
-                };
-                document.body.appendChild(mapScript);
-            };
-            gpsScript.onerror = function() {
-                addDebug('❌ ERROR: gps.js 로드 실패!');
-            };
-            document.body.appendChild(gpsScript);
-        }
-    </script>
-
-    <!-- 버튼 클릭 감지 -->
-    <script>
-        setTimeout(() => {
-            addDebug('🔍 버튼 감지 시작...');
-            
-            const startBtn = document.getElementById('startBtn');
-            const stopBtn = document.getElementById('stopBtn');
-            const saveBtn = document.getElementById('saveBtn');
-            const tabBtns = document.querySelectorAll('.tab-btn');
-            
-            if (startBtn) {
-                addDebug('✅ startBtn 발견');
-                startBtn.addEventListener('click', function() {
-                    addDebug('⚡ startBtn 클릭됨!');
-                }, true); // capture phase
-            } else {
-                addDebug('❌ ERROR: startBtn 없음!');
-            }
-            
-            if (stopBtn) {
-                addDebug('✅ stopBtn 발견');
-                stopBtn.addEventListener('click', function() {
-                    addDebug('⚡ stopBtn 클릭됨!');
-                }, true);
-            } else {
-                addDebug('❌ ERROR: stopBtn 없음!');
-            }
-            
-            if (saveBtn) {
-                addDebug('✅ saveBtn 발견');
-                saveBtn.addEventListener('click', function() {
-                    addDebug('⚡ saveBtn 클릭됨!');
-                }, true);
-            } else {
-                addDebug('❌ ERROR: saveBtn 없음!');
-            }
-            
-            addDebug('✅ 탭 버튼 ' + tabBtns.length + '개 발견');
-        }, 1000);
-    </script>
-
 </body>
 </html>
