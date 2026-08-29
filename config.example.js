@@ -1,27 +1,31 @@
-// ⚙️ DEBUG: addDebug 함수 호환
-if (typeof addDebug === 'undefined') {
-    window.addDebug = function(msg) { console.log(msg); };
-}
-addDebug('📦 config.js 로드 시작');
+/*
+ * GitHub Pages build template.
+ *
+ * IMPORTANT:
+ * This value is replaced during GitHub Actions deployment from:
+ * Settings -> Secrets and variables -> Actions -> KAKAO_MAP_API_KEY
+ *
+ * Do not put your real Kakao key in this file and commit it.
+ */
+window.APP_CONFIG = {
+  KAKAO_MAP_API_KEY: '__KAKAO_MAP_API_KEY__',
 
-// ⚙️ 설정
-const CONFIG = {
-    // 🔑 카카오 API 키 (GitHub 환경 변수 또는 직접 입력)
-    KAKAO_MAP_API_KEY: window.__KAKAO_API_KEY__ || 'YOUR_KAKAO_API_KEY',
-    
-    // 🗺️ 지도 설정
-    MAP: {
-        initialZoom: 3,  // 줌 레벨 (낮을수록 확대)
-        centerLat: 37.4979,
-        centerLng: 127.0276,
-    },
-    
-    // 📍 GPS 설정
-    GPS: {
-        highAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
-    },
+  MAP: {
+    centerLat: 37.4979,
+    centerLng: 127.0276,
+    initialLevel: 5
+  },
+
+  GPS: {
+    enableHighAccuracy: true,
+    timeout: 10000,
+    maximumAge: 2000
+  },
+
+  ROUTING: {
+    VALHALLA_URL: 'https://valhalla1.openstreetmap.de/route',
+    CLIENT_ID: 'bike-gps-tracker',
+    DEFAULT_BICYCLE_TYPE: 'hybrid',
+    MAX_ROUTE_REFRESH_MS: 15000
+  }
 };
-
-addDebug('✅ CONFIG 로드 완료: ' + JSON.stringify(CONFIG.MAP));
