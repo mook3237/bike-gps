@@ -433,10 +433,10 @@ if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
         log('✅ DOM 로드 완료 - 앱 시작!');
         bikeApp = new BikeGPSApp();
-        bikeApp.initMap();
+        // ⚠️ 앱 시작 시점에 지도를 바로 만들지 않고, 지도 탭을 눌렀을 때 생성되도록 생략합니다.
     });
 } else {
     log('✅ DOM 이미 로드됨 - 앱 시작!');
     bikeApp = new BikeGPSApp();
-    bikeApp.initMap();
+    // ⚠️ 마찬가지로 여기도 app.initMap();을 호출하지 않습니다.
 }
