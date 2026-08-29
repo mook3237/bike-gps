@@ -27,13 +27,23 @@ class MapManager {
                 return;
             }
 
-            const mapOption = {
-                center: new kakao.maps.LatLng(CONFIG.MAP.centerLat, CONFIG.MAP.centerLng),
-                level: CONFIG.MAP.initialZoom,
-            };
+            // 💡 핵심: kakao 객체와 지도 라이브러리가 완전히 로드되었는지 확인 후 실행
+            if (typeof kakao === 'undefined' || !kakao.maps) {
+                log('⏳ 카카오 지도 SDK 로딩 대기 중...');
+                // 만약 아직 로드 전이라면 잠시 뒤 재시도하거나 렌더링 연기
+                setTimeout(() => this.initMap(), 200);
+                return;
+            }
 
-            this.map = new kakao.maps.Map(mapContainer, mapOption);
-            log('✅ 지도 초기화 완료!');
+            kakao.maps.load(() => {
+                const mapOption = {
+                    center: new kakao.maps.LatLng(CONFIG.MAP.centerLat, CONFIG.MAP.centerLng),
+                    level: CONFIG.MAP.initialZoom,
+                };
+
+                this.map = new kakao.maps.Map(mapContainer, mapOption);
+                log('✅ 지도 초기화 완료!');
+            });
 
         } catch (error) {
             log('❌ 지도 초기화 오류', error.message);
@@ -42,8 +52,8 @@ class MapManager {
 
     // 📍 현재 위치 마커 업데이트
     updateCurrentMarker(position) {
-        if (!this.map) {
-            log('⚠️ 지도가 준비되지 않음');
+        if (!this.map || typeof kakao === 'undefined' || !kakao.maps) {
+            log('⚠️ 지도가 아직 준비되지 않음');
             return;
         }
 
@@ -72,7 +82,7 @@ class MapManager {
 
     // 📈 경로 폴리라인 업데이트
     updatePolyline() {
-        if (!this.map || this.pathCoords.length < 2) {
+        if (!this.map || this.pathCoords.length < 2 || typeof kakao === 'undefined' || !kakao.maps) {
             return;
         }
 
@@ -106,7 +116,7 @@ class MapManager {
 
     // 📏 경로 범위에 맞게 줌 조정
     fitBounds() {
-        if (!this.map || this.pathCoords.length === 0) {
+        if (!this.map || this.pathCoords.length === 0 || typeof kakao === 'undefined' || !kakao.maps) {
             return;
         }
 
