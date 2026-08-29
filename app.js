@@ -182,7 +182,7 @@ class BikeGPSApp {
         });
     }
 
-    // 🗺️ 지도 초기화
+  // 🗺️ 지도 초기화
     initMap() {
         log('🗺️ 지도 초기화');
         if (typeof mapManager !== 'undefined' && typeof mapManager.initMap === 'function') {
