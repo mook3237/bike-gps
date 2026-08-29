@@ -114,48 +114,87 @@
         </div>
     </div>
 
-    <div class="settings-menu" id="settings-menu">
-        <div class="settings-title">메인 정보 선택</div>
-        <div class="settings-grid">
-            <button class="settings-btn" data-metric="time">시간</button>
-            <button class="settings-btn" data-metric="speed">현재 속도</button>
-            <button class="settings-btn" data-metric="avg-speed">평균 속도</button>
-            <button class="settings-btn" data-metric="max-speed">최고 속도</button>
-            <button class="settings-btn" data-metric="distance">거리</button>
-            <button class="settings-btn" data-metric="altitude">고도</button>
-        </div>
-    </div>
+    <!-- ✅ 깃허브 시크릿 키 안전 주입부 (빌드 시 치환됨) -->
+    <script>
+        window.__KAKAO_API_KEY__ = '${{ secrets.KAKAO_MAP_API_KEY }}';
+    </script>
 
-    <!-- 스크립트 로드 -->
     <script src="config.js"></script>
     <script>
-        if (typeof CONFIG !== 'undefined' && CONFIG.KAKAO_MAP_API_KEY) {
-            document.write(`<script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=${CONFIG.KAKAO_MAP_API_KEY}&autoload=false"><\/script>`);
+        try {
+            if (typeof CONFIG !== 'undefined' && CONFIG.KAKAO_MAP_API_KEY) {
+                document.write(`<script src="//dapi.kakao.com/v2/maps/sdk.js?appkey=${CONFIG.KAKAO_MAP_API_KEY}&autoload=false"><\/script>`);
+                console.log('✅ 카카오맵 SDK 스크립트 동적 삽입 성공');
+            } else {
+                console.error('❌ CONFIG 또는 API 키가 존재하지 않습니다.');
+            }
+        } catch (e) {
+            console.error('❌ 카카오맵 SDK 로드 중 예외 발생:', e);
         }
     </script>
-    <script src="gps.js"></script>
-    <script src="map.js"></script>
-    <script src="navigation.js"></script>
-    <script src="app.js"></script>
 
+    <!-- 파일별 로드 에러 추적 래퍼 -->
     <script>
+        function loadScriptSafely(src) {
+            const script = document.createElement('script');
+            script.src = src;
+            script.onerror = () => console.error(`❌ [파일 로드 실패] ${src} 파일을 찾을 수 없습니다.`);
+            script.onload = () => console.log(`✅ [파일 로드 성공] ${src}`);
+            document.body.appendChild(script);
+        }
+
+        loadScriptSafely('gps.js');
+        loadScriptSafely('map.js');
+        loadScriptSafely('navigation.js');
+        loadScriptSafely('app.js');
+    </script>
+
+    <!-- 전체 DOM 및 버튼 상태 진단 스크립트 -->
+    <script>
+        window.addEventListener('error', function(event) {
+            console.error(`🚨 [전역 에러 감지] 파일: ${event.filename} | 라인: ${event.lineno} | 내용: ${event.message}`);
+        });
+
         document.addEventListener('DOMContentLoaded', () => {
+            console.log('🔍 [DOM 체크] HTML 문서 로딩 완료. 버튼 및 요소 존재 여부 확인 중...');
+            
+            const checkElements = ['startBtn', 'stopBtn', 'saveBtn', 'current-speed', 'map', 'speed-tab', 'map-tab'];
+            checkElements.forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) {
+                    console.warn(`⚠️ [요소 경고] ID가 '${id}'인 HTML 요소를 찾을 수 없습니다!`);
+                } else {
+                    console.log(`✔️ [요소 확인] ID '${id}' 정상 로드됨`);
+                }
+            });
+
+            // 탭 전환 로직
             const tabButtons = document.querySelectorAll('.tab-btn');
             tabButtons.forEach(btn => {
                 btn.addEventListener('click', () => {
-                    const targetTab = btn.getAttribute('data-tab');
-                    
-                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-                    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-                    
-                    btn.classList.add('active');
-                    const targetContent = document.getElementById(targetTab + '-tab');
-                    if (targetContent) targetContent.classList.add('active');
+                    try {
+                        const targetTab = btn.getAttribute('data-tab');
+                        console.log(`🔄 탭 전환 시도: ${targetTab}`);
+                        
+                        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                        
+                        btn.classList.add('active');
+                        const targetContent = document.getElementById(targetTab + '-tab');
+                        if (targetContent) {
+                            targetContent.classList.add('active');
+                        } else {
+                            console.error(`❌ 탭 콘텐츠 ID '${targetTab}-tab'을 찾을 수 없습니다.`);
+                        }
 
-                    if (targetTab === 'map' && window.mapManager && window.mapManager.map) {
-                        setTimeout(() => {
-                            window.mapManager.map.relayout();
-                        }, 100);
+                        if (targetTab === 'map' && window.mapManager && window.mapManager.map) {
+                            setTimeout(() => {
+                                window.mapManager.map.relayout();
+                                console.log('🗺️ 카카오맵 리레이아웃 완료');
+                            }, 100);
+                        }
+                    } catch (err) {
+                        console.error('❌ 탭 전환 중 에러 발생:', err);
                     }
                 });
             });
