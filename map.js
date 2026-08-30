@@ -1,8 +1,3 @@
-// 🗺️ 지도 관리자
-if (typeof diagnostic !== 'undefined') {
-    diagnostic.add('map.js 실행 시작', 'load');
-}
-
 function log(message, data = '') {
     const timestamp = new Date().toLocaleTimeString();
     console.log(`[${timestamp}] ${message}`, data);
@@ -14,22 +9,21 @@ class MapManager {
         this.currentMarker = null;
         this.polyline = null;
         this.pathCoords = [];
-        log('🗺️ MapManager 생성됨');
+        log('MapManager 생성됨');
     }
 
     initMap() {
-        log('초기화: 지도 시작');
+        log('지도 초기화');
 
         try {
             const mapContainer = document.getElementById('map');
-            
             if (!mapContainer) {
-                log('❌ 지도 컨테이너를 찾을 수 없음');
+                log('ERROR: 지도 컨테이너 없음');
                 return;
             }
 
             if (typeof kakao === 'undefined' || !kakao.maps) {
-                log('⚠️ kakao.maps 아직 준비 안 됨');
+                log('ERROR: kakao.maps 없음');
                 return;
             }
 
@@ -39,10 +33,10 @@ class MapManager {
             };
 
             this.map = new kakao.maps.Map(mapContainer, mapOption);
-            log('✅ 지도 초기화 완료!');
+            log('지도 초기화 OK');
 
         } catch (error) {
-            log('❌ 지도 초기화 오류: ' + error.message);
+            log('ERROR: ' + error.message);
         }
     }
 
@@ -67,7 +61,7 @@ class MapManager {
             this.pathCoords.push(location);
 
         } catch (error) {
-            log('❌ 마커 오류: ' + error.message);
+            log('ERROR: ' + error.message);
         }
     }
 
@@ -88,7 +82,7 @@ class MapManager {
                 });
             }
         } catch (error) {
-            log('❌ 폴리라인 오류: ' + error.message);
+            log('ERROR: ' + error.message);
         }
     }
 
@@ -98,7 +92,7 @@ class MapManager {
             this.polyline.setMap(null);
             this.polyline = null;
         }
-        log('🔄 지도 초기화됨');
+        log('지도 초기화');
     }
 
     fitBounds() {
@@ -110,15 +104,14 @@ class MapManager {
                 bounds.extend(coord);
             });
             this.map.setBounds(bounds);
-            log('✅ 경로에 맞게 줌 조정됨');
+            log('줌 조정 OK');
         } catch (error) {
-            log('❌ 줌 조정 오류: ' + error.message);
+            log('ERROR: ' + error.message);
         }
     }
 }
 
 const mapManager = new MapManager();
 if (typeof diagnostic !== 'undefined') {
-    diagnostic.add('mapManager 인스턴스 생성됨', 'ok');
+    diagnostic.add('mapManager 생성됨');
 }
-\
