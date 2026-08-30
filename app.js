@@ -1,8 +1,3 @@
-// 🎯 메인 앱
-if (typeof diagnostic !== 'undefined') {
-    diagnostic.add('app.js 실행 시작', 'load');
-}
-
 function log(message, data = '') {
     const timestamp = new Date().toLocaleTimeString();
     console.log(`[${timestamp}] ${message}`, data);
@@ -10,13 +5,8 @@ function log(message, data = '') {
 
 class BikeGPSApp {
     constructor() {
-        log('🎯 BikeGPSApp 생성 시작');
+        log('BikeGPSApp 생성 시작');
         
-        if (typeof diagnostic !== 'undefined') {
-            diagnostic.add('BikeGPSApp 생성자 호출', 'load');
-        }
-
-        // UI 요소 찾기
         this.startBtn = document.getElementById('startBtn');
         this.stopBtn = document.getElementById('stopBtn');
         this.saveBtn = document.getElementById('saveBtn');
@@ -25,36 +15,10 @@ class BikeGPSApp {
         this.avgSpeedEl = document.getElementById('avg-speed');
         this.maxSpeedEl = document.getElementById('max-speed');
         this.currentDistanceEl = document.getElementById('current-distance');
-        this.remainingDistanceEl = document.getElementById('remaining-distance');
-        this.targetSpeedInput = document.getElementById('target-speed');
         this.gpsStatusEl = document.getElementById('gps-status');
-        this.latitudeEl = document.getElementById('latitude');
-        this.longitudeEl = document.getElementById('longitude');
-        this.accuracyEl = document.getElementById('accuracy');
         this.tabBtns = document.querySelectorAll('.tab-btn');
         this.tabContents = document.querySelectorAll('.tab-content');
 
-        // 요소 확인
-        const checks = [
-            ['startBtn', this.startBtn],
-            ['stopBtn', this.stopBtn],
-            ['saveBtn', this.saveBtn],
-            ['gpsStatusEl', this.gpsStatusEl]
-        ];
-        
-        checks.forEach(([name, el]) => {
-            if (el) {
-                if (typeof diagnostic !== 'undefined') {
-                    diagnostic.add(`✓ 찾음: ${name}`, 'ok');
-                }
-            } else {
-                if (typeof diagnostic !== 'undefined') {
-                    diagnostic.add(`✗ 못찾음: ${name}!`, 'error');
-                }
-            }
-        });
-
-        // 상태 변수
         this.isTracking = false;
         this.startTime = null;
         this.elapsedSeconds = 0;
@@ -64,66 +28,42 @@ class BikeGPSApp {
         this.maxSpeed = 0;
         this.timerInterval = null;
 
-        // 이벤트 리스너 붙이기
         if (this.startBtn) {
             this.startBtn.addEventListener('click', () => {
-                if (typeof diagnostic !== 'undefined') {
-                    diagnostic.add('⚡ startBtn 클릭됨!', 'ok');
-                }
+                log('startBtn 클릭');
                 this.handleStart();
             });
-            if (typeof diagnostic !== 'undefined') {
-                diagnostic.add('startBtn 리스너 붙음', 'ok');
-            }
         }
 
         if (this.stopBtn) {
             this.stopBtn.addEventListener('click', () => {
-                if (typeof diagnostic !== 'undefined') {
-                    diagnostic.add('⚡ stopBtn 클릭됨!', 'ok');
-                }
+                log('stopBtn 클릭');
                 this.handleStop();
             });
-            if (typeof diagnostic !== 'undefined') {
-                diagnostic.add('stopBtn 리스너 붙음', 'ok');
-            }
         }
 
         if (this.saveBtn) {
             this.saveBtn.addEventListener('click', () => {
-                if (typeof diagnostic !== 'undefined') {
-                    diagnostic.add('⚡ saveBtn 클릭됨!', 'ok');
-                }
+                log('saveBtn 클릭');
                 this.handleSave();
             });
-            if (typeof diagnostic !== 'undefined') {
-                diagnostic.add('saveBtn 리스너 붙음', 'ok');
-            }
         }
 
-        // 탭 전환
         this.tabBtns.forEach(btn => {
             btn.addEventListener('click', (e) => {
                 this.switchTab(e.target.dataset.tab);
             });
         });
 
-        if (typeof diagnostic !== 'undefined') {
-            diagnostic.add(`탭 리스너 붙음 (${this.tabBtns.length}개)`, 'ok');
-        }
-
         if (this.gpsStatusEl) {
             this.gpsStatusEl.textContent = '준비 완료! 시작 버튼을 누르세요.';
         }
 
-        if (typeof diagnostic !== 'undefined') {
-            diagnostic.add('BikeGPSApp 생성 완료!', 'ok');
-        }
-        log('✅ BikeGPSApp 생성 완료');
+        log('BikeGPSApp 생성 완료');
     }
 
     handleStart() {
-        log('▶️ 추적 시작');
+        log('추적 시작');
         this.isTracking = true;
         this.startTime = Date.now();
         this.elapsedSeconds = 0;
@@ -142,6 +82,7 @@ class BikeGPSApp {
 
         if (typeof mapManager !== 'undefined') {
             mapManager.reset();
+            mapManager.initMap();
         }
 
         this.startTimer();
@@ -153,7 +94,7 @@ class BikeGPSApp {
     }
 
     handleStop() {
-        log('⏹️ 추적 중지');
+        log('추적 중지');
         this.isTracking = false;
         
         if (typeof gpsTracker !== 'undefined') {
@@ -172,18 +113,12 @@ class BikeGPSApp {
     }
 
     handleSave() {
-        log('💾 기록 저장');
-        alert(`✅ 기록 저장!
-거리: ${this.totalDistance.toFixed(2)} km
-시간: ${this.formatTime(this.elapsedSeconds)}`);
+        log('기록 저장');
+        alert(`기록 저장!\n거리: ${this.totalDistance.toFixed(2)} km\n시간: ${this.formatTime(this.elapsedSeconds)}`);
     }
 
     onLocationUpdate(coords) {
         const { latitude, longitude, accuracy } = coords;
-
-        if (this.latitudeEl) this.latitudeEl.textContent = latitude.toFixed(6);
-        if (this.longitudeEl) this.longitudeEl.textContent = longitude.toFixed(6);
-        if (this.accuracyEl) this.accuracyEl.textContent = Math.round(accuracy) + ' m';
 
         if (this.lastLocation) {
             const distance = this.calculateDistance(
@@ -210,8 +145,8 @@ class BikeGPSApp {
     }
 
     onGPSError(error) {
-        log('❌ GPS 오류: ' + error);
-        if (this.gpsStatusEl) this.gpsStatusEl.textContent = '❌ GPS 오류: ' + error;
+        log('GPS 에러: ' + error);
+        if (this.gpsStatusEl) this.gpsStatusEl.textContent = 'GPS 에러: ' + error;
         this.handleStop();
     }
 
@@ -260,7 +195,7 @@ class BikeGPSApp {
     }
 
     switchTab(tabName) {
-        log('탭 전환: ' + tabName);
+        log('탭: ' + tabName);
         this.tabBtns.forEach(btn => btn.classList.remove('active'));
         this.tabContents.forEach(content => content.classList.remove('active'));
         
@@ -269,19 +204,18 @@ class BikeGPSApp {
     }
 }
 
-// 앱 시작
-log('app.js 로드 완료, 앱 초기화 시작');
+log('app.js 로드 완료');
 
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
         if (typeof diagnostic !== 'undefined') {
-            diagnostic.add('DOMContentLoaded 발생', 'ok');
+            diagnostic.add('DOMContentLoaded 발생');
         }
         window.app = new BikeGPSApp();
     });
 } else {
     if (typeof diagnostic !== 'undefined') {
-        diagnostic.add('DOM 이미 로드됨', 'ok');
+        diagnostic.add('DOM 이미 로드됨');
     }
     window.app = new BikeGPSApp();
 }
