@@ -1,2 +1,354 @@
-*{box-sizing:border-box;margin:0;padding:0}html,body{height:100%;background:#121212;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}body{overflow:hidden}.app-shell{height:100%;position:relative}.tab-content{display:none;width:100%;height:calc(100vh - 60px);height:calc(100dvh - 60px)}.tab-content.active{display:block}.main-stats{padding:12px 12px 8px;display:flex;flex-direction:column;align-items:center}.top-dashboard-bar{width:100%;display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.top-time-display{font-size:30px;font-weight:700;font-variant-numeric:tabular-nums}.mini-btn-group{display:flex;gap:8px}.round-btn{width:42px;height:42px;border:0;border-radius:50%;font-size:18px;color:#fff;cursor:pointer}.round-btn.start{background:#00b4d8}.round-btn.stop{background:#457b9d}.round-btn:disabled{opacity:.35;cursor:not-allowed}.speedometer-card{width:min(360px,100%);background:radial-gradient(circle,#2a2a2a,#1a1a1a);border:2px solid #333;border-radius:46% 46% 22px 22px/38% 38% 22px 22px;padding:28px 20px 22px;text-align:center;box-shadow:0 8px 24px #0008}.speedometer-card label{font-size:13px;color:#a0aab2}.big-text{font-size:58px;font-weight:700;line-height:1.05}.speed-unit{font-size:15px;color:#a0aab2}.distance-stat{margin-top:10px}.sub-speedometer-stat{font-size:28px;font-weight:650}.sub-speedometer-stat span{font-size:12px;color:#a0aab2;margin-left:3px}.button-group{padding:0 12px 12px}.btn{width:100%;min-height:46px;border:0;border-radius:9px;font-size:14px;font-weight:700;color:#fff;cursor:pointer}.btn-success{background:#e63946}.btn:disabled{background:#2c2c2c;color:#666}.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#2d2d2d;border-block:1px solid #2d2d2d}.info-item{background:#1e1e1e;padding:15px}.info-item label{display:block;font-size:11px;color:#a0aab2;margin-bottom:6px}.info-item p{font-size:20px;font-weight:650}.input-field{width:100%;padding:9px 10px;border:1px solid #444;border-radius:6px;background:#2a2a2a;color:#fff;font-size:14px}.input-field:focus,.nav-input:focus{outline:2px solid #00b4d8;outline-offset:-1px}.gps-info{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px;padding:10px;background:#1e1e1e;border:1px solid #2d2d2d;border-radius:8px}.gps-info .info-item{padding:0;background:transparent}.gps-info p{font-size:11px;word-break:break-all}.status-text{text-align:center;color:#a0aab2;font-size:12px;padding:0 12px}.map-tab{position:relative;overflow:hidden;padding:0}.map-container{position:absolute;inset:0;width:100%;height:100%;background:#e8e8e8}.nav-control-panel{position:absolute;top:10px;left:10px;right:10px;z-index:20;background:#181818eF;border:1px solid #3a3a3a;border-radius:12px;padding:10px;box-shadow:0 8px 24px #0008;backdrop-filter:blur(8px)}.nav-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.nav-header strong{display:block;font-size:14px}.nav-header small{color:#90e0ef;font-size:10px}.nav-small-btn,.nav-search-btn,.nav-btn-clear{border:0;border-radius:7px;background:#2a2a2a;color:#fff;padding:9px;cursor:pointer}.nav-toggle-group{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:7px}.nav-toggle-btn{border:1px solid #444;background:#222;color:#aaa;border-radius:7px;padding:8px;cursor:pointer}.nav-toggle-btn.active{background:#00b4d8;color:#fff;border-color:#00b4d8}.nav-input-group{display:grid;grid-template-columns:1fr auto auto;gap:5px}.nav-input{min-width:0;padding:10px;border:1px solid #444;border-radius:7px;background:#222;color:#fff;font-size:14px}.nav-search-btn{background:#0077b6}.search-results{max-height:180px;overflow:auto;margin-top:5px;border:1px solid #333;border-radius:7px;background:#202020}.search-result{display:block;width:100%;text-align:left;padding:9px;border:0;border-bottom:1px solid #333;background:transparent;color:#fff;cursor:pointer}.search-result:last-child{border-bottom:0}.search-result small{display:block;color:#999;margin-top:2px}.nav-info-panel{display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-top:7px}.nav-info-item{background:#222;border-radius:7px;padding:7px}.nav-info-item span{display:block;color:#999;font-size:9px}.nav-info-item strong{font-size:13px}.route-note{font-size:9px;color:#9aa0a6;margin-top:6px;line-height:1.4}.tabs{position:fixed;left:0;right:0;bottom:0;height:60px;display:grid;grid-template-columns:1fr 1fr;background:#181818;border-top:1px solid #2d2d2d;z-index:100}.tab-btn{border:0;background:transparent;color:#a0aab2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:12px;cursor:pointer}.tab-btn.active{color:#ff5c5c}.kakao-control{font-size:11px}
-@media (min-width:700px){.main-stats{max-width:600px;margin:auto}.button-group,.info-grid,.gps-info{max-width:600px;margin-left:auto;margin-right:auto}.nav-control-panel{max-width:560px;left:20px;right:auto;width:560px}}
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    --primary: #00B4D8;
+    --primary-dark: #0077B6;
+    --primary-light: #90E0EF;
+    --text-dark: #FFFFFF;
+    --text-light: #A0AAB2;
+    --bg-light: #121212;
+    --bg-white: #1E1E1E;
+    --border-color: #2D2D2D;
+    --success: #4CAF50;
+    --warning: #FF9800;
+    --error: #FF4D4D;
+    --info: #00B4D8;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg-light);
+    color: var(--text-dark);
+    line-height: 1.6;
+    overflow-x: hidden;
+}
+
+.container {
+    max-width: 100%;
+    padding: 0;
+    margin: 0 auto;
+}
+
+/* ═══════════════════ 탭 컨텐츠 및 화면 분리 ═══════════════════ */
+.tab-content {
+    display: none;
+    width: 100%;
+    height: calc(100vh - 60px); /* 하단 탭바 높이 60px 제외한 전체 화면 */
+    overflow-y: auto;          /* 속도계 화면은 스크롤 가능 */
+}
+
+.tab-content.active {
+    display: block;
+}
+
+/* 속도계 탭 전용 */
+#speed-tab {
+    padding: 15px 15px 30px 15px;
+}
+
+/* 지도 탭 전용 스타일 (스크롤 방지 및 전체 화면 채우기) */
+#map-tab {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: calc(100vh - 60px); /* 상단 메뉴나 하단 탭바 높이(예: 60px)를 뺀 나머지 전체 화면 */
+    overflow: hidden;
+    padding: 0;
+    display: none; /* 탭 전환용 기본 숨김 */
+}
+
+/* 탭이 활성화되었을 때 보이도록 처리 (만약 클래스로 제어한다면) */
+#map-tab.active {
+    display: block; 
+}
+
+.map-container {
+    width: 100%;
+    height: 100%; /* 부모(#map-tab)의 높이를 온전히 채움 */
+    border-radius: 0;
+    border: none;
+    background: #E8E8E8;
+}
+
+/* ═══════════════════ 상단 메인 게이지 영역 ═══════════════════ */
+.main-stats {
+    background: var(--bg-light);
+    padding: 10px 5px 15px 5px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    position: relative;
+    user-select: none;
+}
+
+/* 상단 컨트롤러 (시간, 재생/정지 버튼 배치용 바) */
+.top-dashboard-bar {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding: 0 5px;
+}
+
+.top-time-display {
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: -1px;
+    color: var(--text-dark);
+}
+
+/* 원형 속도계 느낌을 주는 카드 디자인 */
+.speedometer-card {
+    width: 100%;
+    max-width: 360px;
+    background: radial-gradient(circle, #2A2A2A 0%, #1A1A1A 100%);
+    border: 2px solid #333;
+    border-radius: 50% 50% 20px 20px / 40% 40% 20px 20px;
+    padding: 30px 20px 25px 20px;
+    text-align: center;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    margin-bottom: 15px;
+}
+
+.speedometer-card .stat-item {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+}
+
+.speedometer-card .stat-item label {
+    font-size: 13px;
+    color: var(--text-light);
+    margin-bottom: 5px;
+}
+
+.big-text {
+    font-size: 56px;
+    font-weight: 700;
+    color: var(--text-dark);
+    line-height: 1.1;
+    letter-spacing: -2px;
+}
+
+.speed-unit {
+    font-size: 16px;
+    color: var(--text-light);
+    margin-bottom: 15px;
+    font-weight: 500;
+}
+
+.sub-speedometer-stat {
+    font-size: 26px;
+    font-weight: 600;
+    color: var(--text-dark);
+    letter-spacing: -0.5px;
+}
+
+.sub-speedometer-stat span {
+    font-size: 12px;
+    color: var(--text-light);
+    display: inline-block;
+    margin-left: 2px;
+}
+
+/* ═══════════════════ 버튼 그룹 스타일 개편 ═══════════════════ */
+.button-group {
+    display: flex;
+    gap: 10px;
+    padding: 0 5px;
+    margin-bottom: 20px;
+}
+
+.btn {
+    flex: 1;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+}
+
+.btn-primary {
+    background: var(--info);
+    color: white;
+}
+
+.btn-success {
+    background: #E63946;
+    color: white;
+}
+
+.btn-danger {
+    background: #457B9D;
+    color: white;
+}
+
+.btn:disabled {
+    background: #2C2C2C;
+    color: #555;
+    cursor: not-allowed;
+}
+
+/* ═══════════════════ 정보 그리드 (2열 카드 형태) ═══════════════════ */
+.info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--border-color);
+    border-top: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 20px;
+}
+
+.info-item {
+    background: var(--bg-white);
+    padding: 18px 15px;
+    border: none;
+    box-shadow: none;
+    border-radius: 0;
+}
+
+.info-item label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-light);
+    font-weight: 500;
+    margin-bottom: 8px;
+}
+
+.info-item p {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text-dark);
+    margin: 0;
+    letter-spacing: -0.5px;
+}
+
+/* 입력 필드 다크 테마 */
+.input-field {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 14px;
+    background: #2A2A2A;
+    color: var(--text-dark);
+}
+
+.input-field:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+/* ═══════════════════ GPS 상세 정보 ═══════════════════ */
+.gps-info {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    background: var(--bg-white);
+    margin: 0 0 20px 0;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.gps-info .info-item {
+    background: transparent;
+    padding: 0;
+}
+
+.gps-info label {
+    font-size: 10px !important;
+}
+
+.gps-info p {
+    font-size: 12px;
+}
+
+/* ═══════════════════ 하단 고정 탭 바 ═══════════════════ */
+.tabs {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    background: #181818;
+    border-top: 1px solid var(--border-color);
+    z-index: 100;
+    height: 60px;
+}
+
+.tab-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-light);
+    font-size: 12px;
+    font-weight: 500;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    gap: 4px;
+}
+
+.tab-btn.active {
+    color: #FF5C5C;
+    background: transparent;
+}
+
+/* ═══════════════════ 설정 메뉴 모달 ═══════════════════ */
+.settings-menu {
+    display: none !important;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 1000;
+}
+
+.settings-menu.active {
+    display: flex !important;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.settings-title {
+    color: white;
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 20px;
+}
+
+.settings-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    padding: 20px;
+    width: 90%;
+    max-width: 400px;
+}
+
+.settings-btn {
+    padding: 16px;
+    background: #2A2A2A;
+    color: white;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    font-size: 14px;
+    cursor: pointer;
+}
