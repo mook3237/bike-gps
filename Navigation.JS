@@ -3,10 +3,8 @@ class BikeNavigation {
     constructor() {
         this.destination = null;
         this.currentMode = 'single';
+        console.log('BikeNavigation 생성됨');
     }
 }
 
 const bikeNav = new BikeNavigation();
-if (typeof diagnostic !== 'undefined') {
-    diagnostic.add('bikeNav 생성됨');
-}
