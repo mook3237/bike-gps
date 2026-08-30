@@ -33,3 +33,4 @@ function log(msg, data = '') {
 }
 
 log('✅ config.js 로드 완료');
+
