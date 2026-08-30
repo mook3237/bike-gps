@@ -1,31 +1,35 @@
-/*
- * GitHub Pages build template.
- *
- * IMPORTANT:
- * This value is replaced during GitHub Actions deployment from:
- * Settings -> Secrets and variables -> Actions -> KAKAO_MAP_API_KEY
- *
- * Do not put your real Kakao key in this file and commit it.
- */
-window.APP_CONFIG = {
-  KAKAO_MAP_API_KEY: '__KAKAO_MAP_API_KEY__',
+// 🔍 진단 시스템과 호환
+if (typeof diagnostic !== 'undefined') {
+    diagnostic.add('CONFIG 로드 시작', 'load');
+}
 
-  MAP: {
-    centerLat: 37.4979,
-    centerLng: 127.0276,
-    initialLevel: 5
-  },
-
-  GPS: {
-    enableHighAccuracy: true,
-    timeout: 10000,
-    maximumAge: 2000
-  },
-
-  ROUTING: {
-    VALHALLA_URL: 'https://valhalla1.openstreetmap.de/route',
-    CLIENT_ID: 'bike-gps-tracker',
-    DEFAULT_BICYCLE_TYPE: 'hybrid',
-    MAX_ROUTE_REFRESH_MS: 15000
-  }
+const CONFIG = {
+    KAKAO_MAP_API_KEY: window.__KAKAO_API_KEY__ || '',
+    MAP: {
+        initialZoom: 3,
+        centerLat: 37.4979,
+        centerLng: 127.0276,
+    },
+    GPS: {
+        highAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
+    },
 };
+
+if (typeof diagnostic !== 'undefined') {
+    diagnostic.add(
+        'CONFIG 완료: API=' + (CONFIG.KAKAO_MAP_API_KEY ? 'O' : 'X') + 
+        ' | Zoom=' + CONFIG.MAP.initialZoom,
+        'ok'
+    );
+}
+
+const DEBUG = true;
+function log(msg, data = '') {
+    if (DEBUG) {
+        console.log(`[${new Date().toLocaleTimeString()}] ${msg}`, data);
+    }
+}
+
+log('✅ config.js 로드 완료');
