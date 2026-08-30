@@ -7,10 +7,9 @@
     <link rel="stylesheet" href="styles.css">
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#121212">
-    <meta name="description" content="실시간 자전거 속도 기록 및 경로 추적 웹앱">
 </head>
 <body>
-    <!-- 🔍 진단 화면 (화면 상단에 고정) -->
+    <!-- 진단 패널 (최소 높이) -->
     <div id="diagnostic" style="
         position: fixed;
         top: 0;
@@ -18,22 +17,20 @@
         right: 0;
         background: #222;
         color: #0f0;
-        font-family: 'Courier New', monospace;
-        font-size: 9px;
-        line-height: 1.2;
-        max-height: 200px;
+        font-family: monospace;
+        font-size: 8px;
+        line-height: 1.1;
+        max-height: 80px;
         overflow-y: auto;
         z-index: 10000;
-        padding: 5px;
+        padding: 3px;
         border-bottom: 2px solid #0f0;
         display: none;
     ">
-        <div style="font-weight: bold; margin-bottom: 3px; color: #ff0;">🔧 DIAGNOSTIC SYSTEM</div>
         <div id="diag-log"></div>
     </div>
 
-    <div class="container" style="margin-top: 10px;">
-        <!-- 1️⃣ 속도계 화면 탭 -->
+    <div class="container" style="margin-top: 5px;">
         <div class="tab-content active" id="speed-tab">
             <div class="main-stats" id="main-stats-long-press">
                 <div class="top-dashboard-bar">
@@ -96,7 +93,6 @@
             <div style="text-align: center; font-size: 12px; color: var(--text-light); margin-bottom: 10px;" id="gps-status">준비 중...</div>
         </div>
 
-        <!-- 2️⃣ 지도 화면 탭 -->
         <div class="tab-content" id="map-tab">
             <div id="map" class="map-container"></div>
         </div>
@@ -107,198 +103,107 @@
         </div>
     </div>
 
-    <!-- 🔧 진단 시스템 -->
     <script>
         window.diagnostic = {
             logs: [],
-            show() {
-                document.getElementById('diagnostic').style.display = 'block';
-            },
-            hide() {
-                document.getElementById('diagnostic').style.display = 'none';
-            },
-            add(msg, type = 'info') {
+            add(msg) {
                 const time = new Date().toLocaleTimeString();
-                const prefix = {
-                    'ok': '✅',
-                    'error': '❌',
-                    'warn': '⚠️',
-                    'load': '📦',
-                    'info': 'ℹ️'
-                }[type] || '▶';
-                
-                const line = `${prefix} [${time}] ${msg}`;
+                const line = `[${time}] ${msg}`;
                 this.logs.push(line);
                 console.log(line);
-                
                 const log = document.getElementById('diag-log');
                 log.innerHTML += line + '<br>';
                 log.scrollTop = log.scrollHeight;
-                
-                this.show();
-                return this;
+                document.getElementById('diagnostic').style.display = 'block';
             }
         };
-
-        diagnostic.add('시작...', 'load');
+        diagnostic.add('시작');
     </script>
 
-    <!-- 1️⃣ config.js 로드 -->
     <script>
-        diagnostic.add('config.js 로드 시작', 'load');
+        diagnostic.add('config.js 로드');
         window.__KAKAO_API_KEY__ = '${{ secrets.KAKAO_MAP_API_KEY }}';
     </script>
-    <script src="config.js" onload="diagnostic.add('config.js 로드됨', 'ok')" onerror="diagnostic.add('config.js 로드 실패!', 'error')"></script>
+    <script src="config.js"></script>
 
-    <!-- 2️⃣ 카카오 SDK 로드 -->
     <script>
         setTimeout(() => {
-            diagnostic.add('CONFIG 확인 시작', 'info');
-            
             if (typeof CONFIG === 'undefined') {
-                diagnostic.add('CONFIG 미정의!', 'error');
+                diagnostic.add('ERROR: CONFIG 없음');
                 return;
             }
-            
-            diagnostic.add('CONFIG 정의됨: MAP.zoom=' + CONFIG.MAP.initialZoom, 'ok');
+            diagnostic.add('CONFIG 로드됨');
             
             const apiKey = CONFIG.KAKAO_MAP_API_KEY;
-            if (!apiKey || apiKey.includes('secrets') || apiKey === 'YOUR_KAKAO_API_KEY') {
-                diagnostic.add('⚠️ API 키 없음 (로컬 테스트 모드)', 'warn');
+            if (!apiKey || apiKey.includes('secrets')) {
+                diagnostic.add('로컬모드');
                 setTimeout(loadAllScripts, 500);
                 return;
             }
             
-            diagnostic.add('카카오 SDK 로드 시작: ' + apiKey.substring(0, 10) + '...', 'load');
-            
+            diagnostic.add('카카오 SDK 로드');
             const kakaoScript = document.createElement('script');
             kakaoScript.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${apiKey}&autoload=false`;
-            
             kakaoScript.onload = () => {
-                diagnostic.add('카카오 SDK 스크립트 다운로드됨', 'ok');
+                diagnostic.add('SDK 준비');
                 kakao.maps.load(() => {
-                    diagnostic.add('kakao.maps 초기화됨', 'ok');
+                    diagnostic.add('maps 로드됨');
                     loadAllScripts();
                 });
             };
-            
             kakaoScript.onerror = () => {
-                diagnostic.add('카카오 SDK 로드 실패!', 'error');
-                setTimeout(loadAllScripts, 500);
+                diagnostic.add('SDK 에러');
+                loadAllScripts();
             };
-            
             document.head.appendChild(kakaoScript);
         }, 100);
     </script>
 
-    <!-- 3️⃣ 나머지 스크립트 순차 로드 -->
     <script>
         function loadAllScripts() {
-            diagnostic.add('스크립트 순차 로드 시작', 'load');
-            
-            const scripts = [
-                { name: 'gps.js', check: 'gpsTracker' },
-                { name: 'map.js', check: 'mapManager' },
-                { name: 'app.js', check: 'BikeGPSApp' }
-            ];
-            
+            diagnostic.add('스크립트 로드 시작');
+            const scripts = ['gps.js', 'map.js', 'app.js'];
             let loaded = 0;
             
             function loadNext() {
                 if (loaded >= scripts.length) {
-                    diagnostic.add('모든 스크립트 로드 완료!', 'ok');
-                    // ⭐ 중요: 더 오래 기다린 후 체크!
+                    diagnostic.add('완료!');
                     setTimeout(checkAllElements, 2000);
                     return;
                 }
                 
                 const script = scripts[loaded];
-                diagnostic.add(`로드 중: ${script.name}`, 'load');
+                diagnostic.add(script + ' 로드');
                 
                 const el = document.createElement('script');
-                el.src = script.name;
-                
+                el.src = script;
                 el.onload = () => {
-                    diagnostic.add(`${script.name} 다운로드됨`, 'ok');
-                    
-                    // 객체 확인
-                    if (window[script.check]) {
-                        diagnostic.add(`→ ${script.check} 생성됨`, 'ok');
-                    } else {
-                        diagnostic.add(`→ ${script.check} 아직 미생성`, 'warn');
-                    }
-                    
+                    diagnostic.add(script + ' OK');
                     loaded++;
                     setTimeout(loadNext, 100);
                 };
-                
                 el.onerror = () => {
-                    diagnostic.add(`${script.name} 로드 실패!`, 'error');
+                    diagnostic.add(script + ' ERROR!');
                     loaded++;
                     setTimeout(loadNext, 100);
                 };
-                
                 document.body.appendChild(el);
             }
-            
             loadNext();
         }
-    </script>
 
-    <!-- 4️⃣ 모든 요소 확인 (지연) -->
-    <script>
         function checkAllElements() {
-            diagnostic.add('=== 최종 체크 시작 ===', 'info');
-            
-            diagnostic.add('DOM 요소 확인', 'info');
-            
-            const elements = {
-                'startBtn': '시작 버튼',
-                'stopBtn': '중지 버튼',
-                'saveBtn': '저장 버튼',
-                'map': '지도',
-                'elapsed-time': '경과 시간',
-                'current-speed': '현재 속도',
-                'gps-status': 'GPS 상태'
-            };
-            
-            let foundAll = true;
-            Object.entries(elements).forEach(([id, name]) => {
-                if (document.getElementById(id)) {
-                    diagnostic.add(`✓ ${name}`, 'ok');
-                } else {
-                    diagnostic.add(`✗ ${name} 없음!`, 'error');
-                    foundAll = false;
-                }
-            });
-            
-            diagnostic.add('전역 객체 확인', 'info');
-            const objects = [
-                { name: 'gpsTracker', desc: 'GPS 추적기' },
-                { name: 'mapManager', desc: '지도 관리자' },
-                { name: 'app', desc: '앱 인스턴스' }
-            ];
-            
-            objects.forEach(obj => {
-                if (window[obj.name]) {
-                    diagnostic.add(`✓ ${obj.desc}`, 'ok');
-                } else {
-                    diagnostic.add(`✗ ${obj.desc} 없음!`, 'error');
-                }
-            });
-            
-            diagnostic.add('=== 체크 완료 ===', 'ok');
+            if (window.app) {
+                diagnostic.add('앱 시작됨!');
+            } else {
+                diagnostic.add('앱 미생성');
+            }
         }
     </script>
 
-    <!-- 5️⃣ 전역 에러 캐치 -->
     <script>
         window.addEventListener('error', (e) => {
-            diagnostic.add(`에러: ${e.message.substring(0, 50)}`, 'error');
-        });
-        
-        window.addEventListener('unhandledrejection', (e) => {
-            diagnostic.add(`Promise 에러: ${e.reason}`, 'error');
+            diagnostic.add('ERROR: ' + e.message.substring(0, 30));
         });
     </script>
 </body>
