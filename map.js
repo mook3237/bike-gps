@@ -121,3 +121,4 @@ const mapManager = new MapManager();
 if (typeof diagnostic !== 'undefined') {
     diagnostic.add('mapManager 인스턴스 생성됨', 'ok');
 }
+\
