@@ -207,7 +207,8 @@
             function loadNext() {
                 if (loaded >= scripts.length) {
                     diagnostic.add('모든 스크립트 로드 완료!', 'ok');
-                    checkAllElements();
+                    // ⭐ 중요: 더 오래 기다린 후 체크!
+                    setTimeout(checkAllElements, 2000);
                     return;
                 }
                 
@@ -224,7 +225,7 @@
                     if (window[script.check]) {
                         diagnostic.add(`→ ${script.check} 생성됨`, 'ok');
                     } else {
-                        diagnostic.add(`→ ${script.check} 미생성!`, 'error');
+                        diagnostic.add(`→ ${script.check} 아직 미생성`, 'warn');
                     }
                     
                     loaded++;
@@ -244,10 +245,12 @@
         }
     </script>
 
-    <!-- 4️⃣ 모든 요소 확인 -->
+    <!-- 4️⃣ 모든 요소 확인 (지연) -->
     <script>
         function checkAllElements() {
-            diagnostic.add('DOM 요소 확인 시작', 'info');
+            diagnostic.add('=== 최종 체크 시작 ===', 'info');
+            
+            diagnostic.add('DOM 요소 확인', 'info');
             
             const elements = {
                 'startBtn': '시작 버튼',
@@ -262,18 +265,14 @@
             let foundAll = true;
             Object.entries(elements).forEach(([id, name]) => {
                 if (document.getElementById(id)) {
-                    diagnostic.add(`✓ ${name} (#${id})`, 'ok');
+                    diagnostic.add(`✓ ${name}`, 'ok');
                 } else {
-                    diagnostic.add(`✗ ${name} (#${id}) 없음!`, 'error');
+                    diagnostic.add(`✗ ${name} 없음!`, 'error');
                     foundAll = false;
                 }
             });
             
-            if (!foundAll) {
-                diagnostic.add('일부 DOM 요소 누락!', 'error');
-            }
-            
-            diagnostic.add('객체 확인', 'info');
+            diagnostic.add('전역 객체 확인', 'info');
             const objects = [
                 { name: 'gpsTracker', desc: 'GPS 추적기' },
                 { name: 'mapManager', desc: '지도 관리자' },
@@ -282,21 +281,13 @@
             
             objects.forEach(obj => {
                 if (window[obj.name]) {
-                    diagnostic.add(`✓ ${obj.desc} (${obj.name})`, 'ok');
+                    diagnostic.add(`✓ ${obj.desc}`, 'ok');
                 } else {
-                    diagnostic.add(`✗ ${obj.desc} (${obj.name}) 없음!`, 'error');
+                    diagnostic.add(`✗ ${obj.desc} 없음!`, 'error');
                 }
             });
             
-            // 최종 상태
-            setTimeout(() => {
-                diagnostic.add('', 'info');
-                if (document.getElementById('gps-status').textContent === '준비 중...') {
-                    diagnostic.add('⚠️ 앱이 아직 초기화되지 않음!', 'warn');
-                } else {
-                    diagnostic.add('✅ 앱 정상 상태!', 'ok');
-                }
-            }, 500);
+            diagnostic.add('=== 체크 완료 ===', 'ok');
         }
     </script>
 
