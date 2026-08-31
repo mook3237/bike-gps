@@ -209,15 +209,18 @@
     }
 
     // ⭐️ CONFIG 확인 후 카카오 SDK 시작
-    if (
+     if (
         typeof CONFIG !== 'undefined' &&
         CONFIG.KAKAO_MAP_API_KEY
     ) {
         console.log('✅ CONFIG 로드 완료');
         initKakaoSDK();
     } else {
-        console.error('❌ 설정 로드 실패: config.local.js를 확인하세요.');
+        console.error(
+            '❌ config.js 또는 API 키가 없습니다.'
+        );
     }
 </script>
+
 </body>
 </html>
