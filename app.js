@@ -73,6 +73,44 @@ class BikeGPSApp {
             'click',
             () => this.handleSave()
         );
+        // ========================================
+        // 🚴 네비게이션 안내 시작 이벤트
+        // ========================================
+document.addEventListener(
+    'bike-navigation-start',
+    () => {
+
+        log(
+            '🚴 네비게이션 → GPS 추적 시작'
+        );
+
+        if (!this.isTracking) {
+            this.handleStart();
+        }
+
+        this.updateGPSStatus(
+            '🚴 네비게이션 안내 중...'
+        );
+    }
+);
+
+
+// ========================================
+// ⏹️ 네비게이션 안내 중지 이벤트
+// ========================================
+document.addEventListener(
+    'bike-navigation-stop',
+    () => {
+
+        log(
+            '⏹️ 네비게이션 → GPS 추적 중지'
+        );
+
+        if (this.isTracking) {
+            this.handleStop();
+        }
+    }
+);
 
         // 탭 전환
         this.tabBtns.forEach(btn => {
