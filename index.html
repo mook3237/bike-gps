@@ -10,6 +10,11 @@
     <link rel="apple-touch-icon" href="favicon.svg">
     <meta name="theme-color" content="#4CAF50">
     <meta name="description" content="실시간 자전거 속도 기록 및 경로 추적 웹앱">
+    
+    <!-- 🔐 GitHub Actions에서 자동 주입 (Secrets: KAKAO_MAP_API_KEY) -->
+    <script>
+        window.__KAKAO_API_KEY__ = '${{ secrets.KAKAO_MAP_API_KEY }}';
+    </script>
 </head>
 <body>
     <div class="container">
@@ -111,16 +116,23 @@
 
         <!-- 지도 탭 -->
         <div class="tab-content" id="map-tab">
-            
-    <div id="map" class="map-container"></div>
-</div>
+            <div id="map" class="map-container"></div>
         </div>
     </div>
-
+<!-- ════════════════════════════════════════ -->
+    <!-- 1️⃣ 설정 먼저 로드 (실패 시 예외 처리 추가) -->
     <!-- ════════════════════════════════════════ -->
-    <!-- 1️⃣ 설정 먼저 로드 -->
-    <!-- ════════════════════════════════════════ -->
-    <script src="config.js"></script>
+    <script src="config.js" onerror="console.warn('config.js를 찾을 수 없습니다. 기본 설정으로 대체합니다.')"></script>
+    <script>
+        // config.js 로드 실패 시(로컬 테스트 등) 앱이 죽지 않도록 기본 CONFIG 주입
+        if (typeof CONFIG === 'undefined') {
+            window.CONFIG = {
+                KAKAO_MAP_API_KEY: window.__KAKAO_API_KEY__ || '',
+                MAP: { initialZoom: 3, centerLat: 37.4979, centerLng: 127.0276 },
+                GPS: { highAccuracy: true, timeout: 10000, maximumAge: 0 }
+            };
+        }
+    </script>
 
     <!-- ════════════════════════════════════════ -->
     <!-- 2️⃣ GPS 추적 코드 (kakao 필요 없음) -->
@@ -131,95 +143,47 @@
     <!-- 3️⃣ 카카오 SDK 로드 + 모든 스크립트 -->
     <!-- ════════════════════════════════════════ -->
     <script>
-    // ⭐️ map.js / app.js를 먼저 준비
-    const mapScript = document.createElement('script');
-    mapScript.src = 'map.js';
+        const mapScript = document.createElement('script');
+        mapScript.src = 'map.js';
+        
+        const appScript = document.createElement('script');
+        appScript.src = 'app.js';
 
-    const appScript = document.createElement('script');
-    appScript.src = 'app.js';
-
-    // ⭐️ 카카오 지도 SDK 로드
-    function initKakaoSDK() {
-        console.log('🔵 카카오 SDK 로딩 시작');
-        console.log('🔑 API KEY 존재:', !!CONFIG.KAKAO_MAP_API_KEY);
-
-        const kakaoScript = document.createElement('script');
-
-        // ✅ https를 명시적으로 사용
-        kakaoScript.src =
-            `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(CONFIG.KAKAO_MAP_API_KEY)}&autoload=false`;
-
-        // SDK 파일 자체가 로드된 경우
-        kakaoScript.onload = () => {
-            console.log('✅ 카카오 SDK 파일 로드 완료');
-            console.log('kakao 존재:', !!window.kakao);
-            console.log('kakao.maps 존재:', !!window.kakao?.maps);
-
-            if (!window.kakao || !window.kakao.maps) {
-                console.error('❌ kakao.maps 객체가 없습니다.');
-                return;
-            }
-
-            // ⭐️ 실제 Kakao Maps 초기화
-            kakao.maps.load(() => {
-                console.log('✅ kakao.maps 준비 완료!');
-
-                // map.js 로드
-                document.body.appendChild(mapScript);
-
-                mapScript.onload = () => {
-                    console.log('✅ map.js 로드 완료!');
-
-                    // app.js 로드
-                    document.body.appendChild(appScript);
-
-                    appScript.onload = () => {
-                        console.log('✅ app.js 로드 완료!');
+        function initKakaoSDK() {
+            const kakaoScript = document.createElement('script');
+            kakaoScript.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${CONFIG.KAKAO_MAP_API_KEY}&autoload=false`;
+            
+            kakaoScript.onload = () => {
+                console.log('✅ 카카오 SDK 로드 완료!');
+                kakao.maps.load(() => {
+                    console.log('✅ kakao.maps 준비 완료!');
+                    document.body.appendChild(mapScript);
+                    mapScript.onload = () => {
+                        console.log('✅ map.js 로드 완료!');
+                        document.body.appendChild(appScript);
                     };
+                });
+            };
+            
+            kakaoScript.onerror = () => {
+                console.error('❌ 카카오 SDK 로드 실패!');
+                document.getElementById('gps-status').textContent = '❌ 카카오 지도 통신 실패';
+            };
+            
+            document.head.appendChild(kakaoScript);
+        }
 
-                    appScript.onerror = () => {
-                        console.error('❌ app.js 로드 실패!');
-                    };
-                };
-
-                mapScript.onerror = () => {
-                    console.error('❌ map.js 로드 실패!');
-                };
+        // 유효한 API 키가 존재하는지 검증 (GitHub 템플릿 변수 문자열 그대로인 경우 제외)
+        const hasValidKey = CONFIG.KAKAO_MAP_API_KEY && !CONFIG.KAKAO_MAP_API_KEY.includes('${{');
+        
+        if (hasValidKey) {
+            initKakaoSDK();
+        } else {
+            console.error('❌ 카카오 API 키가 설정되지 않았습니다.');
+            document.addEventListener('DOMContentLoaded', () => {
+                document.getElementById('gps-status').textContent = '❌ API 키 필요 (설정 확인)';
             });
-        };
-
-        // SDK 자체를 못 불러온 경우
-        kakaoScript.onerror = (error) => {
-            console.error('❌ 카카오 SDK 로드 실패!', error);
-            console.error(
-                '1. 카카오 JavaScript 키 확인\n' +
-                '2. 카카오 디벨로퍼스 JavaScript SDK 도메인 확인\n' +
-                '3. 현재 접속 주소 확인'
-            );
-
-            const gpsStatus = document.getElementById('gps-status');
-
-            if (gpsStatus) {
-                gpsStatus.textContent = '❌ 카카오 SDK 로드 실패';
-            }
-        };
-
-        document.head.appendChild(kakaoScript);
-    }
-
-    // ⭐️ CONFIG 확인 후 카카오 SDK 시작
-     if (
-        typeof CONFIG !== 'undefined' &&
-        CONFIG.KAKAO_MAP_API_KEY
-    ) {
-        console.log('✅ CONFIG 로드 완료');
-        initKakaoSDK();
-    } else {
-        console.error(
-            '❌ config.js 또는 API 키가 없습니다.'
-        );
-    }
-</script>
-
+        }
+    </script>
 </body>
 </html>
