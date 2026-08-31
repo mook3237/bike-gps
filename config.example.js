@@ -14,8 +14,8 @@ const CONFIG = {
 };
     GPS: {
         highAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
+        timeout: 5000,
+        maximumAge: 2000,
     },
 };
 
