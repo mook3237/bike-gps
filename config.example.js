@@ -4,12 +4,14 @@ if (typeof diagnostic !== 'undefined') {
 }
 
 const CONFIG = {
-    KAKAO_MAP_API_KEY: window.__KAKAO_API_KEY__ || '',
+    KAKAO_MAP_API_KEY: 'YOUR_KAKAO_API_KEY_HERE',
+
     MAP: {
-        initialZoom: 3,
-        centerLat: 37.4979,
-        centerLng: 127.0276,
-    },
+        centerLat: 37.5665,
+        centerLng: 126.9780,
+        initialZoom: 3
+    }
+};
     GPS: {
         highAccuracy: true,
         timeout: 10000,
