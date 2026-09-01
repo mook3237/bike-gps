@@ -13,6 +13,9 @@ export default async function handler(req, res) {
 
     try {
 
+        // ========================================
+        // 좌표 받기
+        // ========================================
         const {
             start_x,
             start_y,
@@ -32,24 +35,20 @@ export default async function handler(req, res) {
         ) {
 
             return res.status(400).json({
-                error: '출발지와 목적지 좌표가 필요합니다.'
+                error:
+                    '출발지와 목적지 좌표가 필요합니다.'
             });
         }
 
 
         // ========================================
-        // Vercel 환경변수에서
-        // 카카오 REST API 키 가져오기
+        // 카카오 REST API 키
         // ========================================
         const restApiKey =
             process.env.KAKAO_REST_API_KEY;
 
 
         if (!restApiKey) {
-
-            console.error(
-                '❌ KAKAO_REST_API_KEY 없음'
-            );
 
             return res.status(500).json({
                 error:
@@ -59,85 +58,53 @@ export default async function handler(req, res) {
 
 
         // ========================================
-        // 카카오 자전거 경로 API 주소 생성
+        // 자전거 경로 요청 함수
         // ========================================
-        const kakaoUrl =
-            new URL(
-                'https://dapi.kakao.com/v2/routing/bicycle'
+        async function getBicycleRoute(routeMode) {
+
+            const kakaoUrl =
+                new URL(
+                    'https://dapi.kakao.com/v2/routing/bicycle'
+                );
+
+
+            // 출발지
+            kakaoUrl.searchParams.set(
+                'start_x',
+                start_x
+            );
+
+            kakaoUrl.searchParams.set(
+                'start_y',
+                start_y
             );
 
 
-        kakaoUrl.searchParams.set(
-            'start_x',
-            start_x
-        );
+            // 목적지
+            kakaoUrl.searchParams.set(
+                'end_x',
+                end_x
+            );
 
-
-        kakaoUrl.searchParams.set(
-            'start_y',
-            start_y
-        );
-
-
-        kakaoUrl.searchParams.set(
-            'end_x',
-            end_x
-        );
-
-
-        kakaoUrl.searchParams.set(
-            'end_y',
-            end_y
-        );
-
-
-        // ========================================
-        // 최단거리 우선
-kakaoUrl.searchParams.set(
-    'route_mode',
-    'SHORTEST'
-);
-
-
-        console.log(
-            '🚴 카카오 자전거 경로 요청 시작',
-            {
-                start_x,
-                start_y,
-                end_x,
+            kakaoUrl.searchParams.set(
+                'end_y',
                 end_y
-            }
-        );
-
-
-        // ========================================
-        // ⏱️ 카카오 API 최대 30초 대기
-        // ========================================
-        const controller =
-            new AbortController();
-
-
-        const timeoutId =
-            setTimeout(
-                () => {
-
-                    console.error(
-                        '⏱️ 카카오 API 요청 시간 초과'
-                    );
-
-                    controller.abort();
-
-                },
-                30000
             );
 
 
-        let response;
+            // 경로 종류
+            kakaoUrl.searchParams.set(
+                'route_mode',
+                routeMode
+            );
 
 
-        try {
+            console.log(
+                `🚴 경로 요청: ${routeMode}`
+            );
 
-            response =
+
+            const response =
                 await fetch(
                     kakaoUrl.toString(),
                     {
@@ -146,78 +113,180 @@ kakaoUrl.searchParams.set(
                         headers: {
                             Authorization:
                                 `KakaoAK ${restApiKey}`
-                        },
-
-                        signal:
-                            controller.signal
+                        }
                     }
                 );
 
-        } finally {
 
-            clearTimeout(
-                timeoutId
-            );
-        }
-
-
-        // ========================================
-        // 응답 상태 확인
-        // ========================================
-        console.log(
-            '📡 카카오 API 응답 도착',
-            response.status
-        );
-
-
-        let data;
-
-
-        try {
-
-            data =
+            const data =
                 await response.json();
 
-        } catch (jsonError) {
 
-            console.error(
-                '❌ 카카오 API JSON 변환 실패',
-                jsonError
-            );
+            // API 오류
+            if (!response.ok) {
 
-            return res.status(500).json({
-                error:
-                    '카카오 API 응답을 읽을 수 없습니다.'
-            });
-        }
+                console.error(
+                    `❌ ${routeMode} 경로 오류:`,
+                    data
+                );
 
 
-        // ========================================
-        // 카카오 API 오류
-        // ========================================
-        if (!response.ok) {
+                return {
 
-            console.error(
-                '❌ Kakao API 오류',
-                {
-                    status:
-                        response.status,
+                    success: false,
 
-                    data:
+                    routeMode:
+                        routeMode,
+
+                    error:
                         data
+                };
+            }
+
+
+            // 정상 응답이지만
+            // 경로를 찾지 못한 경우
+            if (
+                !data ||
+                data.status !== 'OK' ||
+                !data.route
+            ) {
+
+                console.log(
+                    `⚠️ ${routeMode} 경로 없음`
+                );
+
+
+                return {
+
+                    success: false,
+
+                    routeMode:
+                        routeMode,
+
+                    error:
+                        data
+                };
+            }
+
+
+            console.log(
+                `✅ ${routeMode} 경로 수신`,
+                {
+
+                    distance:
+                        data.route.properties
+                            ?.totalDistance,
+
+                    time:
+                        data.route.properties
+                            ?.totalTime
                 }
             );
 
 
-            return res.status(
-                response.status
-            ).json({
+            return {
+
+                success: true,
+
+                routeMode:
+                    routeMode,
+
+                route:
+                    data.route
+            };
+        }
+
+
+        // ========================================
+        // 3가지 경로 동시에 요청
+        // ========================================
+
+        const [
+
+            shortestResult,
+
+            bikeOnlyResult,
+
+            accessibleResult
+
+        ] =
+            await Promise.all([
+
+                // ⚡ 최단 경로
+                getBicycleRoute(
+                    'SHORTEST'
+                ),
+
+                // 🚴 자전거도로 우선
+                getBicycleRoute(
+                    'BIKE_ONLY'
+                ),
+
+                // 🙂 편안한 길
+                getBicycleRoute(
+                    'ACCESSIBLE'
+                )
+            ]);
+
+
+        // ========================================
+        // 성공한 경로만 저장
+        // ========================================
+
+        const routes = {
+
+
+            shortest:
+
+                shortestResult.success
+                    ? shortestResult.route
+                    : null,
+
+
+            bikeOnly:
+
+                bikeOnlyResult.success
+                    ? bikeOnlyResult.route
+                    : null,
+
+
+            accessible:
+
+                accessibleResult.success
+                    ? accessibleResult.route
+                    : null
+        };
+
+
+        // ========================================
+        // 성공한 경로 개수
+        // ========================================
+
+        const successCount =
+
+            Object.values(routes)
+
+                .filter(
+                    route => route !== null
+                )
+
+                .length;
+
+
+        // ========================================
+        // 전부 실패
+        // ========================================
+
+        if (successCount === 0) {
+
+            return res.status(500).json({
+
+                status:
+                    'ERROR',
 
                 error:
-                    '카카오 자전거 경로 API 요청 실패',
-
-                details:
-                    data
+                    '자전거 경로를 찾지 못했습니다.'
             });
         }
 
@@ -225,48 +294,34 @@ kakaoUrl.searchParams.set(
         // ========================================
         // 성공
         // ========================================
+
         console.log(
-            '✅ 카카오 자전거 경로 수신 완료'
+            `🎉 자전거 경로 ${successCount}개 수신 완료`
         );
 
 
-        return res.status(200).json(
-            data
-        );
+        return res.status(200).json({
+
+            status:
+                'OK',
+
+            routes:
+                routes
+        });
 
 
     } catch (error) {
 
-        // ========================================
-        // 요청 시간 초과
-        // ========================================
-        if (
-            error.name === 'AbortError'
-        ) {
-
-            console.error(
-                '⏱️ 카카오 API 요청 시간 초과'
-            );
-
-
-            return res.status(504).json({
-
-                error:
-                    '카카오 자전거 경로 요청 시간이 초과되었습니다.'
-            });
-        }
-
-
-        // ========================================
-        // 기타 서버 오류
-        // ========================================
         console.error(
-            '❌ 서버 오류',
+            '❌ 서버 오류:',
             error
         );
 
 
         return res.status(500).json({
+
+            status:
+                'ERROR',
 
             error:
                 '자전거 경로를 가져오는 중 서버 오류가 발생했습니다.',
