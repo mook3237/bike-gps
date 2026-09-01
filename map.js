@@ -1481,52 +1481,67 @@ class MapManager {
             // 경로 데이터 확인
             // ========================================
             if (
+    !data ||
+    data.status !== 'OK' ||
+    !data.routes
+) {
 
-                !data ||
+    const status =
+        data?.status ||
+        'UNKNOWN';
 
-                data.status !== 'OK' ||
-
-                !data.route
-            ) {
-
-                const status =
-                    data?.status ||
-                    'UNKNOWN';
-
-
-                throw new Error(
-                    `자전거 경로를 찾지 못했습니다. (${status})`
-                );
-            }
+    throw new Error(
+        `자전거 경로를 찾지 못했습니다. (${status})`
+    );
+}
 
 
-            // ========================================
-            // 경로 표시
-            // ========================================
-            this.drawNavigationRoute(
-                data.route
-            );
+// ========================================
+// 🚴 사용할 경로 선택
+// 우선 최단 경로를 기본으로 사용
+// ========================================
+
+const selectedRoute =
+    data.routes.shortest ||
+    data.routes.accessible ||
+    data.routes.bikeOnly;
 
 
-            log(
-                '✅ 자전거 경로 수신 완료',
-                {
+// 사용할 수 있는 경로가 없는 경우
+if (!selectedRoute) {
 
-                    distance:
-                        data.route.properties?.totalDistance,
-
-                    time:
-                        data.route.properties?.totalTime
-                }
-            );
+    throw new Error(
+        '사용 가능한 자전거 경로가 없습니다.'
+    );
+}
 
 
-        } catch (error) {
+// ========================================
+// 실제 경로 그리기
+// ========================================
 
-            log(
-                '❌ 자전거 경로 요청 실패',
-                error
-            );
+this.drawNavigationRoute(
+    selectedRoute
+);
+
+
+// ========================================
+// 경로 정보 확인
+// ========================================
+
+log(
+    '✅ 자전거 경로 수신 완료',
+    {
+
+        distance:
+            selectedRoute.properties
+                ?.totalDistance,
+
+        time:
+            selectedRoute.properties
+                ?.totalTime
+    }
+);
 
 
             // ========================================
