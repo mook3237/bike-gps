@@ -3,14 +3,8 @@
 // ============================================================
 
 function log(message, data = '') {
-
-    const timestamp =
-        new Date().toLocaleTimeString();
-
-    console.log(
-        `[${timestamp}] ${message}`,
-        data
-    );
+    const timestamp = new Date().toLocaleTimeString();
+    console.log(`[${timestamp}] ${message}`, data);
 }
 
 
@@ -37,11 +31,8 @@ class MapManager {
         // ====================================================
 
         this.destinationMarker = null;
-
         this.destinationLocation = null;
-
         this.destinationAddress = '';
-
         this.isSelectingDestination = false;
 
 
@@ -50,7 +41,6 @@ class MapManager {
         // ====================================================
 
         this.polyline = null;
-
         this.pathCoords = [];
 
 
@@ -59,14 +49,15 @@ class MapManager {
         // ====================================================
 
         this.navigationPolyline = null;
-
         this.navigationPathCoords = [];
 
         this.navigationDistance = 0;
-
         this.navigationTime = 0;
 
         this.selectedRoute = null;
+        this.selectedRouteIndex = -1;
+
+        this.routeList = [];
 
 
         // ====================================================
@@ -75,36 +66,19 @@ class MapManager {
 
         this.isLoadingRoute = false;
 
-        this.isNavigating = false;
-
-
-        // ====================================================
-        // 🛣️ 경로
-        // ====================================================
-
-        this.routeList = [];
-
-        this.selectedRouteIndex = -1;
-
 
         // ====================================================
         // UI
         // ====================================================
 
         this.locationButton = null;
-
         this.destinationButton = null;
 
-        this.routeButton = null;
-
         this.destinationSheet = null;
-
         this.routeSelector = null;
 
 
-        log(
-            'MapManager 생성됨'
-        );
+        log('MapManager 생성됨');
     }
 
 
@@ -114,102 +88,59 @@ class MapManager {
 
     initMap() {
 
-        log(
-            '🗺️ 지도 초기화 시작...'
-        );
-
+        log('🗺️ 지도 초기화 시작...');
 
         try {
 
-            const mapContainer =
-                document.getElementById('map');
-
+            const mapContainer = document.getElementById('map');
 
             if (!mapContainer) {
-
-                log(
-                    '❌ 지도 컨테이너를 찾을 수 없음'
-                );
-
-                return;
+                throw new Error('지도 컨테이너를 찾을 수 없습니다.');
             }
 
 
             if (
-                window.getComputedStyle(
-                    mapContainer
-                ).position === 'static'
+                window.getComputedStyle(mapContainer).position === 'static'
             ) {
-
-                mapContainer.style.position =
-                    'relative';
+                mapContainer.style.position = 'relative';
             }
 
 
             const mapOption = {
 
-                center:
+                center: new kakao.maps.LatLng(
+                    CONFIG.MAP.centerLat,
+                    CONFIG.MAP.centerLng
+                ),
 
-                    new kakao.maps.LatLng(
-
-                        CONFIG.MAP.centerLat,
-
-                        CONFIG.MAP.centerLng
-
-                    ),
-
-                level:
-
-                    CONFIG.MAP.initialZoom
+                level: CONFIG.MAP.initialZoom
             };
 
 
-            this.map =
-                new kakao.maps.Map(
-
-                    mapContainer,
-
-                    mapOption
-
-                );
-
-
-            log(
-                '✅ 지도 초기화 완료!'
+            this.map = new kakao.maps.Map(
+                mapContainer,
+                mapOption
             );
 
 
-            // ====================================================
-            // 버튼 생성
-            // ====================================================
+            log('✅ 지도 초기화 완료');
 
+
+            // 버튼
             this.createCurrentLocationButton();
-
             this.createDestinationButton();
 
-            this.createRouteButton();
 
-
-            // ====================================================
-            // 카드 UI 생성
-            // ====================================================
-
+            // 카드 UI
             this.createDestinationSheet();
-
             this.createRouteSelector();
 
 
-            // ====================================================
-            // 지도 클릭 이벤트
-            // ====================================================
-
+            // 지도 클릭
             this.setupMapClickForDestination();
 
 
-            // ====================================================
-            // 현재 위치 자동 요청
-            // ====================================================
-
+            // 현재 위치
             this.requestInitialLocation();
 
 
@@ -230,7 +161,6 @@ class MapManager {
     requestInitialLocation() {
 
         if (!navigator.geolocation) {
-
             return;
         }
 
@@ -241,38 +171,24 @@ class MapManager {
 
                 const coords = {
 
-                    latitude:
-                        position.coords.latitude,
+                    latitude: position.coords.latitude,
+                    longitude: position.coords.longitude,
 
-                    longitude:
-                        position.coords.longitude,
+                    accuracy: position.coords.accuracy,
 
-                    accuracy:
-                        position.coords.accuracy,
+                    speed: Number.isFinite(position.coords.speed)
+                        ? position.coords.speed
+                        : null,
 
-                    speed:
-                        Number.isFinite(
-                            position.coords.speed
-                        )
-                            ? position.coords.speed
-                            : null,
+                    altitude: Number.isFinite(position.coords.altitude)
+                        ? position.coords.altitude
+                        : null,
 
-                    altitude:
-                        Number.isFinite(
-                            position.coords.altitude
-                        )
-                            ? position.coords.altitude
-                            : null,
+                    heading: Number.isFinite(position.coords.heading)
+                        ? position.coords.heading
+                        : null,
 
-                    heading:
-                        Number.isFinite(
-                            position.coords.heading
-                        )
-                            ? position.coords.heading
-                            : null,
-
-                    timestamp:
-                        position.timestamp
+                    timestamp: position.timestamp
                 };
 
 
@@ -282,11 +198,18 @@ class MapManager {
                 );
 
 
+                this.map.setCenter(
+                    new kakao.maps.LatLng(
+                        coords.latitude,
+                        coords.longitude
+                    )
+                );
+
+
                 log(
                     '📍 초기 현재 위치 확보',
                     coords
                 );
-
             },
 
 
@@ -296,16 +219,12 @@ class MapManager {
                     '⚠️ 초기 위치 확인 실패',
                     error
                 );
-
             },
 
 
             {
-
                 enableHighAccuracy: true,
-
                 timeout: 5000,
-
                 maximumAge: 2000
             }
         );
@@ -337,70 +256,24 @@ class MapManager {
         button.type = 'button';
 
         button.className =
-            'current-location-button';
+            'map-floating-button current-location-button';
 
-        button.innerHTML =
-            '📍';
+        button.innerHTML = '📍';
 
-
-        Object.assign(
-
-            button.style,
-
-            {
-
-                position: 'absolute',
-
-                right: '14px',
-
-                bottom: '14px',
-
-                width: '50px',
-
-                height: '50px',
-
-                border: 'none',
-
-                borderRadius: '50%',
-
-                background: '#ffffff',
-
-                boxShadow:
-                    '0 3px 10px rgba(0,0,0,0.25)',
-
-                zIndex: '2000',
-
-                fontSize: '23px',
-
-                cursor: 'pointer'
-            }
-        );
+        button.title = '현재 위치';
 
 
         button.addEventListener(
-
             'click',
-
-            () => {
-
-                this.goToCurrentLocation();
-
-            }
+            () => this.goToCurrentLocation()
         );
 
 
-        mapContainer.appendChild(
-            button
-        );
+        mapContainer.appendChild(button);
 
+        this.locationButton = button;
 
-        this.locationButton =
-            button;
-
-
-        log(
-            '✅ 현재 위치 버튼 생성 완료'
-        );
+        log('✅ 현재 위치 버튼 생성 완료');
     }
 
 
@@ -428,16 +301,13 @@ class MapManager {
                     new kakao.maps.LatLng(
 
                         position.coords.latitude,
-
                         position.coords.longitude
 
                     );
 
 
                 this.updateCurrentMarker(
-
                     {
-
                         latitude:
                             position.coords.latitude,
 
@@ -449,23 +319,14 @@ class MapManager {
 
                         timestamp:
                             position.timestamp
-
                     },
-
                     false
                 );
 
 
-                this.map.setCenter(
-                    location
-                );
+                this.map.setCenter(location);
 
-
-                this.map.setLevel(
-                    2
-                );
-
-
+                this.map.setLevel(2);
             },
 
 
@@ -474,16 +335,12 @@ class MapManager {
                 alert(
                     '현재 위치를 가져올 수 없습니다.'
                 );
-
             },
 
 
             {
-
                 enableHighAccuracy: true,
-
                 timeout: 5000,
-
                 maximumAge: 2000
             }
         );
@@ -512,46 +369,14 @@ class MapManager {
             document.createElement('button');
 
 
-        button.type =
-            'button';
+        button.type = 'button';
 
+        button.className =
+            'map-floating-button destination-button';
 
-        button.innerHTML =
-            '🎯';
+        button.innerHTML = '🎯';
 
-
-        Object.assign(
-
-            button.style,
-
-            {
-
-                position: 'absolute',
-
-                right: '14px',
-
-                bottom: '72px',
-
-                width: '50px',
-
-                height: '50px',
-
-                border: 'none',
-
-                borderRadius: '50%',
-
-                background: '#ffffff',
-
-                boxShadow:
-                    '0 3px 10px rgba(0,0,0,0.25)',
-
-                zIndex: '2000',
-
-                fontSize: '22px',
-
-                cursor: 'pointer'
-            }
-        );
+        button.title = '목적지 설정';
 
 
         button.addEventListener(
@@ -566,18 +391,11 @@ class MapManager {
         );
 
 
-        mapContainer.appendChild(
-            button
-        );
+        mapContainer.appendChild(button);
 
+        this.destinationButton = button;
 
-        this.destinationButton =
-            button;
-
-
-        log(
-            '✅ 목적지 버튼 생성 완료'
-        );
+        log('✅ 목적지 버튼 생성 완료');
     }
 
 
@@ -588,36 +406,28 @@ class MapManager {
     startDestinationSelection() {
 
         if (!this.map) {
-
             return;
         }
 
 
-        // 기존 목적지가 있으면 제거
+        // 기존 목적지와 경로 제거
 
         this.clearDestination();
-
-
-        // 경로도 제거
 
         this.clearRouteCompletely();
 
 
-        this.isSelectingDestination =
-            true;
+        this.isSelectingDestination = true;
 
 
-        this.destinationButton.innerHTML =
-            '✚';
+        this.destinationButton.innerHTML = '✚';
 
-
-        this.destinationButton.style.background =
-            '#e8f3ff';
-
-
-        log(
-            '🎯 목적지 선택 모드 시작'
+        this.destinationButton.classList.add(
+            'selecting'
         );
+
+
+        log('🎯 목적지 선택 모드 시작');
     }
 
 
@@ -642,14 +452,9 @@ class MapManager {
                 }
 
 
-                const location =
-                    mouseEvent.latLng;
-
-
                 this.setDestination(
-                    location
+                    mouseEvent.latLng
                 );
-
             }
         );
 
@@ -667,7 +472,6 @@ class MapManager {
     setDestination(location) {
 
         if (!this.map) {
-
             return;
         }
 
@@ -675,8 +479,6 @@ class MapManager {
         this.destinationLocation =
             location;
 
-
-        // 기존 핀 삭제
 
         if (
             this.destinationMarker
@@ -688,8 +490,6 @@ class MapManager {
         }
 
 
-        // 새 목적지 핀
-
         this.destinationMarker =
             new kakao.maps.Marker({
 
@@ -698,15 +498,12 @@ class MapManager {
                 map: this.map,
 
                 title: '목적지'
-
             });
 
 
         this.isSelectingDestination =
             false;
 
-
-        // 버튼 원상복구
 
         if (
             this.destinationButton
@@ -715,12 +512,11 @@ class MapManager {
             this.destinationButton.innerHTML =
                 '🎯';
 
-            this.destinationButton.style.background =
-                '#ffffff';
+            this.destinationButton.classList.remove(
+                'selecting'
+            );
         }
 
-
-        // 주소 가져오기
 
         this.reverseGeocodeDestination(
             location
@@ -728,17 +524,7 @@ class MapManager {
 
 
         log(
-            '🎯 목적지 설정 완료',
-
-            {
-
-                latitude:
-                    location.getLat(),
-
-                longitude:
-                    location.getLng()
-
-            }
+            '🎯 목적지 설정 완료'
         );
     }
 
@@ -775,12 +561,15 @@ class MapManager {
             (result, status) => {
 
                 if (
+
                     status ===
                     kakao.maps.services.Status.OK
+
                 ) {
 
                     const address =
                         result?.[0]?.address?.address_name;
+
 
                     const roadAddress =
                         result?.[0]?.road_address?.address_name;
@@ -826,40 +615,15 @@ class MapManager {
             document.createElement('div');
 
 
-        sheet.style.position =
-            'absolute';
+        sheet.className =
+            'destination-sheet';
 
-        sheet.style.left =
-            '12px';
-
-        sheet.style.right =
-            '12px';
-
-        sheet.style.bottom =
-            '12px';
-
-        sheet.style.zIndex =
-            '3000';
 
         sheet.style.display =
             'none';
 
-        sheet.style.background =
-            '#ffffff';
 
-        sheet.style.borderRadius =
-            '20px';
-
-        sheet.style.boxShadow =
-            '0 6px 20px rgba(0,0,0,0.25)';
-
-        sheet.style.padding =
-            '16px';
-
-
-        mapContainer.appendChild(
-            sheet
-        );
+        mapContainer.appendChild(sheet);
 
 
         this.destinationSheet =
@@ -867,7 +631,7 @@ class MapManager {
 
 
         log(
-            '✅ 목적지 선택창 생성 완료'
+            '✅ 목적지 카드 생성 완료'
         );
     }
 
@@ -885,38 +649,17 @@ class MapManager {
         }
 
 
-        this.destinationSheet.innerHTML =
-            `
+        this.destinationSheet.innerHTML = `
 
-            <div
-                style="
-                    display:flex;
-                    justify-content:space-between;
-                    align-items:flex-start;
-                    gap:12px;
-                    margin-bottom:16px;
-                "
-            >
+            <div class="destination-sheet-header">
 
-                <div>
+                <div class="destination-sheet-info">
 
-                    <div
-                        style="
-                            font-size:12px;
-                            color:#888;
-                            margin-bottom:5px;
-                        "
-                    >
-                        선택한 목적지
+                    <div class="destination-label">
+                        목적지
                     </div>
 
-                    <div
-                        style="
-                            font-size:16px;
-                            font-weight:700;
-                            line-height:1.4;
-                        "
-                    >
+                    <div class="destination-address">
                         📍 ${this.destinationAddress}
                     </div>
 
@@ -924,15 +667,9 @@ class MapManager {
 
 
                 <button
+                    class="map-close-button"
                     id="destination-close-button"
                     type="button"
-                    style="
-                        border:none;
-                        background:transparent;
-                        font-size:24px;
-                        cursor:pointer;
-                        padding:0;
-                    "
                 >
                     ×
                 </button>
@@ -940,26 +677,12 @@ class MapManager {
             </div>
 
 
-            <div
-                style="
-                    display:flex;
-                    gap:10px;
-                "
-            >
+            <div class="destination-actions">
 
                 <button
                     id="destination-start-button"
+                    class="destination-action-btn start"
                     type="button"
-                    style="
-                        flex:1;
-                        border:none;
-                        border-radius:14px;
-                        padding:14px;
-                        background:#f0f0f0;
-                        font-size:15px;
-                        font-weight:700;
-                        cursor:pointer;
-                    "
                 >
                     출발
                 </button>
@@ -967,25 +690,15 @@ class MapManager {
 
                 <button
                     id="destination-arrival-button"
+                    class="destination-action-btn arrival"
                     type="button"
-                    style="
-                        flex:1;
-                        border:none;
-                        border-radius:14px;
-                        padding:14px;
-                        background:#1677ff;
-                        color:#ffffff;
-                        font-size:15px;
-                        font-weight:700;
-                        cursor:pointer;
-                    "
                 >
                     도착
                 </button>
 
             </div>
 
-            `;
+        `;
 
 
         this.destinationSheet.style.display =
@@ -993,7 +706,7 @@ class MapManager {
 
 
         // ========================================================
-        // X → 목적지 선택 취소
+        // X → 목적지 + 경로 전체 제거
         // ========================================================
 
         document
@@ -1007,6 +720,8 @@ class MapManager {
                 () => {
 
                     this.clearDestination();
+
+                    this.clearRouteCompletely();
 
                     this.destinationSheet.style.display =
                         'none';
@@ -1030,7 +745,7 @@ class MapManager {
                 () => {
 
                     alert(
-                        '출발 위치 선택 기능은 다음 단계에서 연결할 예정입니다.'
+                        '현재 버전에서는 현재 위치를 출발지로 사용합니다.'
                     );
 
                 }
@@ -1049,13 +764,13 @@ class MapManager {
 
                 'click',
 
-                () => {
+                async () => {
 
                     this.destinationSheet.style.display =
                         'none';
 
 
-                    this.requestBicycleRoute();
+                    await this.requestBicycleRoute();
 
                 }
             );
@@ -1063,7 +778,7 @@ class MapManager {
 
 
     // ============================================================
-    // ❌ 목적지 완전 삭제
+    // ❌ 목적지 삭제
     // ============================================================
 
     clearDestination() {
@@ -1087,7 +802,6 @@ class MapManager {
         this.destinationAddress =
             '';
 
-
         this.isSelectingDestination =
             false;
 
@@ -1099,111 +813,23 @@ class MapManager {
             this.destinationButton.innerHTML =
                 '🎯';
 
-            this.destinationButton.style.background =
-                '#ffffff';
+            this.destinationButton.classList.remove(
+                'selecting'
+            );
+        }
+
+
+        if (
+            this.destinationSheet
+        ) {
+
+            this.destinationSheet.style.display =
+                'none';
         }
 
 
         log(
             '🗑️ 목적지 삭제'
-        );
-    }
-
-
-    // ============================================================
-    // 🚴 경로 버튼
-    // ============================================================
-
-    createRouteButton() {
-
-        if (
-            this.routeButton
-        ) {
-            return;
-        }
-
-
-        const mapContainer =
-            document.getElementById('map');
-
-
-        const button =
-            document.createElement('button');
-
-
-        button.type =
-            'button';
-
-
-        button.innerHTML =
-            '🚴';
-
-
-        Object.assign(
-
-            button.style,
-
-            {
-
-                position: 'absolute',
-
-                right: '14px',
-
-                bottom: '130px',
-
-                width: '50px',
-
-                height: '50px',
-
-                border: 'none',
-
-                borderRadius: '50%',
-
-                background: '#ffffff',
-
-                boxShadow:
-                    '0 3px 10px rgba(0,0,0,0.25)',
-
-                zIndex: '2000',
-
-                fontSize: '22px',
-
-                cursor: 'pointer'
-            }
-        );
-
-
-        button.addEventListener(
-
-            'click',
-
-            () => {
-
-                if (
-                    !this.destinationLocation
-                ) {
-
-                    return;
-                }
-
-
-                this.requestBicycleRoute();
-
-            }
-        );
-
-
-        mapContainer.appendChild(
-            button
-        );
-
-
-        this.routeButton =
-            button;
-
-
-        log(
-            '✅ 자전거 경로 버튼 생성 완료'
         );
     }
 
@@ -1215,6 +841,7 @@ class MapManager {
     getCurrentOrigin() {
 
         if (
+
             typeof gpsTracker !==
             'undefined' &&
 
@@ -1223,6 +850,7 @@ class MapManager {
             ) &&
 
             gpsTracker.positions.length > 0
+
         ) {
 
             const latest =
@@ -1232,12 +860,15 @@ class MapManager {
 
 
             if (
+
                 Number.isFinite(
                     latest.latitude
                 ) &&
+
                 Number.isFinite(
                     latest.longitude
                 )
+
             ) {
 
                 return {
@@ -1320,15 +951,6 @@ class MapManager {
             true;
 
 
-        if (
-            this.routeButton
-        ) {
-
-            this.routeButton.innerHTML =
-                '⏳';
-        }
-
-
         try {
 
             const params =
@@ -1383,10 +1005,6 @@ class MapManager {
             }
 
 
-            // ====================================================
-            // API 응답 구조 처리
-            // ====================================================
-
             const routes =
                 this.extractRoutes(
                     data
@@ -1407,18 +1025,15 @@ class MapManager {
                 routes;
 
 
-            // ====================================================
-            // 첫 번째 경로를 기본 표시
-            // ====================================================
+            // 첫 번째 경로 표시
 
             this.selectRoute(
-                0
+                0,
+                false
             );
 
 
-            // ====================================================
-            // 경로 선택 카드
-            // ====================================================
+            // 선택 카드 표시
 
             this.showRouteSelector(
                 routes
@@ -1445,15 +1060,6 @@ class MapManager {
 
             this.isLoadingRoute =
                 false;
-
-
-            if (
-                this.routeButton
-            ) {
-
-                this.routeButton.innerHTML =
-                    '🚴';
-            }
         }
     }
 
@@ -1467,11 +1073,16 @@ class MapManager {
         const result = [];
 
 
-        // 기존 네 서버 구조
+        // --------------------------------------------------------
+        // routes 객체
+        // --------------------------------------------------------
 
         if (
+
             data?.routes &&
+            !Array.isArray(data.routes) &&
             typeof data.routes === 'object'
+
         ) {
 
             Object.entries(
@@ -1480,15 +1091,14 @@ class MapManager {
 
                 ([key, route]) => {
 
-                    if (
-                        route
-                    ) {
+                    if (route) {
 
                         result.push({
 
                             ...route,
 
-                            _routeKey: key
+                            _routeKey:
+                                key
                         });
                     }
                 }
@@ -1496,54 +1106,74 @@ class MapManager {
         }
 
 
-        // 카카오 기본 route 구조
+        // --------------------------------------------------------
+        // routes 배열
+        // --------------------------------------------------------
 
         if (
-            result.length === 0 &&
-            data?.route
-        ) {
 
-            result.push({
-
-                ...data.route,
-
-                _routeKey: 'default'
-            });
-        }
-
-
-        // routes 배열 구조
-
-        if (
-            result.length === 0 &&
             Array.isArray(
                 data?.routes
             )
+
         ) {
 
             data.routes.forEach(
 
                 (route, index) => {
 
-                    result.push({
+                    if (route) {
 
-                        ...route,
+                        result.push({
 
-                        _routeKey:
-                            `route-${index}`
-                    });
+                            ...route,
+
+                            _routeKey:
+                                `route-${index}`
+                        });
+                    }
                 }
             );
+        }
+
+
+        // --------------------------------------------------------
+        // route 단일 구조
+        // --------------------------------------------------------
+
+        if (
+
+            result.length === 0 &&
+            data?.route
+
+        ) {
+
+            result.push({
+
+                ...data.route,
+
+                _routeKey:
+                    'default'
+            });
         }
 
 
         return result.filter(
 
             route =>
+
                 route &&
+
                 (
-                    Array.isArray(route.legs) ||
-                    Array.isArray(route.sections)
+
+                    Array.isArray(
+                        route.legs
+                    ) ||
+
+                    Array.isArray(
+                        route.sections
+                    )
+
                 )
         );
     }
@@ -1553,22 +1183,22 @@ class MapManager {
     // 🛣️ 경로 선택
     // ============================================================
 
-    selectRoute(index) {
+    selectRoute(
+        index,
+        updateUI = true
+    ) {
 
-        if (
-            !this.routeList[index]
-        ) {
+        const route =
+            this.routeList[index];
+
+
+        if (!route) {
             return;
         }
 
 
         this.selectedRouteIndex =
             index;
-
-
-        const route =
-            this.routeList[index];
-
 
         this.selectedRoute =
             route;
@@ -1579,9 +1209,12 @@ class MapManager {
         );
 
 
-        this.showRouteSelector(
-            this.routeList
-        );
+        if (updateUI) {
+
+            this.showRouteSelector(
+                this.routeList
+            );
+        }
 
 
         log(
@@ -1591,10 +1224,14 @@ class MapManager {
                 index,
 
                 distance:
-                    this.getRouteDistance(route),
+                    this.getRouteDistance(
+                        route
+                    ),
 
                 time:
-                    this.getRouteTime(route)
+                    this.getRouteTime(
+                        route
+                    )
             }
         );
     }
@@ -1614,8 +1251,9 @@ class MapManager {
 
             route?.summary?.distance ??
 
-            0
+            route?.summary?.totalDistance ??
 
+            0
         );
     }
 
@@ -1634,8 +1272,9 @@ class MapManager {
 
             route?.summary?.duration ??
 
-            0
+            route?.summary?.totalTime ??
 
+            0
         );
     }
 
@@ -1650,9 +1289,7 @@ class MapManager {
             Number(distance) || 0;
 
 
-        if (
-            value < 1000
-        ) {
+        if (value < 1000) {
 
             return `${Math.round(value)}m`;
         }
@@ -1674,32 +1311,29 @@ class MapManager {
             Number(seconds) || 0;
 
 
-        if (
-            value < 60
-        ) {
+        if (value <= 0) {
+            return '시간 정보 없음';
+        }
+
+
+        if (value < 60) {
 
             return `${Math.round(value)}초`;
         }
 
 
         const minutes =
-            Math.round(
-                value / 60
-            );
+            Math.round(value / 60);
 
 
-        if (
-            minutes < 60
-        ) {
+        if (minutes < 60) {
 
             return `약 ${minutes}분`;
         }
 
 
         const hours =
-            Math.floor(
-                minutes / 60
-            );
+            Math.floor(minutes / 60);
 
 
         const remain =
@@ -1715,7 +1349,7 @@ class MapManager {
 
 
     // ============================================================
-    // 🛣️ 경로 카드 생성
+    // 🛣️ 경로 선택 카드 생성
     // ============================================================
 
     createRouteSelector() {
@@ -1735,38 +1369,12 @@ class MapManager {
             document.createElement('div');
 
 
-        Object.assign(
+        selector.className =
+            'route-selector';
 
-            selector.style,
 
-            {
-
-                position: 'absolute',
-
-                left: '12px',
-
-                right: '12px',
-
-                bottom: '12px',
-
-                zIndex: '3500',
-
-                display: 'none',
-
-                background: '#ffffff',
-
-                borderRadius: '20px',
-
-                boxShadow:
-                    '0 6px 20px rgba(0,0,0,0.28)',
-
-                padding: '14px',
-
-                maxHeight: '42%',
-
-                overflowY: 'auto'
-            }
-        );
+        selector.style.display =
+            'none';
 
 
         mapContainer.appendChild(
@@ -1779,20 +1387,22 @@ class MapManager {
 
 
         log(
-            '✅ 경로 선택창 생성 완료'
+            '✅ 경로 선택 UI 생성 완료'
         );
     }
 
 
     // ============================================================
-    // 🛣️ 경로 카드 표시
+    // 🛣️ 경로 선택 카드 표시
     // ============================================================
 
     showRouteSelector(routes) {
 
         if (
+
             !this.routeSelector ||
             !Array.isArray(routes)
+
         ) {
             return;
         }
@@ -1803,46 +1413,26 @@ class MapManager {
 
 
         // ========================================================
-        // 제목
+        // 상단 영역
         // ========================================================
 
         const header =
             document.createElement('div');
 
 
-        Object.assign(
-
-            header.style,
-
-            {
-
-                display: 'flex',
-
-                justifyContent:
-                    'space-between',
-
-                alignItems:
-                    'center',
-
-                marginBottom:
-                    '12px'
-            }
-        );
+        header.className =
+            'route-selector-header';
 
 
         const title =
             document.createElement('div');
 
 
-        title.innerHTML =
-            '🚴 자전거 경로';
+        title.className =
+            'route-selector-title';
 
-
-        title.style.fontWeight =
-            '800';
-
-        title.style.fontSize =
-            '17px';
+        title.textContent =
+            '자전거 경로';
 
 
         const closeButton =
@@ -1852,31 +1442,11 @@ class MapManager {
         closeButton.type =
             'button';
 
+        closeButton.className =
+            'map-close-button';
+
         closeButton.innerHTML =
             '×';
-
-
-        Object.assign(
-
-            closeButton.style,
-
-            {
-
-                border: 'none',
-
-                background:
-                    'transparent',
-
-                fontSize:
-                    '26px',
-
-                cursor:
-                    'pointer',
-
-                lineHeight:
-                    '1'
-            }
-        );
 
 
         closeButton.addEventListener(
@@ -1886,33 +1456,27 @@ class MapManager {
             () => {
 
                 // 카드 제거
-
                 this.routeSelector.style.display =
                     'none';
 
-
-                // 선택된 경로 제거
-
+                // 지도 경로 제거
                 this.clearNavigationRoute();
 
-
+                // 선택 상태 제거
                 this.selectedRoute =
                     null;
 
                 this.selectedRouteIndex =
                     -1;
 
-
                 log(
-                    '❌ 경로 선택 취소'
+                    '❌ 경로 전체 제거'
                 );
             }
         );
 
 
-        header.appendChild(
-            title
-        );
+        header.appendChild(title);
 
         header.appendChild(
             closeButton
@@ -1925,7 +1489,7 @@ class MapManager {
 
 
         // ========================================================
-        // 경로 목록
+        // 각각의 경로를 개별 카드로 표시
         // ========================================================
 
         routes.forEach(
@@ -1944,136 +1508,90 @@ class MapManager {
                     );
 
 
-                const item =
+                const card =
                     document.createElement(
                         'button'
                     );
 
 
-                item.type =
+                card.type =
                     'button';
 
 
-                const isSelected =
+                card.className =
+                    'route-option-card';
+
+
+                if (
+
                     index ===
-                    this.selectedRouteIndex;
+                    this.selectedRouteIndex
+
+                ) {
+
+                    card.classList.add(
+                        'selected'
+                    );
+                }
 
 
-                Object.assign(
+                // ------------------------------------------------
+                // API에서 route 이름을 제공하면 사용
+                // 없으면 임의의 추천경로 같은 이름을 만들지 않음
+                // ------------------------------------------------
 
-                    item.style,
+                const routeLabel =
 
-                    {
+                    route?.name ||
 
-                        width: '100%',
+                    route?.summary?.name ||
 
-                        border:
+                    route?.summary?.description ||
 
-                            isSelected
-
-                                ? '2px solid #1677ff'
-
-                                : '1px solid #e0e0e0',
-
-                        background:
-
-                            isSelected
-
-                                ? '#f0f7ff'
-
-                                : '#ffffff',
-
-                        borderRadius:
-                            '15px',
-
-                        padding:
-                            '14px',
-
-                        marginBottom:
-                            index === routes.length - 1
-
-                                ? '0'
-
-                                : '9px',
-
-                        textAlign:
-                            'left',
-
-                        cursor:
-                            'pointer'
-                    }
-                );
+                    `자전거 경로 ${index + 1}`;
 
 
-                // 경로 이름
+                card.innerHTML = `
 
-                const routeName =
-                    index === 0
+                    <div class="route-card-main">
 
-                        ? '추천 경로'
-
-                        : `경로 ${index + 1}`;
-
-
-                item.innerHTML =
-                    `
-
-                    <div
-                        style="
-                            display:flex;
-                            justify-content:space-between;
-                            align-items:center;
-                            gap:10px;
-                        "
-                    >
-
-                        <div>
-
-                            <div
-                                style="
-                                    font-size:16px;
-                                    font-weight:800;
-                                    margin-bottom:6px;
-                                "
-                            >
-                                ${routeName}
-                            </div>
-
-
-                            <div
-                                style="
-                                    font-size:14px;
-                                    color:#666;
-                                "
-                            >
-
-                                📏 ${this.formatDistance(distance)}
-
-                                &nbsp; · &nbsp;
-
-                                ⏱️ ${this.formatDuration(duration)}
-
-                            </div>
-
+                        <div class="route-card-title">
+                            ${routeLabel}
                         </div>
 
+                        <div class="route-card-meta">
 
-                        <div
-                            style="
-                                font-size:20px;
-                            "
-                        >
+                            <span>
+                                📏
+                                ${this.formatDistance(distance)}
+                            </span>
 
-                            ${isSelected ? '✓' : '›'}
+                            <span>
+                                ⏱️
+                                ${this.formatDuration(duration)}
+                            </span>
 
                         </div>
 
                     </div>
 
-                    `;
+                    <div class="route-card-arrow">
+
+                        ${
+                            index ===
+                            this.selectedRouteIndex
+
+                                ? '✓'
+
+                                : '›'
+                        }
+
+                    </div>
+
+                `;
 
 
-                item.addEventListener(
+                card.addEventListener(
 
                     'click',
 
@@ -2088,7 +1606,7 @@ class MapManager {
 
 
                 this.routeSelector.appendChild(
-                    item
+                    card
                 );
             }
         );
@@ -2096,6 +1614,20 @@ class MapManager {
 
         this.routeSelector.style.display =
             'block';
+
+
+        // UI가 만들어진 뒤 지도 경로 재조정
+
+        setTimeout(
+
+            () => {
+
+                this.fitNavigationRouteWithCard();
+
+            },
+
+            100
+        );
     }
 
 
@@ -2105,9 +1637,7 @@ class MapManager {
 
     drawNavigationRoute(route) {
 
-        if (
-            !this.map
-        ) {
+        if (!this.map) {
             return;
         }
 
@@ -2120,11 +1650,13 @@ class MapManager {
 
 
         // ========================================================
-        // 기존 legs → steps 구조
+        // legs → steps → path.points
         // ========================================================
 
         if (
-            Array.isArray(route.legs)
+            Array.isArray(
+                route.legs
+            )
         ) {
 
             route.legs.forEach(
@@ -2153,32 +1685,43 @@ class MapManager {
                                 point => {
 
                                     if (
-                                        !Array.isArray(point)
+                                        !Array.isArray(
+                                            point
+                                        )
                                     ) {
                                         return;
                                     }
 
 
                                     const lng =
-                                        Number(point[0]);
+                                        Number(
+                                            point[0]
+                                        );
+
 
                                     const lat =
-                                        Number(point[1]);
+                                        Number(
+                                            point[1]
+                                        );
 
 
                                     if (
-                                        Number.isFinite(lng) &&
-                                        Number.isFinite(lat)
+
+                                        Number.isFinite(
+                                            lng
+                                        ) &&
+
+                                        Number.isFinite(
+                                            lat
+                                        )
+
                                     ) {
 
                                         navigationPoints.push(
 
                                             new kakao.maps.LatLng(
-
                                                 lat,
-
                                                 lng
-
                                             )
                                         );
                                     }
@@ -2192,12 +1735,17 @@ class MapManager {
 
 
         // ========================================================
-        // sections → roads → vertexes 구조
+        // sections → roads → vertexes
         // ========================================================
 
         if (
+
             navigationPoints.length === 0 &&
-            Array.isArray(route.sections)
+
+            Array.isArray(
+                route.sections
+            )
+
         ) {
 
             route.sections.forEach(
@@ -2244,18 +1792,22 @@ class MapManager {
 
 
                                 if (
-                                    Number.isFinite(lng) &&
-                                    Number.isFinite(lat)
+
+                                    Number.isFinite(
+                                        lng
+                                    ) &&
+
+                                    Number.isFinite(
+                                        lat
+                                    )
+
                                 ) {
 
                                     navigationPoints.push(
 
                                         new kakao.maps.LatLng(
-
                                             lat,
-
                                             lng
-
                                         )
                                     );
                                 }
@@ -2318,41 +1870,27 @@ class MapManager {
             );
 
 
-        // ========================================================
-        // 지도 전체 경로가 카드에 가리지 않도록 조정
-        // ========================================================
-
         this.fitNavigationRouteWithCard();
 
 
         log(
-
-            '✅ 경로 지도 표시 완료',
-
-            {
-
-                distance:
-                    this.navigationDistance,
-
-                time:
-                    this.navigationTime,
-
-                points:
-                    this.navigationPathCoords.length
-            }
+            '✅ 경로 지도 표시 완료'
         );
     }
 
 
     // ============================================================
-    // 🗺️ 경로를 카드 위쪽까지 보이도록 지도 조정
+    // 🗺️ 경로 전체가 보이도록 지도 조정
     // ============================================================
 
     fitNavigationRouteWithCard() {
 
         if (
+
             !this.map ||
+
             this.navigationPathCoords.length === 0
+
         ) {
             return;
         }
@@ -2369,40 +1907,55 @@ class MapManager {
                 bounds.extend(
                     point
                 );
-
             }
         );
 
 
-        // 먼저 전체 경로를 지도에 맞춤
+        // 지도 전체 경로 표시
 
         this.map.setBounds(
             bounds
         );
 
 
-        // ========================================================
-        // 카드가 아래쪽을 가리기 때문에
-        // 중심을 살짝 위로 이동
-        // ========================================================
+        // 카드 높이만큼 중심 이동
 
         setTimeout(
 
             () => {
 
-                const center =
-                    this.map.getCenter();
+                if (
+                    !this.routeSelector ||
+                    this.routeSelector.style.display ===
+                    'none'
+                ) {
+                    return;
+                }
+
+
+                const cardHeight =
+                    this.routeSelector.offsetHeight;
+
+
+                const mapHeight =
+                    document
+                        .getElementById('map')
+                        .offsetHeight;
+
+
+                const shift =
+                    Math.min(
+                        cardHeight * 0.35,
+                        mapHeight * 0.18
+                    );
 
 
                 const projection =
                     this.map.getProjection();
 
 
-                if (
-                    !projection
-                ) {
-                    return;
-                }
+                const center =
+                    this.map.getCenter();
 
 
                 const point =
@@ -2411,14 +1964,12 @@ class MapManager {
                     );
 
 
-                // 화면 중심을 위쪽으로 이동
-
                 const shiftedPoint =
                     new kakao.maps.Point(
 
                         point.x,
 
-                        point.y + 120
+                        point.y + shift
 
                     );
 
@@ -2433,7 +1984,6 @@ class MapManager {
                     shiftedCenter
                 );
 
-
             },
 
             250
@@ -2447,8 +1997,7 @@ class MapManager {
 
     removeDuplicateCoords(points) {
 
-        const result =
-            [];
+        const result = [];
 
 
         points.forEach(
@@ -2461,9 +2010,7 @@ class MapManager {
                     ];
 
 
-                if (
-                    !last
-                ) {
+                if (!last) {
 
                     result.push(
                         point
@@ -2526,7 +2073,7 @@ class MapManager {
 
 
     // ============================================================
-    // ❌ 경로 완전 삭제
+    // ❌ 경로 전체 삭제
     // ============================================================
 
     clearRouteCompletely() {
@@ -2550,6 +2097,9 @@ class MapManager {
 
             this.routeSelector.style.display =
                 'none';
+
+            this.routeSelector.innerHTML =
+                '';
         }
     }
 
@@ -2563,9 +2113,7 @@ class MapManager {
         addToPath = true
     ) {
 
-        if (
-            !this.map
-        ) {
+        if (!this.map) {
             return;
         }
 
@@ -2587,11 +2135,14 @@ class MapManager {
             this.currentMarker =
                 new kakao.maps.Marker({
 
-                    position: location,
+                    position:
+                        location,
 
-                    map: this.map,
+                    map:
+                        this.map,
 
-                    title: '현재 위치'
+                    title:
+                        '현재 위치'
                 });
 
         } else {
@@ -2683,7 +2234,6 @@ class MapManager {
 
 
         this.clearRouteCompletely();
-
 
         this.clearDestination();
 
