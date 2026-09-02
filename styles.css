@@ -1,3 +1,7 @@
+/* =========================================================
+   기본
+========================================================= */
+
 * {
     margin: 0;
     padding: 0;
@@ -8,875 +12,1314 @@
     --primary: #4CAF50;
     --primary-dark: #388E3C;
     --primary-light: #81C784;
+
     --text-dark: #2C3E50;
     --text-light: #7F8C8D;
+
     --bg-light: #FAFAFA;
     --bg-white: #FFFFFF;
+
     --border-color: #E8E8E8;
+
     --success: #4CAF50;
     --warning: #FF9800;
     --error: #F44336;
     --info: #2196F3;
 }
 
+html,
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: var(--bg-light);
-    color: var(--text-dark);
-    line-height: 1.6;
+    width: 100%;
+    min-height: 100%;
+}
+
+body {
+    font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        'Segoe UI',
+        Roboto,
+        sans-serif;
+
+    background:
+        var(--bg-light);
+
+    color:
+        var(--text-dark);
+
+    line-height:
+        1.6;
+
+    overflow-x:
+        hidden;
 }
 
 .container {
+    width: 100%;
     max-width: 100%;
-    padding: 0;
-    margin: 0 auto;
 }
 
-/* ═══════════════════ 헤더 ═══════════════════ */
+
+/* =========================================================
+   헤더
+========================================================= */
+
 .header {
     text-align: center;
-    padding: 25px 20px;
-    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-    color: white;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+
+    padding:
+        18px 20px;
+
+    background:
+        linear-gradient(
+            135deg,
+            var(--primary) 0%,
+            var(--primary-dark) 100%
+        );
+
+    color:
+        white;
 }
 
 .header h1 {
-    font-size: 28px;
-    font-weight: 700;
-    margin-bottom: 5px;
-    letter-spacing: -0.5px;
+    font-size:
+        25px;
+
+    font-weight:
+        700;
+
+    margin-bottom:
+        3px;
 }
 
 .header .subtitle {
-    font-size: 13px;
-    opacity: 0.9;
-    font-weight: 400;
+    font-size:
+        12px;
+
+    opacity:
+        0.9;
 }
 
-/* ═══════════════════ 탭 ═══════════════════ */
+
+/* =========================================================
+   탭
+========================================================= */
+
 .tabs {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0;
-    background: var(--bg-white);
-    padding: 0;
-    border-bottom: 1px solid var(--border-color);
+    display:
+        grid;
+
+    grid-template-columns:
+        1fr 1fr;
+
+    background:
+        white;
+
+    border-bottom:
+        1px solid var(--border-color);
 }
 
 .tab-btn {
-    padding: 16px 20px;
-    border: none;
-    background: transparent;
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text-light);
-    transition: all 0.25s ease;
-    position: relative;
-    letter-spacing: 0.3px;
-}
+    position:
+        relative;
 
-.tab-btn:hover {
-    color: var(--text-dark);
-    background: rgba(76, 175, 80, 0.04);
+    padding:
+        14px;
+
+    border:
+        none;
+
+    background:
+        transparent;
+
+    color:
+        var(--text-light);
+
+    font-size:
+        15px;
+
+    font-weight:
+        700;
+
+    cursor:
+        pointer;
 }
 
 .tab-btn.active {
-    color: var(--primary);
-    background: transparent;
+    color:
+        var(--primary);
 }
 
 .tab-btn.active::after {
-    content: '';
-    position: absolute;
-    bottom: -1px;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: var(--primary);
+    content:
+        '';
+
+    position:
+        absolute;
+
+    left:
+        0;
+
+    right:
+        0;
+
+    bottom:
+        0;
+
+    height:
+        3px;
+
+    background:
+        var(--primary);
 }
 
-/* ═══════════════════ 탭 컨텐츠 ═══════════════════ */
+
+/* =========================================================
+   탭
+========================================================= */
+
 .tab-content {
-    display: none;
-    padding: 20px;
-    animation: fadeIn 0.3s ease;
+    display:
+        none;
 }
 
 .tab-content.active {
-    display: block;
+    display:
+        block;
 }
 
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(4px); }
-    to { opacity: 1; transform: translateY(0); }
+
+/* =========================================================
+   지도
+========================================================= */
+
+.map-tab-content {
+    padding:
+        0 !important;
 }
 
-/* ═══════════════════ 메인 통계 (큼!) ═══════════════════ */
+.map-container {
+    position:
+        relative;
+
+    width:
+        100%;
+
+    /*
+    헤더 + 탭을 제외한 화면 크기
+    */
+
+    height:
+        calc(100dvh - 145px);
+
+    min-height:
+        400px;
+
+    max-height:
+        calc(100dvh - 145px);
+
+    overflow:
+        hidden;
+
+    background:
+        #E8E8E8;
+}
+
+
+/* =========================================================
+   출발 / 도착 패널
+========================================================= */
+
+.location-panel {
+    position:
+        absolute;
+
+    top:
+        14px;
+
+    left:
+        14px;
+
+    right:
+        14px;
+
+    z-index:
+        1000;
+
+    display:
+        none;
+
+    padding:
+        12px 48px 12px 14px;
+
+    background:
+        rgba(255, 255, 255, 0.94);
+
+    border-radius:
+        14px;
+
+    box-shadow:
+        0 4px 15px rgba(0, 0, 0, 0.18);
+
+    backdrop-filter:
+        blur(8px);
+}
+
+.location-panel.active {
+    display:
+        block;
+}
+
+.location-row {
+    display:
+        flex;
+
+    align-items:
+        center;
+
+    gap:
+        10px;
+
+    min-height:
+        38px;
+}
+
+.location-dot {
+    width:
+        10px;
+
+    height:
+        10px;
+
+    border-radius:
+        50%;
+
+    flex-shrink:
+        0;
+}
+
+.start-dot {
+    background:
+        #4CAF50;
+}
+
+.destination-dot {
+    background:
+        #F44336;
+}
+
+.location-input-wrap {
+    display:
+        flex;
+
+    flex-direction:
+        column;
+
+    min-width:
+        0;
+}
+
+.location-label {
+    font-size:
+        11px;
+
+    color:
+        var(--text-light);
+}
+
+.location-address {
+    font-size:
+        14px;
+
+    font-weight:
+        700;
+
+    white-space:
+        nowrap;
+
+    overflow:
+        hidden;
+
+    text-overflow:
+        ellipsis;
+}
+
+.location-divider {
+    width:
+        1px;
+
+    height:
+        12px;
+
+    background:
+        #D0D0D0;
+
+    margin:
+        2px 0 2px 4px;
+}
+
+
+/* 경유지 추가 */
+
+.waypoint-button {
+    position:
+        absolute;
+
+    right:
+        42px;
+
+    top:
+        50%;
+
+    transform:
+        translateY(-50%);
+
+    width:
+        30px;
+
+    height:
+        30px;
+
+    border:
+        none;
+
+    border-radius:
+        50%;
+
+    background:
+        #F2F2F2;
+
+    font-size:
+        22px;
+
+    cursor:
+        pointer;
+}
+
+
+/* 목적지 닫기 */
+
+.location-panel-close {
+    position:
+        absolute;
+
+    right:
+        10px;
+
+    top:
+        10px;
+
+    width:
+        28px;
+
+    height:
+        28px;
+
+    border:
+        none;
+
+    background:
+        transparent;
+
+    font-size:
+        25px;
+
+    cursor:
+        pointer;
+
+    color:
+        #555;
+}
+
+
+/* =========================================================
+   지도 오른쪽 버튼
+========================================================= */
+
+.map-control-buttons {
+    position:
+        absolute;
+
+    right:
+        14px;
+
+    bottom:
+        18px;
+
+    z-index:
+        1200;
+
+    display:
+        flex;
+
+    flex-direction:
+        column;
+
+    gap:
+        10px;
+}
+
+.map-floating-button {
+    width:
+        50px;
+
+    height:
+        50px;
+
+    border:
+        none;
+
+    border-radius:
+        50%;
+
+    background:
+        rgba(255, 255, 255, 0.95);
+
+    box-shadow:
+        0 3px 10px rgba(0,0,0,0.25);
+
+    font-size:
+        22px;
+
+    cursor:
+        pointer;
+
+    backdrop-filter:
+        blur(5px);
+}
+
+.map-floating-button.active {
+    background:
+        #E8F3FF;
+}
+
+
+/* =========================================================
+   지도 축척
+========================================================= */
+
+.map-scale {
+    position:
+        absolute;
+
+    left:
+        14px;
+
+    bottom:
+        14px;
+
+    z-index:
+        1200;
+
+    display:
+        flex;
+
+    flex-direction:
+        column;
+
+    align-items:
+        flex-start;
+
+    gap:
+        3px;
+
+    padding:
+        5px 8px;
+
+    background:
+        rgba(255,255,255,0.85);
+
+    border-radius:
+        6px;
+
+    font-size:
+        11px;
+
+    color:
+        #333;
+}
+
+.map-scale-line {
+    width:
+        70px;
+
+    height:
+        3px;
+
+    background:
+        #333;
+}
+
+
+/* =========================================================
+   경로 선택 UI
+========================================================= */
+
+.route-selector {
+    position:
+        absolute;
+
+    left:
+        50%;
+
+    bottom:
+        82px;
+
+    transform:
+        translateX(-50%);
+
+    z-index:
+        1500;
+
+    display:
+        none;
+
+    width:
+        min(94%, 500px);
+
+    padding:
+        10px;
+
+    background:
+        rgba(255, 255, 255, 0.90);
+
+    border-radius:
+        18px;
+
+    box-shadow:
+        0 5px 20px rgba(0,0,0,0.20);
+
+    backdrop-filter:
+        blur(8px);
+}
+
+.route-selector.active {
+    display:
+        block;
+}
+
+.route-selector-header {
+    display:
+        flex;
+
+    justify-content:
+        space-between;
+
+    align-items:
+        center;
+
+    margin-bottom:
+        8px;
+
+    padding:
+        0 4px;
+
+    font-size:
+        14px;
+
+    font-weight:
+        800;
+}
+
+.route-selector-header button {
+    border:
+        none;
+
+    background:
+        transparent;
+
+    font-size:
+        25px;
+
+    cursor:
+        pointer;
+}
+
+
+/* 카드들을 가로로 배치 */
+
+.route-card-list {
+    display:
+        flex;
+
+    gap:
+        8px;
+
+    overflow-x:
+        auto;
+
+    padding-bottom:
+        2px;
+}
+
+.route-card-list::-webkit-scrollbar {
+    display:
+        none;
+}
+
+
+/* 작은 정사각형 경로 카드 */
+
+.route-card {
+    flex:
+        0 0 118px;
+
+    min-width:
+        118px;
+
+    height:
+        118px;
+
+    padding:
+        13px;
+
+    border:
+        1px solid #E2E2E2;
+
+    border-radius:
+        15px;
+
+    background:
+        rgba(255,255,255,0.88);
+
+    text-align:
+        left;
+
+    cursor:
+        pointer;
+
+    display:
+        flex;
+
+    flex-direction:
+        column;
+
+    justify-content:
+        space-between;
+}
+
+.route-card.selected {
+    border:
+        2px solid #1677FF;
+
+    background:
+        rgba(232,243,255,0.92);
+}
+
+.route-card-name {
+    font-size:
+        13px;
+
+    font-weight:
+        800;
+}
+
+.route-card-distance {
+    font-size:
+        18px;
+
+    font-weight:
+        800;
+}
+
+.route-card-time {
+    font-size:
+        12px;
+
+    color:
+        #666;
+}
+
+
+/* =========================================================
+   목표 속도 모달
+========================================================= */
+
+.target-speed-modal {
+    position:
+        absolute;
+
+    inset:
+        0;
+
+    z-index:
+        3000;
+
+    display:
+        none;
+
+    align-items:
+        center;
+
+    justify-content:
+        center;
+
+    background:
+        rgba(0,0,0,0.15);
+}
+
+.target-speed-modal.active {
+    display:
+        flex;
+}
+
+.target-speed-card {
+    width:
+        min(85%, 340px);
+
+    padding:
+        24px;
+
+    background:
+        rgba(255,255,255,0.96);
+
+    border-radius:
+        20px;
+
+    box-shadow:
+        0 8px 30px rgba(0,0,0,0.25);
+
+    text-align:
+        center;
+}
+
+.target-speed-card h2 {
+    font-size:
+        19px;
+
+    margin-bottom:
+        8px;
+}
+
+.target-speed-card p {
+    font-size:
+        13px;
+
+    color:
+        #777;
+
+    margin-bottom:
+        20px;
+}
+
+.target-speed-input-wrap {
+    display:
+        flex;
+
+    align-items:
+        center;
+
+    gap:
+        8px;
+
+    margin-bottom:
+        20px;
+}
+
+.target-speed-input-wrap input {
+    width:
+        100%;
+
+    padding:
+        14px;
+
+    border:
+        1px solid #DDD;
+
+    border-radius:
+        12px;
+
+    font-size:
+        17px;
+
+    font-weight:
+        700;
+
+    text-align:
+        center;
+}
+
+.target-speed-actions {
+    display:
+        grid;
+
+    grid-template-columns:
+        1fr 1fr;
+
+    gap:
+        10px;
+}
+
+.target-speed-actions button {
+    border:
+        none;
+
+    border-radius:
+        12px;
+
+    padding:
+        14px;
+
+    font-size:
+        14px;
+
+    font-weight:
+        700;
+
+    cursor:
+        pointer;
+}
+
+.target-skip-button {
+    background:
+        #F0F0F0;
+
+    color:
+        #555;
+}
+
+.target-confirm-button {
+    background:
+        #1677FF;
+
+    color:
+        white;
+}
+
+
+/* =========================================================
+   길안내 시작
+========================================================= */
+
+.navigation-start-button {
+    position:
+        absolute;
+
+    left:
+        50%;
+
+    bottom:
+        22px;
+
+    transform:
+        translateX(-50%);
+
+    z-index:
+        2000;
+
+    display:
+        none;
+
+    border:
+        none;
+
+    border-radius:
+        22px;
+
+    padding:
+        14px 28px;
+
+    background:
+        #1677FF;
+
+    color:
+        white;
+
+    font-size:
+        15px;
+
+    font-weight:
+        800;
+
+    box-shadow:
+        0 4px 15px rgba(22,119,255,0.35);
+
+    cursor:
+        pointer;
+}
+
+.navigation-start-button.active {
+    display:
+        block;
+}
+
+
+/* =========================================================
+   기록 화면
+========================================================= */
+
+#speed-tab {
+    padding:
+        20px;
+}
+
 .main-stats {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 15px;
-    margin-bottom: 25px;
-    user-select: none;
+    display:
+        grid;
+
+    grid-template-columns:
+        1fr 1fr;
+
+    gap:
+        15px;
+
+    margin-bottom:
+        25px;
+
+    user-select:
+        none;
 }
 
 .stat-item {
-    background: var(--bg-white);
-    padding: 25px 20px;
-    border-radius: 12px;
-    text-align: center;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-    border: 1px solid var(--border-color);
+    background:
+        white;
+
+    padding:
+        25px 20px;
+
+    border-radius:
+        12px;
+
+    text-align:
+        center;
+
+    border:
+        1px solid var(--border-color);
 }
 
 .stat-item label {
-    display: block;
-    font-size: 12px;
-    color: var(--text-light);
-    font-weight: 600;
-    margin-bottom: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    display:
+        block;
+
+    font-size:
+        12px;
+
+    color:
+        var(--text-light);
+
+    font-weight:
+        600;
+
+    margin-bottom:
+        12px;
 }
 
 .big-text {
-    font-size: 36px;
-    font-weight: 700;
-    color: var(--primary);
-    line-height: 1.2;
-    letter-spacing: -1px;
+    font-size:
+        32px;
+
+    font-weight:
+        700;
+
+    color:
+        var(--primary);
 }
 
 .medium-text {
-    font-size: 18px;
-    font-weight: 600;
-    color: var(--text-dark);
+    font-size:
+        18px;
+
+    font-weight:
+        600;
 }
 
-/* ═══════════════════ 버튼 그룹 ═══════════════════ */
+
+/* 버튼 */
+
 .button-group {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 10px;
-    margin-bottom: 25px;
+    display:
+        grid;
+
+    grid-template-columns:
+        1fr;
+
+    gap:
+        10px;
+
+    margin-bottom:
+        25px;
 }
 
 .btn {
-    padding: 16px 20px;
-    border: none;
-    border-radius: 8px;
-    font-size: 15px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.25s ease;
-    letter-spacing: 0.3px;
-    min-height: 50px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    padding:
+        16px;
+
+    border:
+        none;
+
+    border-radius:
+        8px;
+
+    font-size:
+        15px;
+
+    font-weight:
+        600;
+
+    cursor:
+        pointer;
 }
 
 .btn-primary {
-    background: var(--info);
-    color: white;
-    box-shadow: 0 2px 6px rgba(33, 150, 243, 0.2);
-}
+    background:
+        var(--info);
 
-.btn-primary:hover:not(:disabled) {
-    background: #1976D2;
-    box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
-    transform: translateY(-1px);
-}
-
-.btn-primary:active:not(:disabled) {
-    transform: translateY(0);
-}
-
-.btn-primary:disabled {
-    background: #BDBDBD;
-    cursor: not-allowed;
-    opacity: 0.6;
+    color:
+        white;
 }
 
 .btn-success {
-    background: #FF6B6B;
-    color: white;
-    box-shadow: 0 2px 6px rgba(255, 107, 107, 0.2);
-}
+    background:
+        #FF6B6B;
 
-.btn-success:hover:not(:disabled) {
-    background: #FF5252;
-    box-shadow: 0 4px 12px rgba(255, 107, 107, 0.3);
-    transform: translateY(-1px);
-}
-
-.btn-success:active:not(:disabled) {
-    transform: translateY(0);
-}
-
-.btn-success:disabled {
-    background: #BDBDBD;
-    cursor: not-allowed;
-    opacity: 0.6;
+    color:
+        white;
 }
 
 .btn-danger {
-    background: #EF5350;
-    color: white;
-    box-shadow: 0 2px 6px rgba(244, 67, 54, 0.2);
+    background:
+        #EF5350;
+
+    color:
+        white;
 }
 
-.btn-danger:hover:not(:disabled) {
-    background: #E53935;
-    box-shadow: 0 4px 12px rgba(244, 67, 54, 0.3);
-    transform: translateY(-1px);
+.btn:disabled {
+    opacity:
+        0.6;
+
+    cursor:
+        not-allowed;
 }
 
-.btn-danger:active:not(:disabled) {
-    transform: translateY(0);
-}
 
-.btn-danger:disabled {
-    background: #BDBDBD;
-    cursor: not-allowed;
-    opacity: 0.6;
-}
+/* 정보 */
 
-.btn-large {
-    min-height: 56px;
-    font-size: 16px;
-    font-weight: 700;
-}
-
-/* ═══════════════════ 정보 그리드 ═══════════════════ */
 .info-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    margin-bottom: 20px;
+    display:
+        grid;
+
+    grid-template-columns:
+        1fr 1fr;
+
+    gap:
+        12px;
+
+    margin-bottom:
+        20px;
 }
 
 .info-item {
-    background: var(--bg-white);
-    padding: 16px;
-    border-radius: 10px;
-    border: 1px solid var(--border-color);
-    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    background:
+        white;
+
+    padding:
+        16px;
+
+    border-radius:
+        10px;
+
+    border:
+        1px solid var(--border-color);
 }
 
 .info-item label {
-    display: block;
-    font-size: 11px;
-    color: var(--text-light);
-    font-weight: 600;
-    margin-bottom: 8px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    display:
+        block;
+
+    font-size:
+        11px;
+
+    color:
+        var(--text-light);
+
+    font-weight:
+        600;
+
+    margin-bottom:
+        8px;
 }
 
 .info-item p {
-    font-size: 16px;
-    font-weight: 700;
-    color: var(--text-dark);
-    margin: 0;
+    margin:
+        0;
 }
 
-/* 입력 필드 */
+
+/* 입력 */
+
 .input-field {
-    width: 100%;
-    padding: 10px 12px;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    font-size: 14px;
-    font-weight: 500;
-    background: var(--bg-white);
-    color: var(--text-dark);
-    transition: all 0.2s ease;
+    width:
+        100%;
+
+    padding:
+        10px;
+
+    border:
+        1px solid var(--border-color);
+
+    border-radius:
+        6px;
 }
 
-.input-field:focus {
-    outline: none;
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.1);
-    background: white;
-}
 
-.input-field::placeholder {
-    color: var(--text-light);
-}
+/* GPS */
 
-/* ═══════════════════ GPS 정보 ═══════════════════ */
 .gps-info {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
-    background: var(--bg-white);
-    padding: 15px;
-    border-radius: 10px;
-    border: 1px solid var(--border-color);
+    display:
+        grid;
+
+    grid-template-columns:
+        repeat(3, 1fr);
+
+    gap:
+        10px;
+
+    background:
+        white;
+
+    padding:
+        15px;
+
+    border-radius:
+        10px;
+
+    border:
+        1px solid var(--border-color);
 }
 
-.gps-info .info-item {
-    background: transparent;
-    border: none;
-    padding: 0;
-    box-shadow: none;
-}
 
-.gps-info label {
-    font-size: 10px !important;
-}
+/* 설정 */
 
-.gps-info p {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-dark);
-}
-
-/* ═══════════════════ 지도 ═══════════════════ */
-.map-container {
-    width: 100%;
-    height: calc(100dvh - 190px);
-    min-height: 400px;
-
-    border-radius: 0;
-    overflow: hidden;
-
-    box-shadow: none;
-
-    background: #E8E8E8;
-    border: none;
-}
-
-/* ═══════════════════ 설정 메뉴 ═══════════════════ */
 .settings-menu {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.7);
-    z-index: 1000;
-    animation: fadeIn 0.2s ease;
+    display:
+        none;
+
+    position:
+        fixed;
+
+    inset:
+        0;
+
+    z-index:
+        5000;
+
+    background:
+        rgba(0,0,0,0.7);
 }
 
 .settings-menu.active {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
+    display:
+        flex;
+
+    flex-direction:
+        column;
+
+    justify-content:
+        center;
+
+    align-items:
+        center;
 }
 
 .settings-title {
-    color: white;
-    font-size: 18px;
-    font-weight: 700;
-    margin-bottom: 20px;
-    text-align: center;
+    color:
+        white;
+
+    margin-bottom:
+        15px;
 }
 
 .settings-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 12px;
-    padding: 20px;
-    width: 90%;
-    max-width: 400px;
+    display:
+        grid;
+
+    grid-template-columns:
+        repeat(2, 1fr);
+
+    gap:
+        10px;
+
+    width:
+        90%;
+
+    max-width:
+        400px;
 }
 
 .settings-btn {
-    padding: 16px 20px;
-    background: var(--primary);
-    color: white;
-    border: none;
-    border-radius: 10px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+    padding:
+        15px;
+
+    border:
+        none;
+
+    border-radius:
+        10px;
+
+    background:
+        var(--primary);
+
+    color:
+        white;
+
+    cursor:
+        pointer;
 }
 
-.settings-btn:hover {
-    background: var(--primary-dark);
-    transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(76, 175, 80, 0.4);
-}
 
-.settings-btn:active {
-    transform: translateY(0);
-}
+/* =========================================================
+   모바일
+========================================================= */
 
-.settings-btn.active {
-    background: var(--primary-dark);
-    border: 2px solid white;
-}
-
-/* ═══════════════════ 반응형 ═══════════════════ */
 @media (max-width: 600px) {
+
     .header {
-        padding: 20px 16px;
+        padding:
+            14px 16px;
     }
 
     .header h1 {
-        font-size: 24px;
+        font-size:
+            21px;
     }
 
-    .header .subtitle {
-        font-size: 12px;
+    .map-container {
+        height:
+            calc(100dvh - 132px);
+
+        max-height:
+            calc(100dvh - 132px);
     }
 
-    .tab-content {
-        padding: 16px;
-    }
+    .route-card {
+        flex-basis:
+            110px;
 
-    .big-text {
-        font-size: 32px;
-    }
+        min-width:
+            110px;
 
-    .main-stats {
-        gap: 12px;
-        margin-bottom: 20px;
-    }
-
-    .stat-item {
-        padding: 20px 16px;
-    }
-
-    .info-grid {
-        gap: 10px;
-        margin-bottom: 16px;
-    }
-
-    .info-item {
-        padding: 14px;
-    }
-
-    .btn {
-        padding: 14px 16px;
-        font-size: 14px;
-        min-height: 48px;
-    }
-
-    .btn-large {
-        min-height: 52px;
-        font-size: 15px;
+        height:
+            110px;
     }
 
     .gps-info {
-        grid-template-columns: repeat(2, 1fr);
-        padding: 12px;
-        gap: 8px;
+        grid-template-columns:
+            repeat(2, 1fr);
     }
 
-    .gps-info p {
-        font-size: 12px;
-    }
 }
 
 @media (max-width: 400px) {
-    .header h1 {
-        font-size: 20px;
-    }
-
-    .big-text {
-        font-size: 28px;
-    }
-
-    .medium-text {
-        font-size: 16px;
-    }
 
     .info-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns:
+            1fr;
     }
 
-    .tabs {
-        grid-template-columns: 1fr 1fr;
-    }
-
-    .tab-btn {
-        padding: 14px 12px;
-        font-size: 12px;
-    }
-    
     .gps-info {
-        grid-template-columns: 1fr;
-        gap: 6px;
-    }
-}
-
-/* ═══════════════════ 스크롤바 스타일 ═══════════════════ */
-::-webkit-scrollbar {
-    width: 6px;
-}
-
-::-webkit-scrollbar-track {
-    background: var(--bg-light);
-}
-
-::-webkit-scrollbar-thumb {
-    background: var(--text-light);
-    border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-    background: var(--text-dark);
-}
-
-/* ════════════════════════════════════════
-   🗺️ 지도 메인 화면
-════════════════════════════════════════ */
-
-#map-tab {
-    padding: 0;
-}
-
-.map-container {
-    position: relative;
-    width: 100%;
-    height: calc(100dvh - 130px);
-    min-height: 500px;
-    overflow: hidden;
-    background: #e8e8e8;
-}
-
-
-/* ════════════════════════════════════════
-   🗺️ 지도 플로팅 버튼
-════════════════════════════════════════ */
-
-.map-floating-button {
-    position: absolute;
-
-    right: 14px;
-
-    width: 52px;
-    height: 52px;
-
-    border: none;
-    border-radius: 50%;
-
-    background: #ffffff;
-
-    box-shadow:
-        0 3px 12px
-        rgba(0, 0, 0, 0.22);
-
-    z-index: 2000;
-
-    font-size: 22px;
-
-    cursor: pointer;
-
-    transition:
-        transform 0.2s ease,
-        background 0.2s ease;
-}
-
-.map-floating-button:active {
-    transform: scale(0.92);
-}
-
-.current-location-button {
-    bottom: 18px;
-}
-
-.destination-button {
-    bottom: 80px;
-}
-
-.destination-button.selecting {
-    background: #e8f3ff;
-}
-
-
-/* ════════════════════════════════════════
-   🎯 목적지 카드
-════════════════════════════════════════ */
-
-.destination-sheet {
-    position: absolute;
-
-    left: 12px;
-    right: 12px;
-
-    bottom: 12px;
-
-    z-index: 3000;
-
-    background: #ffffff;
-
-    border-radius: 18px;
-
-    box-shadow:
-        0 8px 28px
-        rgba(0, 0, 0, 0.25);
-
-    padding: 16px;
-}
-
-
-.destination-sheet-header {
-    display: flex;
-
-    justify-content: space-between;
-
-    align-items: flex-start;
-
-    gap: 12px;
-
-    margin-bottom: 16px;
-}
-
-
-.destination-sheet-info {
-    flex: 1;
-
-    min-width: 0;
-}
-
-
-.destination-label {
-    font-size: 12px;
-
-    color: #888;
-
-    margin-bottom: 5px;
-}
-
-
-.destination-address {
-    font-size: 16px;
-
-    font-weight: 700;
-
-    line-height: 1.4;
-
-    word-break: keep-all;
-}
-
-
-/* ════════════════════════════════════════
-   ❌ 닫기 버튼
-════════════════════════════════════════ */
-
-.map-close-button {
-    border: none;
-
-    background: transparent;
-
-    color: #333;
-
-    font-size: 28px;
-
-    line-height: 1;
-
-    cursor: pointer;
-
-    padding: 0 4px;
-
-    flex-shrink: 0;
-}
-
-
-/* ════════════════════════════════════════
-   🎯 출발 / 도착 버튼
-════════════════════════════════════════ */
-
-.destination-actions {
-    display: grid;
-
-    grid-template-columns: 1fr 1fr;
-
-    gap: 10px;
-}
-
-
-.destination-action-btn {
-    border: none;
-
-    border-radius: 12px;
-
-    padding: 14px;
-
-    font-size: 15px;
-
-    font-weight: 700;
-
-    cursor: pointer;
-}
-
-
-.destination-action-btn.start {
-    background: #f2f2f2;
-
-    color: #333;
-}
-
-
-.destination-action-btn.arrival {
-    background: #1677ff;
-
-    color: #ffffff;
-}
-
-
-/* ════════════════════════════════════════
-   🚴 경로 선택 영역
-════════════════════════════════════════ */
-
-.route-selector {
-    position: absolute;
-
-    left: 12px;
-    right: 12px;
-
-    bottom: 12px;
-
-    z-index: 3500;
-
-    pointer-events: auto;
-}
-
-
-.route-selector-header {
-    display: flex;
-
-    justify-content: space-between;
-
-    align-items: center;
-
-    margin-bottom: 10px;
-
-    padding: 0 4px;
-}
-
-
-.route-selector-title {
-    font-size: 17px;
-
-    font-weight: 800;
-
-    color: #222;
-}
-
-
-/* ════════════════════════════════════════
-   🚴 개별 경로 카드
-════════════════════════════════════════ */
-
-.route-option-card {
-    width: 100%;
-
-    display: flex;
-
-    justify-content: space-between;
-
-    align-items: center;
-
-    gap: 12px;
-
-    border:
-        1px solid
-        rgba(0, 0, 0, 0.08);
-
-    background: #ffffff;
-
-    border-radius: 16px;
-
-    padding: 14px 16px;
-
-    margin-bottom: 9px;
-
-    box-shadow:
-        0 4px 14px
-        rgba(0, 0, 0, 0.16);
-
-    cursor: pointer;
-
-    text-align: left;
-
-    transition:
-        transform 0.2s ease,
-        border-color 0.2s ease,
-        background 0.2s ease;
-}
-
-
-.route-option-card:active {
-    transform: scale(0.98);
-}
-
-
-.route-option-card.selected {
-    border:
-        2px solid
-        #1677ff;
-
-    background:
-        #f3f8ff;
-}
-
-
-.route-card-main {
-    min-width: 0;
-
-    flex: 1;
-}
-
-
-.route-card-title {
-    font-size: 15px;
-
-    font-weight: 800;
-
-    color: #222;
-
-    margin-bottom: 6px;
-}
-
-
-.route-card-meta {
-    display: flex;
-
-    gap: 12px;
-
-    font-size: 13px;
-
-    color: #666;
-}
-
-
-.route-card-arrow {
-    font-size: 24px;
-
-    color: #1677ff;
-
-    font-weight: 700;
-}
-
-
-/* ════════════════════════════════════════
-   모바일 지도
-════════════════════════════════════════ */
-
-@media (max-width: 600px) {
-
-    .map-container {
-        height: calc(100dvh - 120px);
-        min-height: 420px;
+        grid-template-columns:
+            1fr;
     }
 
-    .route-option-card {
-        padding: 13px 14px;
-    }
-
-    .route-card-meta {
-        font-size: 12px;
-        gap: 8px;
-    }
 }
