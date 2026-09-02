@@ -1505,7 +1505,11 @@ const selectedRoute =
     data.routes.shortest ||
     data.routes.accessible ||
     data.routes.bikeOnly;
-
+if (
+    !data ||    
+    data.status !== 'OK' ||
+    !data.routes
+) {
 
 // 사용할 수 있는 경로가 없는 경우
 if (!selectedRoute) {
@@ -1544,60 +1548,52 @@ log(
 );
 
 
-                } catch (routeError) {
+} catch (routeError) {
 
-            log(
-                '❌ 자전거 경로 요청 실패',
-                routeError
-            );
-
-
-            alert(
-                '자전거 경로를 가져오지 못했습니다.\n\n' +
-                (
-                    routeError.message ||
-                    '알 수 없는 오류가 발생했습니다.'
-                )
-            );
+    log(
+        '❌ 자전거 경로 요청 실패',
+        routeError
+    );
 
 
-            // ========================================
-            // 시간 초과
-            // ========================================
-            if (
-                error.name ===
-                'AbortError'
-            ) {
+    if (
+        routeError.name ===
+        'AbortError'
+    ) {
 
-                alert(
-                    '자전거 경로 요청 시간이 초과되었습니다.\n\n' +
-                    '15초 안에 경로를 찾지 못했습니다.'
-                );
+        alert(
+            '자전거 경로 요청 시간이 초과되었습니다.\n\n' +
+            '경로를 찾지 못했습니다.'
+        );
 
-            } else {
+    } else {
 
-                alert(
-                    '자전거 경로를 가져오지 못했습니다.\n\n' +
-                    error.message
-                );
-            }
+        alert(
+            '자전거 경로를 가져오지 못했습니다.\n\n' +
+            (
+                routeError.message ||
+                '알 수 없는 오류가 발생했습니다.'
+            )
+        );
+    }
 
+} finally {
 
-        } finally {
-
-            this.isLoadingRoute =
-                false;
-
-
-            if (
-                this.routeButton
-            ) {
-
-                this.routeButton.innerHTML =
-                    '🚴';
-            }
+    this.isLoadingRoute =
+        false;
 
 
+    if (
+        this.routeButton
+    ) {
+
+        this.routeButton.innerHTML =
+            '🚴';
+    }
+
+
+    this.updateRouteButtonState();
+}
             this.updateRouteButtonState();
         }
     }
