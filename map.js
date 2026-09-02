@@ -1,14 +1,8 @@
 // 🗺️ 지도 관리자 클래스
 
 function log(message, data = '') {
-
-    const timestamp =
-        new Date().toLocaleTimeString();
-
-    console.log(
-        `[${timestamp}] ${message}`,
-        data
-    );
+    const timestamp = new Date().toLocaleTimeString();
+    console.log(`[${timestamp}] ${message}`, data);
 }
 
 
@@ -48,7 +42,6 @@ class MapManager {
         this.navigationDistance = 0;
         this.navigationTime = 0;
 
-
         this.isLoadingRoute = false;
         this.isNavigating = false;
 
@@ -61,9 +54,7 @@ class MapManager {
         this.routeButton = null;
 
 
-        log(
-            'MapManager 생성됨'
-        );
+        log('MapManager 생성됨');
     }
 
 
@@ -72,9 +63,7 @@ class MapManager {
     // ========================================
     initMap() {
 
-        log(
-            '🗺️ 지도 초기화 시작...'
-        );
+        log('🗺️ 지도 초기화 시작...');
 
 
         try {
@@ -94,11 +83,9 @@ class MapManager {
 
 
             if (
-
                 window.getComputedStyle(
                     mapContainer
                 ).position === 'static'
-
             ) {
 
                 mapContainer.style.position =
@@ -109,40 +96,27 @@ class MapManager {
             const mapOption = {
 
                 center:
-
                     new kakao.maps.LatLng(
-
                         CONFIG.MAP.centerLat,
-
                         CONFIG.MAP.centerLng
-
                     ),
 
                 level:
-
                     CONFIG.MAP.initialZoom
             };
 
 
             this.map =
-
                 new kakao.maps.Map(
-
                     mapContainer,
-
                     mapOption
-
                 );
 
 
-            log(
-                '✅ 지도 초기화 완료!'
-            );
+            log('✅ 지도 초기화 완료!');
 
 
-            // ========================================
             // 버튼 생성
-            // ========================================
             this.createCurrentLocationButton();
 
             this.createDestinationButton();
@@ -150,14 +124,12 @@ class MapManager {
             this.createRouteButton();
 
 
-            // ========================================
             // 목적지 선택 이벤트
-            // ========================================
             this.setupMapClickForDestination();
 
 
             // ========================================
-            // 지도 시작 시 현재 위치 자동 요청
+            // 📍 지도 시작 시 현재 위치 자동 요청
             // ========================================
             this.requestInitialLocation();
 
@@ -178,11 +150,8 @@ class MapManager {
     requestInitialLocation() {
 
         if (
-
             !navigator.geolocation
-
         ) {
-
             return;
         }
 
@@ -194,70 +163,50 @@ class MapManager {
                 const coords = {
 
                     latitude:
-
                         position.coords.latitude,
 
                     longitude:
-
                         position.coords.longitude,
 
                     accuracy:
-
                         position.coords.accuracy,
 
                     speed:
-
                         Number.isFinite(
                             position.coords.speed
                         )
-
                             ? position.coords.speed
-
                             : null,
 
                     altitude:
-
                         Number.isFinite(
                             position.coords.altitude
                         )
-
                             ? position.coords.altitude
-
                             : null,
 
                     heading:
-
                         Number.isFinite(
                             position.coords.heading
                         )
-
                             ? position.coords.heading
-
                             : null,
 
                     timestamp:
-
                         position.timestamp
                 };
 
 
                 this.updateCurrentMarker(
-
                     coords,
-
                     false
-
                 );
 
 
                 const location =
-
                     new kakao.maps.LatLng(
-
                         coords.latitude,
-
                         coords.longitude
-
                     );
 
 
@@ -266,17 +215,12 @@ class MapManager {
                 );
 
 
-                this.map.setLevel(
-                    2
-                );
+                this.map.setLevel(2);
 
 
                 log(
-
                     '📍 초기 현재 위치 자동 확보',
-
                     coords
-
                 );
             },
 
@@ -284,28 +228,18 @@ class MapManager {
             (error) => {
 
                 log(
-
                     '⚠️ 초기 현재 위치 확인 실패',
-
                     error
-
                 );
             },
 
 
             {
+                enableHighAccuracy: true,
 
-                enableHighAccuracy:
+                timeout: 5000,
 
-                    true,
-
-                timeout:
-
-                    5000,
-
-                maximumAge:
-
-                    2000
+                maximumAge: 2000
             }
         );
     }
@@ -317,35 +251,27 @@ class MapManager {
     createCurrentLocationButton() {
 
         if (
-
             !this.map ||
-
             this.locationButton
-
         ) {
-
             return;
         }
 
 
         const mapContainer =
-
             document.getElementById('map');
 
 
         if (!mapContainer) {
-
             return;
         }
 
 
         const button =
-
             document.createElement('button');
 
 
-        button.type =
-            'button';
+        button.type = 'button';
 
 
         button.className =
@@ -353,108 +279,62 @@ class MapManager {
 
 
         button.setAttribute(
-
             'aria-label',
-
             '현재 위치'
-
         );
 
 
         button.setAttribute(
-
             'title',
-
             '현재 위치'
-
         );
 
 
-        button.innerHTML =
-            '📍';
+        button.innerHTML = '📍';
 
 
         Object.assign(
-
             button.style,
-
             {
 
-                position:
+                position: 'absolute',
 
-                    'absolute',
+                right: '14px',
 
-                right:
+                bottom: '14px',
 
-                    '14px',
+                width: '48px',
 
-                bottom:
+                height: '48px',
 
-                    '14px',
+                border: 'none',
 
-                width:
+                borderRadius: '50%',
 
-                    '48px',
-
-                height:
-
-                    '48px',
-
-                border:
-
-                    'none',
-
-                borderRadius:
-
-                    '50%',
-
-                background:
-
-                    '#ffffff',
+                background: '#ffffff',
 
                 boxShadow:
-
                     '0 2px 8px rgba(0,0,0,0.25)',
 
-                display:
+                display: 'flex',
 
-                    'flex',
+                alignItems: 'center',
 
-                alignItems:
+                justifyContent: 'center',
 
-                    'center',
+                fontSize: '23px',
 
-                justifyContent:
+                cursor: 'pointer',
 
-                    'center',
+                zIndex: '1000',
 
-                fontSize:
+                padding: '0',
 
-                    '23px',
+                margin: '0',
 
-                cursor:
+                pointerEvents: 'auto',
 
-                    'pointer',
-
-                zIndex:
-
-                    '1000',
-
-                padding:
-
-                    '0',
-
-                margin:
-
-                    '0',
-
-                pointerEvents:
-
-                    'auto',
-
-                touchAction:
-
-                    'manipulation'
+                touchAction: 'manipulation'
             }
         );
 
@@ -471,7 +351,6 @@ class MapManager {
 
 
                 if (button.disabled) {
-
                     return;
                 }
 
@@ -507,7 +386,6 @@ class MapManager {
 
 
         if (!this.map) {
-
             return;
         }
 
@@ -525,15 +403,11 @@ class MapManager {
             ) &&
 
             gpsTracker.positions.length > 0
-
         ) {
 
             const latestPosition =
-
                 gpsTracker.positions[
-
                     gpsTracker.positions.length - 1
-
                 ];
 
 
@@ -546,58 +420,43 @@ class MapManager {
                 Number.isFinite(
                     latestPosition.longitude
                 )
-
             ) {
 
                 const coords = {
 
                     latitude:
-
                         latestPosition.latitude,
 
                     longitude:
-
                         latestPosition.longitude,
 
                     accuracy:
-
                         latestPosition.accuracy,
 
                     speed:
-
                         latestPosition.speed,
 
                     altitude:
-
                         latestPosition.altitude,
 
                     heading:
-
                         latestPosition.heading,
 
                     timestamp:
-
                         latestPosition.timestamp
                 };
 
 
                 this.updateCurrentMarker(
-
                     coords,
-
                     false
-
                 );
 
 
                 const location =
-
                     new kakao.maps.LatLng(
-
                         coords.latitude,
-
                         coords.longitude
-
                     );
 
 
@@ -606,17 +465,12 @@ class MapManager {
                 );
 
 
-                this.map.setLevel(
-                    2
-                );
+                this.map.setLevel(2);
 
 
                 log(
-
                     '⚡ 최신 GPS 위치로 즉시 이동',
-
                     coords
-
                 );
 
 
@@ -629,9 +483,7 @@ class MapManager {
         // GPS 지원 여부
         // ========================================
         if (
-
             !navigator.geolocation
-
         ) {
 
             alert(
@@ -646,9 +498,7 @@ class MapManager {
         // 버튼 로딩 상태
         // ========================================
         if (
-
             this.locationButton
-
         ) {
 
             this.locationButton.innerHTML =
@@ -667,19 +517,12 @@ class MapManager {
             (position) => {
 
                 const {
-
                     latitude,
-
                     longitude,
-
                     accuracy,
-
                     speed,
-
                     altitude,
-
                     heading
-
                 } = position.coords;
 
 
@@ -692,52 +535,35 @@ class MapManager {
                     accuracy,
 
                     speed:
-
                         Number.isFinite(speed)
-
                             ? speed
-
                             : null,
 
                     altitude:
-
                         Number.isFinite(altitude)
-
                             ? altitude
-
                             : null,
 
                     heading:
-
                         Number.isFinite(heading)
-
                             ? heading
-
                             : null,
 
                     timestamp:
-
                         position.timestamp
                 };
 
 
                 this.updateCurrentMarker(
-
                     coords,
-
                     false
-
                 );
 
 
                 const location =
-
                     new kakao.maps.LatLng(
-
                         latitude,
-
                         longitude
-
                     );
 
 
@@ -746,20 +572,15 @@ class MapManager {
                 );
 
 
-                this.map.setLevel(
-                    2
-                );
+                this.map.setLevel(2);
 
 
                 this.restoreLocationButton();
 
 
                 log(
-
                     '✅ 1회 GPS 위치 확보',
-
                     coords
-
                 );
             },
 
@@ -767,11 +588,8 @@ class MapManager {
             (error) => {
 
                 log(
-
                     '❌ 현재 위치 확인 실패',
-
                     error
-
                 );
 
 
@@ -787,15 +605,12 @@ class MapManager {
             {
 
                 enableHighAccuracy:
-
                     true,
 
                 timeout:
-
                     5000,
 
                 maximumAge:
-
                     2000
             }
         );
@@ -808,11 +623,8 @@ class MapManager {
     restoreLocationButton() {
 
         if (
-
             !this.locationButton
-
         ) {
-
             return;
         }
 
@@ -832,35 +644,27 @@ class MapManager {
     createDestinationButton() {
 
         if (
-
             !this.map ||
-
             this.destinationButton
-
         ) {
-
             return;
         }
 
 
         const mapContainer =
-
             document.getElementById('map');
 
 
         if (!mapContainer) {
-
             return;
         }
 
 
         const button =
-
             document.createElement('button');
 
 
-        button.type =
-            'button';
+        button.type = 'button';
 
 
         button.className =
@@ -868,20 +672,14 @@ class MapManager {
 
 
         button.setAttribute(
-
             'aria-label',
-
             '목적지 설정'
-
         );
 
 
         button.setAttribute(
-
             'title',
-
             '목적지 설정'
-
         );
 
 
@@ -890,86 +688,47 @@ class MapManager {
 
 
         Object.assign(
-
             button.style,
-
             {
 
-                position:
+                position: 'absolute',
 
-                    'absolute',
+                right: '14px',
 
-                right:
+                bottom: '72px',
 
-                    '14px',
+                width: '48px',
 
-                bottom:
+                height: '48px',
 
-                    '72px',
+                border: 'none',
 
-                width:
+                borderRadius: '50%',
 
-                    '48px',
-
-                height:
-
-                    '48px',
-
-                border:
-
-                    'none',
-
-                borderRadius:
-
-                    '50%',
-
-                background:
-
-                    '#ffffff',
+                background: '#ffffff',
 
                 boxShadow:
-
                     '0 2px 8px rgba(0,0,0,0.25)',
 
-                display:
+                display: 'flex',
 
-                    'flex',
+                alignItems: 'center',
 
-                alignItems:
+                justifyContent: 'center',
 
-                    'center',
+                fontSize: '22px',
 
-                justifyContent:
+                cursor: 'pointer',
 
-                    'center',
+                zIndex: '1000',
 
-                fontSize:
+                padding: '0',
 
-                    '22px',
+                margin: '0',
 
-                cursor:
+                pointerEvents: 'auto',
 
-                    'pointer',
-
-                zIndex:
-
-                    '1000',
-
-                padding:
-
-                    '0',
-
-                margin:
-
-                    '0',
-
-                pointerEvents:
-
-                    'auto',
-
-                touchAction:
-
-                    'manipulation'
+                touchAction: 'manipulation'
             }
         );
 
@@ -1011,7 +770,6 @@ class MapManager {
     startDestinationSelection() {
 
         if (!this.map) {
-
             return;
         }
 
@@ -1040,19 +798,14 @@ class MapManager {
     updateDestinationButtonState() {
 
         if (
-
             !this.destinationButton
-
         ) {
-
             return;
         }
 
 
         if (
-
             this.isSelectingDestination
-
         ) {
 
             this.destinationButton.innerHTML =
@@ -1078,7 +831,6 @@ class MapManager {
     setupMapClickForDestination() {
 
         if (!this.map) {
-
             return;
         }
 
@@ -1092,11 +844,8 @@ class MapManager {
             (mouseEvent) => {
 
                 if (
-
                     !this.isSelectingDestination
-
                 ) {
-
                     return;
                 }
 
@@ -1124,7 +873,6 @@ class MapManager {
     setDestination(location) {
 
         if (!this.map) {
-
             return;
         }
 
@@ -1134,9 +882,7 @@ class MapManager {
 
 
         if (
-
             this.destinationMarker
-
         ) {
 
             this.destinationMarker.setMap(
@@ -1146,19 +892,15 @@ class MapManager {
 
 
         this.destinationMarker =
-
             new kakao.maps.Marker({
 
                 position:
-
                     location,
 
                 map:
-
                     this.map,
 
                 title:
-
                     '목적지'
             });
 
@@ -1177,28 +919,21 @@ class MapManager {
 
 
         log(
-
             '🎯 목적지 설정 완료',
-
             {
 
                 latitude:
-
                     location.getLat(),
 
                 longitude:
-
                     location.getLng()
             }
         );
 
 
         alert(
-
             '🎯 목적지가 설정되었습니다.\n\n' +
-
             '🚴 버튼을 누르면 자전거 경로를 찾습니다.'
-
         );
     }
 
@@ -1209,30 +944,23 @@ class MapManager {
     createRouteButton() {
 
         if (
-
             !this.map ||
-
             this.routeButton
-
         ) {
-
             return;
         }
 
 
         const mapContainer =
-
             document.getElementById('map');
 
 
         if (!mapContainer) {
-
             return;
         }
 
 
         const button =
-
             document.createElement('button');
 
 
@@ -1245,20 +973,14 @@ class MapManager {
 
 
         button.setAttribute(
-
             'aria-label',
-
             '자전거 경로 찾기'
-
         );
 
 
         button.setAttribute(
-
             'title',
-
             '자전거 경로 찾기'
-
         );
 
 
@@ -1267,93 +989,51 @@ class MapManager {
 
 
         Object.assign(
-
             button.style,
-
             {
 
-                position:
+                position: 'absolute',
 
-                    'absolute',
+                right: '14px',
 
-                right:
+                bottom: '130px',
 
-                    '14px',
+                width: '48px',
 
-                bottom:
+                height: '48px',
 
-                    '130px',
+                border: 'none',
 
-                width:
+                borderRadius: '50%',
 
-                    '48px',
+                background: '#eeeeee',
 
-                height:
-
-                    '48px',
-
-                border:
-
-                    'none',
-
-                borderRadius:
-
-                    '50%',
-
-                background:
-
-                    '#eeeeee',
-
-                color:
-
-                    '#999999',
+                color: '#999999',
 
                 boxShadow:
-
                     '0 2px 8px rgba(0,0,0,0.20)',
 
-                display:
+                display: 'flex',
 
-                    'flex',
+                alignItems: 'center',
 
-                alignItems:
+                justifyContent: 'center',
 
-                    'center',
+                fontSize: '22px',
 
-                justifyContent:
+                cursor: 'not-allowed',
 
-                    'center',
+                zIndex: '1000',
 
-                fontSize:
+                padding: '0',
 
-                    '22px',
+                margin: '0',
 
-                cursor:
+                pointerEvents: 'auto',
 
-                    'not-allowed',
-
-                zIndex:
-
-                    '1000',
-
-                padding:
-
-                    '0',
-
-                margin:
-
-                    '0',
-
-                pointerEvents:
-
-                    'auto',
-
-                touchAction:
-
-                    'manipulation',
+                touchAction: 'manipulation',
 
                 transition:
-
                     'transform 0.15s ease'
             }
         );
@@ -1375,7 +1055,6 @@ class MapManager {
 
 
                 if (button.disabled) {
-
                     return;
                 }
 
@@ -1406,11 +1085,8 @@ class MapManager {
     updateRouteButtonState() {
 
         if (
-
             !this.routeButton
-
         ) {
-
             return;
         }
 
@@ -1420,7 +1096,6 @@ class MapManager {
             this.destinationLocation &&
 
             !this.isLoadingRoute
-
         ) {
 
             this.routeButton.disabled =
@@ -1470,15 +1145,11 @@ class MapManager {
             ) &&
 
             gpsTracker.positions.length > 0
-
         ) {
 
             const latest =
-
                 gpsTracker.positions[
-
                     gpsTracker.positions.length - 1
-
                 ];
 
 
@@ -1491,17 +1162,14 @@ class MapManager {
                 Number.isFinite(
                     latest.longitude
                 )
-
             ) {
 
                 return {
 
                     latitude:
-
                         latest.latitude,
 
                     longitude:
-
                         latest.longitude
                 };
             }
@@ -1512,13 +1180,10 @@ class MapManager {
         // 2. 현재 위치 마커
         // ========================================
         if (
-
             this.currentMarker
-
         ) {
 
             const position =
-
                 this.currentMarker.getPosition();
 
 
@@ -1527,11 +1192,9 @@ class MapManager {
                 return {
 
                     latitude:
-
                         position.getLat(),
 
                     longitude:
-
                         position.getLng()
                 };
             }
@@ -1557,7 +1220,6 @@ class MapManager {
             !this.navigationPathCoords ||
 
             this.navigationPathCoords.length < 2
-
         ) {
 
             alert(
@@ -1569,9 +1231,7 @@ class MapManager {
 
 
         if (
-
             this.isNavigating
-
         ) {
 
             log(
@@ -1587,9 +1247,7 @@ class MapManager {
 
 
         if (
-
             this.routeButton
-
         ) {
 
             this.routeButton.innerHTML =
@@ -1620,11 +1278,8 @@ class MapManager {
     stopNavigation() {
 
         if (
-
             !this.isNavigating
-
         ) {
-
             return;
         }
 
@@ -1639,9 +1294,7 @@ class MapManager {
 
 
         if (
-
             this.routeButton
-
         ) {
 
             this.routeButton.innerHTML =
@@ -1667,19 +1320,14 @@ class MapManager {
     async requestBicycleRoute() {
 
         if (
-
             this.isLoadingRoute
-
         ) {
-
             return;
         }
 
 
         if (
-
             !this.destinationLocation
-
         ) {
 
             alert(
@@ -1697,11 +1345,8 @@ class MapManager {
         if (!origin) {
 
             alert(
-
                 '출발 위치를 확인할 수 없습니다.\n\n' +
-
                 '📍 현재 위치를 먼저 확인해주세요.'
-
             );
 
             return;
@@ -1711,11 +1356,9 @@ class MapManager {
         const destination = {
 
             latitude:
-
                 this.destinationLocation.getLat(),
 
             longitude:
-
                 this.destinationLocation.getLng()
         };
 
@@ -1728,9 +1371,7 @@ class MapManager {
 
 
         if (
-
             this.routeButton
-
         ) {
 
             this.routeButton.innerHTML =
@@ -1739,17 +1380,13 @@ class MapManager {
 
 
         log(
-
             '🚴 자전거 경로 요청',
-
             {
 
                 start:
-
                     origin,
 
                 end:
-
                     destination
             }
         );
@@ -1761,29 +1398,24 @@ class MapManager {
             // 요청 파라미터
             // ========================================
             const params =
-
                 new URLSearchParams({
 
                     start_x:
-
                         String(
                             origin.longitude
                         ),
 
                     start_y:
-
                         String(
                             origin.latitude
                         ),
 
                     end_x:
-
                         String(
                             destination.longitude
                         ),
 
                     end_y:
-
                         String(
                             destination.latitude
                         )
@@ -1791,30 +1423,20 @@ class MapManager {
 
 
             // ========================================
-            // 자전거 경로 API 요청
+            // ⏱️ 최대 15초 제한
             // ========================================
             const response =
+    await fetch(
+        `/api/bicycle-route?${params.toString()}`,
+        {
+            method: 'GET',
 
-                await fetch(
-
-                    `/api/bicycle-route?${params.toString()}`,
-
-                    {
-
-                        method:
-
-                            'GET',
-
-                        headers:
-
-                            {
-
-                                'Accept':
-
-                                    'application/json'
-                            }
-                    }
-                );
+            headers: {
+                'Accept':
+                    'application/json'
+            }
+        }
+    );
 
 
             // ========================================
@@ -1841,15 +1463,11 @@ class MapManager {
             // 서버 오류
             // ========================================
             if (
-
                 !response.ok
-
             ) {
 
                 const serverMessage =
-
                     data?.error ||
-
                     '자전거 경로 API 요청에 실패했습니다.';
 
 
@@ -1863,95 +1481,83 @@ class MapManager {
             // 경로 데이터 확인
             // ========================================
             if (
+    !data ||
+    data.status !== 'OK' ||
+    !data.routes
+) {
 
-                !data ||
+    const status =
+        data?.status ||
+        'UNKNOWN';
 
-                data.status !== 'OK' ||
-
-                !data.routes
-
-            ) {
-
-                const status =
-
-                    data?.status ||
-
-                    'UNKNOWN';
-
-
-                throw new Error(
-
-                    `자전거 경로를 찾지 못했습니다. (${status})`
-
-                );
-            }
+    throw new Error(
+        `자전거 경로를 찾지 못했습니다. (${status})`
+    );
+}
 
 
-            // ========================================
-            // 🚴 사용할 경로 선택
-            // 현재는 하나의 경로만 표시
-            // ========================================
-            const selectedRoute =
+// ========================================
+// 🚴 사용할 경로 선택
+// 우선 최단 경로를 기본으로 사용
+// ========================================
 
-                data.routes.shortest ||
-
-                data.routes.accessible ||
-
-                data.routes.bikeOnly;
+const selectedRoute =
+    data.routes.shortest ||
+    data.routes.accessible ||
+    data.routes.bikeOnly;
 
 
-            // ========================================
-            // 사용할 수 있는 경로가 없는 경우
-            // ========================================
-            if (!selectedRoute) {
+// 사용할 수 있는 경로가 없는 경우
+if (!selectedRoute) {
 
-                throw new Error(
-                    '사용 가능한 자전거 경로가 없습니다.'
-                );
-            }
+    throw new Error(
+        '사용 가능한 자전거 경로가 없습니다.'
+    );
+}
 
 
-            // ========================================
-            // 실제 경로 그리기
-            // ========================================
-            this.drawNavigationRoute(
-                selectedRoute
-            );
+// ========================================
+// 실제 경로 그리기
+// ========================================
+
+this.drawNavigationRoute(
+    selectedRoute
+);
 
 
-            // ========================================
-            // 경로 정보 확인
-            // ========================================
+// ========================================
+// 경로 정보 확인
+// ========================================
+
+log(
+    '✅ 자전거 경로 수신 완료',
+    {
+
+        distance:
+            selectedRoute.properties
+                ?.totalDistance,
+
+        time:
+            selectedRoute.properties
+                ?.totalTime
+    }
+);
+
+
+                } catch (routeError) {
+
             log(
-
-                '✅ 자전거 경로 수신 완료',
-
-                {
-
-                    distance:
-
-                        selectedRoute.properties
-                            ?.totalDistance,
-
-                    time:
-
-                        selectedRoute.properties
-                            ?.totalTime
-                }
-            );
-
-
-        } catch (routeError) {
-
-            // ========================================
-            // ❌ 경로 요청 오류
-            // ========================================
-            log(
-
                 '❌ 자전거 경로 요청 실패',
-
                 routeError
+            );
 
+
+            alert(
+                '자전거 경로를 가져오지 못했습니다.\n\n' +
+                (
+                    routeError.message ||
+                    '알 수 없는 오류가 발생했습니다.'
+                )
             );
 
 
@@ -1959,33 +1565,20 @@ class MapManager {
             // 시간 초과
             // ========================================
             if (
-
-                routeError.name ===
+                error.name ===
                 'AbortError'
-
             ) {
 
                 alert(
-
                     '자전거 경로 요청 시간이 초과되었습니다.\n\n' +
-
                     '15초 안에 경로를 찾지 못했습니다.'
-
                 );
 
             } else {
 
                 alert(
-
                     '자전거 경로를 가져오지 못했습니다.\n\n' +
-
-                    (
-
-                        routeError.message ||
-
-                        '알 수 없는 오류가 발생했습니다.'
-
-                    )
+                    error.message
                 );
             }
 
@@ -1997,9 +1590,7 @@ class MapManager {
 
 
             if (
-
                 this.routeButton
-
             ) {
 
                 this.routeButton.innerHTML =
@@ -2018,7 +1609,6 @@ class MapManager {
     drawNavigationRoute(route) {
 
         if (!this.map) {
-
             return;
         }
 
@@ -2031,11 +1621,9 @@ class MapManager {
 
 
         if (
-
             Array.isArray(
                 route.legs
             )
-
         ) {
 
             route.legs.forEach(
@@ -2047,9 +1635,7 @@ class MapManager {
                         !Array.isArray(
                             leg.steps
                         )
-
                     ) {
-
                         return;
                     }
 
@@ -2063,13 +1649,10 @@ class MapManager {
 
 
                             if (
-
                                 !Array.isArray(
                                     points
                                 )
-
                             ) {
-
                                 return;
                             }
 
@@ -2085,22 +1668,18 @@ class MapManager {
                                         ) ||
 
                                         point.length < 2
-
                                     ) {
-
                                         return;
                                     }
 
 
                                     const lng =
-
                                         Number(
                                             point[0]
                                         );
 
 
                                     const lat =
-
                                         Number(
                                             point[1]
                                         );
@@ -2115,9 +1694,7 @@ class MapManager {
                                         !Number.isFinite(
                                             lat
                                         )
-
                                     ) {
-
                                         return;
                                     }
 
@@ -2125,11 +1702,8 @@ class MapManager {
                                     navigationPoints.push(
 
                                         new kakao.maps.LatLng(
-
                                             lat,
-
                                             lng
-
                                         )
                                     );
                                 }
@@ -2142,9 +1716,7 @@ class MapManager {
 
 
         if (
-
             navigationPoints.length < 2
-
         ) {
 
             throw new Error(
@@ -2154,58 +1726,47 @@ class MapManager {
 
 
         this.navigationPathCoords =
-
             this.removeDuplicateCoords(
                 navigationPoints
             );
 
 
         this.navigationPolyline =
-
             new kakao.maps.Polyline({
 
                 path:
-
                     this.navigationPathCoords,
 
                 strokeWeight:
-
                     6,
 
                 strokeColor:
-
                     '#1677ff',
 
                 strokeOpacity:
-
                     0.85,
 
                 strokeStyle:
-
                     'solid',
 
                 map:
-
                     this.map
             });
 
 
         this.navigationDistance =
-
             Number(
                 route.properties?.totalDistance
             ) || 0;
 
 
         this.navigationTime =
-
             Number(
                 route.properties?.totalTime
             ) || 0;
 
 
         const bounds =
-
             new kakao.maps.LatLngBounds();
 
 
@@ -2226,56 +1787,39 @@ class MapManager {
 
 
         const km =
-
             (
-
                 this.navigationDistance /
-
                 1000
-
             ).toFixed(1);
 
 
         const minutes =
-
             Math.round(
-
                 this.navigationTime /
-
                 60
-
             );
 
 
         log(
-
             '✅ 네비게이션 경로 표시 완료',
-
             {
 
                 distanceKm:
-
                     km,
 
                 timeMinutes:
-
                     minutes,
 
                 points:
-
                     this.navigationPathCoords.length
             }
         );
 
 
         alert(
-
             `🚴 자전거 경로가 설정되었습니다.\n\n` +
-
             `거리: ${km} km\n` +
-
             `예상시간: ${minutes}분`
-
         );
     }
 
@@ -2294,9 +1838,7 @@ class MapManager {
             point => {
 
                 if (
-
                     result.length === 0
-
                 ) {
 
                     result.push(
@@ -2308,7 +1850,6 @@ class MapManager {
 
 
                 const last =
-
                     result[
                         result.length - 1
                     ];
@@ -2321,7 +1862,6 @@ class MapManager {
 
                     last.getLng() !==
                         point.getLng()
-
                 ) {
 
                     result.push(
@@ -2354,9 +1894,7 @@ class MapManager {
 
 
         if (
-
             this.navigationPolyline
-
         ) {
 
             this.navigationPolyline.setMap(
@@ -2379,11 +1917,8 @@ class MapManager {
     // 📍 현재 위치 마커
     // ========================================
     updateCurrentMarker(
-
         position,
-
         addToPath = true
-
     ) {
 
         if (!this.map) {
@@ -2397,47 +1932,34 @@ class MapManager {
 
 
         const {
-
             latitude,
-
             longitude
-
         } = position;
 
 
         const location =
-
             new kakao.maps.LatLng(
-
                 latitude,
-
                 longitude
-
             );
 
 
         try {
 
             if (
-
                 !this.currentMarker
-
             ) {
 
                 this.currentMarker =
-
                     new kakao.maps.Marker({
 
                         position:
-
                             location,
 
                         map:
-
                             this.map,
 
                         title:
-
                             '현재 위치'
                     });
 
@@ -2454,15 +1976,11 @@ class MapManager {
             );
 
 
-            this.map.setLevel(
-                2
-            );
+            this.map.setLevel(2);
 
 
             if (
-
                 addToPath
-
             ) {
 
                 this.pathCoords.push(
@@ -2474,11 +1992,8 @@ class MapManager {
         } catch (error) {
 
             log(
-
                 '❌ 현재 위치 마커 오류',
-
                 error.message
-
             );
         }
     }
@@ -2494,9 +2009,7 @@ class MapManager {
             !this.map ||
 
             this.pathCoords.length < 2
-
         ) {
-
             return;
         }
 
@@ -2504,9 +2017,7 @@ class MapManager {
         try {
 
             if (
-
                 this.polyline
-
             ) {
 
                 this.polyline.setPath(
@@ -2516,31 +2027,24 @@ class MapManager {
             } else {
 
                 this.polyline =
-
                     new kakao.maps.Polyline({
 
                         path:
-
                             this.pathCoords,
 
                         strokeWeight:
-
                             3,
 
                         strokeColor:
-
                             '#4CAF50',
 
                         strokeOpacity:
-
                             0.8,
 
                         strokeStyle:
-
                             'solid',
 
                         map:
-
                             this.map
                     });
             }
@@ -2549,11 +2053,8 @@ class MapManager {
         } catch (error) {
 
             log(
-
                 '❌ 실제 주행 경로 오류',
-
                 error.message
-
             );
         }
     }
@@ -2569,9 +2070,7 @@ class MapManager {
 
 
         if (
-
             this.polyline
-
         ) {
 
             this.polyline.setMap(
@@ -2603,9 +2102,7 @@ class MapManager {
             !this.map ||
 
             this.pathCoords.length === 0
-
         ) {
-
             return;
         }
 
@@ -2613,7 +2110,6 @@ class MapManager {
         try {
 
             const bounds =
-
                 new kakao.maps.LatLngBounds();
 
 
@@ -2641,11 +2137,8 @@ class MapManager {
         } catch (error) {
 
             log(
-
                 '❌ 줌 조정 오류',
-
                 error.message
-
             );
         }
     }
