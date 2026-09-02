@@ -52,6 +52,12 @@ class MapManager {
         this.isLoadingRoute = false;
         this.isNavigating = false;
 
+        // ========================================
+        // 🛣️ 경로 선택 UI
+        // ========================================
+        this.routeSelector = null;
+        this.routeList = [];
+        this.selectedRouteIndex = 0;
 
         // ========================================
         // 버튼
@@ -148,6 +154,8 @@ class MapManager {
             this.createDestinationButton();
 
             this.createRouteButton();
+
+            this.createRouteSelector();
 
 
             // ========================================
@@ -1201,7 +1209,299 @@ class MapManager {
 
         );
     }
+// ========================================
+// 🛣️ 경로 선택창 생성
+// ========================================
+createRouteSelector() {
 
+    if (
+        this.routeSelector
+    ) {
+        return;
+    }
+
+
+    const mapContainer =
+        document.getElementById('map');
+
+
+    if (!mapContainer) {
+        return;
+    }
+
+
+    const selector =
+        document.createElement('div');
+
+
+    selector.className =
+        'route-selector';
+
+
+    Object.assign(
+        selector.style,
+        {
+
+            position: 'absolute',
+
+            left: '12px',
+
+            right: '12px',
+
+            bottom: '14px',
+
+            zIndex: '1100',
+
+            display: 'none',
+
+            background: '#ffffff',
+
+            borderRadius: '16px',
+
+            boxShadow:
+                '0 4px 16px rgba(0,0,0,0.25)',
+
+            overflow: 'hidden',
+
+            padding: '10px'
+        }
+    );
+
+
+    mapContainer.appendChild(
+        selector
+    );
+
+
+    this.routeSelector =
+        selector;
+
+
+    log(
+        '✅ 경로 선택창 생성 완료'
+    );
+}
+
+
+// ========================================
+// 🛣️ 경로 선택창 표시
+// ========================================
+showRouteSelector(routes) {
+
+    if (
+        !this.routeSelector
+    ) {
+        return;
+    }
+
+
+    if (
+        !Array.isArray(routes) ||
+        routes.length === 0
+    ) {
+        return;
+    }
+
+
+    this.routeList =
+        routes;
+
+
+    this.selectedRouteIndex =
+        0;
+
+
+    this.routeSelector.innerHTML =
+        '';
+
+
+    const title =
+        document.createElement('div');
+
+
+    title.textContent =
+        '🚴 추천 경로';
+
+
+    Object.assign(
+        title.style,
+        {
+
+            fontWeight: '700',
+
+            fontSize: '16px',
+
+            padding:
+                '8px 10px 10px'
+        }
+    );
+
+
+    this.routeSelector.appendChild(
+        title
+    );
+
+
+    routes.forEach(
+
+        (route, index) => {
+
+            const properties =
+                route.properties || {};
+
+
+            const distance =
+                Number(
+                    properties.totalDistance
+                ) || 0;
+
+
+            const time =
+                Number(
+                    properties.totalTime
+                ) || 0;
+
+
+            const km =
+                (
+                    distance / 1000
+                ).toFixed(1);
+
+
+            const minutes =
+                Math.round(
+                    time / 60
+                );
+
+
+            const item =
+                document.createElement('button');
+
+
+            item.type =
+                'button';
+
+
+            item.style.width =
+                '100%';
+
+
+            item.style.border =
+                index === 0
+                    ? '2px solid #1677ff'
+                    : '1px solid #dddddd';
+
+
+            item.style.background =
+                '#ffffff';
+
+
+            item.style.borderRadius =
+                '12px';
+
+
+            item.style.padding =
+                '14px';
+
+
+            item.style.marginBottom =
+                index === routes.length - 1
+                    ? '0'
+                    : '8px';
+
+
+            item.style.textAlign =
+                'left';
+
+
+            item.style.cursor =
+                'pointer';
+
+
+            const routeName =
+                index === 0
+                    ? '⭐ 추천 경로'
+                    : `🚴 경로 ${index + 1}`;
+
+
+            item.innerHTML =
+                `
+                <div
+                    style="
+                        font-weight:700;
+                        font-size:15px;
+                        margin-bottom:6px;
+                    "
+                >
+                    ${routeName}
+                </div>
+
+                <div
+                    style="
+                        color:#666666;
+                        font-size:14px;
+                    "
+                >
+                    ${km} km · 약 ${minutes}분
+                </div>
+                `;
+
+
+            item.addEventListener(
+
+                'click',
+
+                () => {
+
+                    this.selectedRouteIndex =
+                        index;
+
+
+                    this.drawNavigationRoute(
+                        route
+                    );
+
+
+                    this.showRouteSelector(
+                        routes
+                    );
+
+
+                    log(
+                        '🛣️ 경로 선택',
+                        {
+
+                            index,
+
+                            distance,
+
+                            time
+                        }
+                    );
+                }
+            );
+
+
+            this.routeSelector.appendChild(
+                item
+            );
+        }
+    );
+
+
+    this.routeSelector.style.display =
+        'block';
+
+
+    log(
+        '🛣️ 경로 선택창 표시',
+        {
+
+            count:
+                routes.length
+        }
+    );
+}
 
     // ========================================
     // 🚴 자전거 경로 버튼
