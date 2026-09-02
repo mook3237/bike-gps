@@ -526,3 +526,357 @@ body {
 ::-webkit-scrollbar-thumb:hover {
     background: var(--text-dark);
 }
+
+/* ════════════════════════════════════════
+   🗺️ 지도 메인 화면
+════════════════════════════════════════ */
+
+#map-tab {
+    padding: 0;
+}
+
+.map-container {
+    position: relative;
+    width: 100%;
+    height: calc(100dvh - 130px);
+    min-height: 500px;
+    overflow: hidden;
+    background: #e8e8e8;
+}
+
+
+/* ════════════════════════════════════════
+   🗺️ 지도 플로팅 버튼
+════════════════════════════════════════ */
+
+.map-floating-button {
+    position: absolute;
+
+    right: 14px;
+
+    width: 52px;
+    height: 52px;
+
+    border: none;
+    border-radius: 50%;
+
+    background: #ffffff;
+
+    box-shadow:
+        0 3px 12px
+        rgba(0, 0, 0, 0.22);
+
+    z-index: 2000;
+
+    font-size: 22px;
+
+    cursor: pointer;
+
+    transition:
+        transform 0.2s ease,
+        background 0.2s ease;
+}
+
+.map-floating-button:active {
+    transform: scale(0.92);
+}
+
+.current-location-button {
+    bottom: 18px;
+}
+
+.destination-button {
+    bottom: 80px;
+}
+
+.destination-button.selecting {
+    background: #e8f3ff;
+}
+
+
+/* ════════════════════════════════════════
+   🎯 목적지 카드
+════════════════════════════════════════ */
+
+.destination-sheet {
+    position: absolute;
+
+    left: 12px;
+    right: 12px;
+
+    bottom: 12px;
+
+    z-index: 3000;
+
+    background: #ffffff;
+
+    border-radius: 18px;
+
+    box-shadow:
+        0 8px 28px
+        rgba(0, 0, 0, 0.25);
+
+    padding: 16px;
+}
+
+
+.destination-sheet-header {
+    display: flex;
+
+    justify-content: space-between;
+
+    align-items: flex-start;
+
+    gap: 12px;
+
+    margin-bottom: 16px;
+}
+
+
+.destination-sheet-info {
+    flex: 1;
+
+    min-width: 0;
+}
+
+
+.destination-label {
+    font-size: 12px;
+
+    color: #888;
+
+    margin-bottom: 5px;
+}
+
+
+.destination-address {
+    font-size: 16px;
+
+    font-weight: 700;
+
+    line-height: 1.4;
+
+    word-break: keep-all;
+}
+
+
+/* ════════════════════════════════════════
+   ❌ 닫기 버튼
+════════════════════════════════════════ */
+
+.map-close-button {
+    border: none;
+
+    background: transparent;
+
+    color: #333;
+
+    font-size: 28px;
+
+    line-height: 1;
+
+    cursor: pointer;
+
+    padding: 0 4px;
+
+    flex-shrink: 0;
+}
+
+
+/* ════════════════════════════════════════
+   🎯 출발 / 도착 버튼
+════════════════════════════════════════ */
+
+.destination-actions {
+    display: grid;
+
+    grid-template-columns: 1fr 1fr;
+
+    gap: 10px;
+}
+
+
+.destination-action-btn {
+    border: none;
+
+    border-radius: 12px;
+
+    padding: 14px;
+
+    font-size: 15px;
+
+    font-weight: 700;
+
+    cursor: pointer;
+}
+
+
+.destination-action-btn.start {
+    background: #f2f2f2;
+
+    color: #333;
+}
+
+
+.destination-action-btn.arrival {
+    background: #1677ff;
+
+    color: #ffffff;
+}
+
+
+/* ════════════════════════════════════════
+   🚴 경로 선택 영역
+════════════════════════════════════════ */
+
+.route-selector {
+    position: absolute;
+
+    left: 12px;
+    right: 12px;
+
+    bottom: 12px;
+
+    z-index: 3500;
+
+    pointer-events: auto;
+}
+
+
+.route-selector-header {
+    display: flex;
+
+    justify-content: space-between;
+
+    align-items: center;
+
+    margin-bottom: 10px;
+
+    padding: 0 4px;
+}
+
+
+.route-selector-title {
+    font-size: 17px;
+
+    font-weight: 800;
+
+    color: #222;
+}
+
+
+/* ════════════════════════════════════════
+   🚴 개별 경로 카드
+════════════════════════════════════════ */
+
+.route-option-card {
+    width: 100%;
+
+    display: flex;
+
+    justify-content: space-between;
+
+    align-items: center;
+
+    gap: 12px;
+
+    border:
+        1px solid
+        rgba(0, 0, 0, 0.08);
+
+    background: #ffffff;
+
+    border-radius: 16px;
+
+    padding: 14px 16px;
+
+    margin-bottom: 9px;
+
+    box-shadow:
+        0 4px 14px
+        rgba(0, 0, 0, 0.16);
+
+    cursor: pointer;
+
+    text-align: left;
+
+    transition:
+        transform 0.2s ease,
+        border-color 0.2s ease,
+        background 0.2s ease;
+}
+
+
+.route-option-card:active {
+    transform: scale(0.98);
+}
+
+
+.route-option-card.selected {
+    border:
+        2px solid
+        #1677ff;
+
+    background:
+        #f3f8ff;
+}
+
+
+.route-card-main {
+    min-width: 0;
+
+    flex: 1;
+}
+
+
+.route-card-title {
+    font-size: 15px;
+
+    font-weight: 800;
+
+    color: #222;
+
+    margin-bottom: 6px;
+}
+
+
+.route-card-meta {
+    display: flex;
+
+    gap: 12px;
+
+    font-size: 13px;
+
+    color: #666;
+}
+
+
+.route-card-arrow {
+    font-size: 24px;
+
+    color: #1677ff;
+
+    font-weight: 700;
+}
+
+
+/* ════════════════════════════════════════
+   모바일 지도
+════════════════════════════════════════ */
+
+@media (max-width: 600px) {
+
+    .map-container {
+        height: calc(100dvh - 120px);
+        min-height: 420px;
+    }
+
+    .route-option-card {
+        padding: 13px 14px;
+    }
+
+    .route-card-meta {
+        font-size: 12px;
+        gap: 8px;
+    }
+}
