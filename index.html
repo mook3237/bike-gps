@@ -26,12 +26,25 @@
 
         <!-- 탭 선택 -->
         <div class="tabs">
-            <button class="tab-btn active" data-tab="speed">속도 기록 지도</button>
-            <button class="tab-btn" data-tab="map">경로 지도</button>
-        </div>
+
+    <button
+        class="tab-btn active"
+        data-tab="map"
+    >
+        지도
+    </button>
+
+    <button
+        class="tab-btn"
+        data-tab="speed"
+    >
+        기록
+    </button>
+
+</div>
 
         <!-- 속도 기록 탭 -->
-        <div class="tab-content active" id="speed-tab">
+        <div class="tab-content" id="speed-tab">
             <!-- 메인 정보 (긴 누름으로 설정 메뉴 오픈) -->
             <div class="main-stats" id="main-stats-long-press">
                 <div class="stat-item">
@@ -115,7 +128,7 @@
         </div>
 
         <!-- 지도 탭 -->
-        <div class="tab-content" id="map-tab">
+        <div class="tab-content active" id="map-tab">
             <div id="map" class="map-container"></div>
         </div>
     </div>
