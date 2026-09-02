@@ -26,14 +26,32 @@ class MapManager {
 
 
         // ========================================
-        // 🎯 목적지
-        // ========================================
-        this.destinationMarker = null;
-        this.destinationLocation = null;
-        this.isSelectingDestination = false;
+// 🎯 확정된 목적지
+// ========================================
+this.destinationMarker = null;
+this.destinationLocation = null;
 
 
-        // ========================================
+// ========================================
+// 📍 길게 눌러 선택한 임시 목적지
+// ========================================
+this.pendingDestinationMarker = null;
+this.pendingDestinationLocation = null;
+this.pendingDestinationAddress = '';
+
+
+// ========================================
+// ⏱️ 지도 길게 누르기
+// ========================================
+this.longPressTimer = null;
+this.longPressStartPoint = null;
+this.isLongPressTriggered = false;
+
+
+// ========================================
+// 📱 목적지 선택창
+// ========================================
+this.destinationSheet = null;        // ========================================
         // 📈 실제 주행 경로
         // ========================================
         this.polyline = null;
@@ -63,7 +81,6 @@ class MapManager {
         // 버튼
         // ========================================
         this.locationButton = null;
-        this.destinationButton = null;
         this.routeButton = null;
 
 
@@ -147,18 +164,25 @@ class MapManager {
 
 
             // ========================================
-            // 버튼 생성
-            // ========================================
-            this.createCurrentLocationButton();
+// 버튼 생성
+// ========================================
+this.createCurrentLocationButton();
 
-            this.createDestinationButton();
+this.createRouteButton();
 
-            this.createRouteButton();
-
-            this.createRouteSelector();
+this.createRouteSelector();
 
 
-            // ========================================
+// ========================================
+// 📍 길게 누르기 목적지 선택창
+// ========================================
+this.createDestinationSheet();
+
+
+// ========================================
+// 📍 지도 1초 이상 누르기
+// ========================================
+this.setupLongPressForDestination();            // ========================================
             // 목적지 선택 이벤트
             // ========================================
             this.setupMapClickForDestination();
@@ -1127,88 +1151,77 @@ class MapManager {
 
 
     // ========================================
-    // 🎯 목적지 지정
-    // ========================================
-    setDestination(location) {
+// 🎯 목적지 지정
+// ========================================
+setDestination(location) {
 
-        if (!this.map) {
+    if (!this.map) {
 
-            return;
-        }
-
-
-        this.destinationLocation =
-            location;
+        return;
+    }
 
 
-        if (
-
-            this.destinationMarker
-
-        ) {
-
-            this.destinationMarker.setMap(
-                null
-            );
-        }
+    this.destinationLocation =
+        location;
 
 
-        this.destinationMarker =
+    if (
+        this.destinationMarker
+    ) {
 
-            new kakao.maps.Marker({
-
-                position:
-
-                    location,
-
-                map:
-
-                    this.map,
-
-                title:
-
-                    '목적지'
-            });
-
-
-        this.isSelectingDestination =
-            false;
-
-
-        this.updateDestinationButtonState();
-
-
-        this.clearNavigationRoute();
-
-
-        this.updateRouteButtonState();
-
-
-        log(
-
-            '🎯 목적지 설정 완료',
-
-            {
-
-                latitude:
-
-                    location.getLat(),
-
-                longitude:
-
-                    location.getLng()
-            }
-        );
-
-
-        alert(
-
-            '🎯 목적지가 설정되었습니다.\n\n' +
-
-            '🚴 버튼을 누르면 자전거 경로를 찾습니다.'
-
+        this.destinationMarker.setMap(
+            null
         );
     }
+
+
+    this.destinationMarker =
+
+        new kakao.maps.Marker({
+
+            position:
+                location,
+
+            map:
+                this.map,
+
+            title:
+                '목적지'
+        });
+
+
+    // ========================================
+    // 기존 경로 삭제
+    // ========================================
+    this.clearNavigationRoute();
+
+
+    // ========================================
+    // 경로 버튼 활성화
+    // ========================================
+    this.updateRouteButtonState();
+
+
+    log(
+
+        '🎯 목적지 설정 완료',
+
+        {
+
+            latitude:
+
+                location.getLat(),
+
+            longitude:
+
+                location.getLng(),
+
+            address:
+
+                this.pendingDestinationAddress
+        }
+    );
+}
 // ========================================
 // 🛣️ 경로 선택창 생성
 // ========================================
