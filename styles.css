@@ -65,6 +65,8 @@ body {
 ========================================================= */
 
 .header {
+    display: none;
+
     text-align: center;
 
     padding:
@@ -205,18 +207,15 @@ body {
     width:
         100%;
 
-    /*
-    헤더 + 탭을 제외한 화면 크기
-    */
-
+    /* 상단 로고 없이 탭 아래 남은 화면 전체를 지도에 사용 */
     height:
-        calc(100dvh - 145px);
+        calc(100dvh - 49px);
 
     min-height:
-        400px;
+        0;
 
     max-height:
-        calc(100dvh - 145px);
+        calc(100dvh - 49px);
 
     overflow:
         hidden;
@@ -359,6 +358,19 @@ body {
 }
 
 
+/* 주소를 직접 입력할 수 있도록 버튼처럼 동작 */
+.location-address-button {
+    display: block;
+    width: 100%;
+    border: none;
+    padding: 0;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    font: inherit;
+}
+
 /* 경유지 추가 */
 
 .waypoint-button {
@@ -499,6 +511,8 @@ body {
 ========================================================= */
 
 .map-scale {
+    display: none !important;
+
     position:
         absolute;
 
@@ -578,19 +592,19 @@ body {
         min(94%, 500px);
 
     padding:
-        10px;
+        0;
 
     background:
-        rgba(255, 255, 255, 0.90);
+        transparent;
 
     border-radius:
-        18px;
+        0;
 
     box-shadow:
-        0 5px 20px rgba(0,0,0,0.20);
+        none;
 
     backdrop-filter:
-        blur(8px);
+        none;
 }
 
 .route-selector.active {
@@ -600,7 +614,7 @@ body {
 
 .route-selector-header {
     display:
-        flex;
+        none;
 
     justify-content:
         space-between;
@@ -680,7 +694,7 @@ body {
         15px;
 
     background:
-        rgba(255,255,255,0.88);
+        rgba(255,255,255,0.10);
 
     text-align:
         left;
@@ -703,7 +717,10 @@ body {
         2px solid #1677FF;
 
     background:
-        rgba(232,243,255,0.92);
+        rgba(232,243,255,0.82);
+
+    box-shadow:
+        0 4px 14px rgba(22,119,255,0.22);
 }
 
 .route-card-name {
@@ -1286,10 +1303,10 @@ body {
 
     .map-container {
         height:
-            calc(100dvh - 132px);
+            calc(100dvh - 49px);
 
         max-height:
-            calc(100dvh - 132px);
+            calc(100dvh - 49px);
     }
 
     .route-card {
