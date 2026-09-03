@@ -1072,21 +1072,19 @@ document.addEventListener(
 // ========================================
 log('app.js 로드됨');
 
-if (
-    document.readyState ===
-    'loading'
-) {
+if (document.readyState === 'loading') {
 
     document.addEventListener(
         'DOMContentLoaded',
         () => {
 
-            log(
-                '✅ DOM 로드 완료 - 앱 시작!'
-            );
+            log('✅ DOM 로드 완료 - 앱 시작!');
 
             const app =
                 new BikeGPSApp();
+
+            window.app =
+                app;
 
             app.initMap();
         }
@@ -1094,12 +1092,13 @@ if (
 
 } else {
 
-    log(
-        '✅ DOM 이미 로드됨 - 앱 시작!'
-    );
+    log('✅ DOM 이미 로드됨 - 앱 시작!');
 
     const app =
         new BikeGPSApp();
+
+    window.app =
+        app;
 
     app.initMap();
 }
