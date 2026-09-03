@@ -261,27 +261,14 @@ class MapManager {
             }
 
 
-            // 지도 컨테이너 전체 사용
-
-            Object.assign(
-                this.mapContainer.style,
-                {
-                    position:
-                        'relative',
-
-                    width:
-                        '100%',
-
-                    height:
-                        '100%',
-
-                    minHeight:
-                        '100vh',
-
-                    overflow:
-                        'hidden'
-                }
-            );
+            // 지도 크기는 CSS가 화면/기기별로 계산한다.
+            // JS에서 minHeight:100vh를 강제하면 지도 컨테이너가
+            // 탭 영역보다 길어져 페이지 전체가 오버사이즈가 된다.
+            this.mapContainer.style.position = 'relative';
+            this.mapContainer.style.width = '100%';
+            this.mapContainer.style.height = '';
+            this.mapContainer.style.minHeight = '';
+            this.mapContainer.style.overflow = 'hidden';
 
 
             this.map =
@@ -439,6 +426,50 @@ class MapManager {
                         false;
 
                     this.goToCurrentLocation();
+                }
+            );
+        }
+
+
+        // --------------------------------------------------------
+        // 출발 / 도착 주소 직접 입력
+        // --------------------------------------------------------
+
+        const originAddressButton =
+            document.getElementById(
+                'origin-address'
+            );
+
+
+        const destinationAddressButton =
+            document.getElementById(
+                'destination-address'
+            );
+
+
+        if (originAddressButton) {
+
+            originAddressButton.addEventListener(
+                'click',
+                () => {
+
+                    this.searchAddressForPoint(
+                        'origin'
+                    );
+                }
+            );
+        }
+
+
+        if (destinationAddressButton) {
+
+            destinationAddressButton.addEventListener(
+                'click',
+                () => {
+
+                    this.searchAddressForPoint(
+                        'destination'
+                    );
                 }
             );
         }
@@ -872,6 +903,19 @@ class MapManager {
                 }
 
 
+                if (
+                    this.selectionMode ===
+                    'destination-after-origin'
+                ) {
+
+                    this.confirmSecondPointAsDestination(
+                        mouseEvent.latLng
+                    );
+
+                    return;
+                }
+
+
                 this.setPendingLocation(
                     mouseEvent.latLng
                 );
@@ -1010,7 +1054,9 @@ class MapManager {
 
 
         this.selectionMode =
-            'first';
+            this.customOrigin
+                ? 'destination-after-origin'
+                : 'first';
 
 
         this.pendingLocation =
@@ -1054,6 +1100,10 @@ class MapManager {
 
         this.isSelectingDestination =
             false;
+
+
+        this.selectionMode =
+            'pending-choice';
 
 
         if (this.destinationButton) {
@@ -1249,16 +1299,29 @@ class MapManager {
             'destination-after-origin';
 
 
+        if (this.locationPanel) {
+
+            this.locationPanel.classList.add(
+                'active'
+            );
+        }
+
+
+        this.updateLocationPanelText();
+
+
+        // 바로 두 번째 지점 선택으로 넘어가지 않는다.
+        // 사용자가 다시 목적지 버튼을 눌러 도착지를 고른다.
         if (this.destinationButton) {
 
-            this.destinationButton.classList.add(
+            this.destinationButton.classList.remove(
                 'active'
             );
         }
 
 
         log(
-            '📍 출발지 설정 완료 → 도착지 선택 대기'
+            '📍 출발지 설정 완료 → 목적지 버튼으로 도착지 선택 대기'
         );
     }
 
@@ -1308,7 +1371,23 @@ class MapManager {
             '';
 
 
+        this.isSelectingDestination =
+            false;
+
+
+        this.selectionMode =
+            null;
+
+
         this.updateLocationPanelText();
+
+
+        if (this.locationPanel) {
+
+            this.locationPanel.classList.add(
+                'active'
+            );
+        }
 
 
         this.requestBicycleRoute();
@@ -1479,6 +1558,109 @@ class MapManager {
                 this.destinationAddress ||
                 '목적지를 설정하세요';
         }
+    }
+
+
+    // ============================================================
+    // 주소창 직접 입력
+    // ============================================================
+
+    searchAddressForPoint(
+        type
+    ) {
+
+
+        const label =
+            type === 'origin'
+                ? '출발지'
+                : '도착지';
+
+
+        const query =
+            window.prompt(
+                `${label} 주소를 입력하세요`
+            );
+
+
+        if (
+            !query ||
+            !query.trim()
+        ) {
+
+            return;
+        }
+
+
+        if (
+            !kakao.maps.services
+        ) {
+
+            alert(
+                '주소 검색 서비스를 불러오지 못했습니다.'
+            );
+
+            return;
+        }
+
+
+        const geocoder =
+            new kakao.maps.services.Geocoder();
+
+
+        geocoder.addressSearch(
+
+            query.trim(),
+
+            (result, status) => {
+
+                if (
+                    status !==
+                    kakao.maps.services.Status.OK ||
+                    !result?.[0]
+                ) {
+
+                    alert(
+                        '주소를 찾지 못했습니다.'
+                    );
+
+                    return;
+                }
+
+
+                const point =
+                    new kakao.maps.LatLng(
+                        Number(result[0].y),
+                        Number(result[0].x)
+                    );
+
+
+                this.pendingLocation =
+                    point;
+
+
+                this.pendingAddress =
+                    result[0].road_address_name ||
+                    result[0].address_name ||
+                    query.trim();
+
+
+                this.showDestinationMarker(
+                    point
+                );
+
+
+                if (
+                    type === 'origin'
+                ) {
+
+                    this.confirmPendingAsOrigin();
+
+                } else {
+
+                    this.confirmPendingAsDestination();
+                }
+            }
+        );
     }
 
 
@@ -2010,23 +2192,6 @@ class MapManager {
                     'route-card';
 
 
-                // 큰 외곽 박스 제거
-
-                Object.assign(
-                    card.style,
-                    {
-                        background:
-                            'transparent',
-
-                        border:
-                            'none',
-
-                        boxShadow:
-                            'none'
-                    }
-                );
-
-
                 if (
                     index ===
                     this.selectedRouteIndex
@@ -2460,7 +2625,8 @@ class MapManager {
 
 
         if (
-            this.navigationPathCoords.length === 0
+            this.navigationPathCoords.length === 0 ||
+            !this.map
         ) {
 
             return;
@@ -2498,63 +2664,106 @@ class MapManager {
                     false;
             },
 
-            500
+            600
         );
     }
 
 
     // ============================================================
     // UI가 있을 때 전체 경로 보기
+    //
+    // 실제 UI 높이를 패딩으로 반영해서 경로가 카드 뒤에
+    // 숨지 않도록 한다.
     // ============================================================
 
     fitRouteWithUI() {
 
 
         if (
-            this.navigationPathCoords.length === 0
+            this.navigationPathCoords.length === 0 ||
+            !this.map
         ) {
 
             return;
         }
 
 
-        this.fitRoute();
+        const bounds =
+            new kakao.maps.LatLngBounds();
 
 
-        // UI 카드 때문에 경로 하단이 가려지는 것을
-        // 조금 완화하기 위한 중심 이동
+        this.navigationPathCoords.forEach(
+
+            point => {
+
+                bounds.extend(
+                    point
+                );
+            }
+        );
+
+
+        const topPadding =
+            this.locationPanel?.classList.contains(
+                'active'
+            )
+                ? Math.ceil(
+                    this.locationPanel.getBoundingClientRect().height
+                ) + 30
+                : 24;
+
+
+        let bottomPadding =
+            34;
+
+
+        if (
+            this.routeSelector?.classList.contains(
+                'active'
+            )
+        ) {
+
+            bottomPadding +=
+                Math.ceil(
+                    this.routeSelector.getBoundingClientRect().height
+                ) + 26;
+        }
+
+
+        if (
+            this.navigationStartButton?.classList.contains(
+                'active'
+            )
+        ) {
+
+            bottomPadding +=
+                Math.ceil(
+                    this.navigationStartButton.getBoundingClientRect().height
+                ) + 24;
+        }
+
+
+        this.programmaticMapMove =
+            true;
+
+
+        this.map.setBounds(
+            bounds,
+            topPadding,
+            24,
+            bottomPadding,
+            24
+        );
+
 
         setTimeout(
             () => {
 
-                if (
-                    !this.map
-                ) {
-
-                    return;
-                }
-
-
-                const center =
-                    this.map.getCenter();
-
-
-                const projection =
-                    this.map.getProjection();
-
-
-                if (!projection) {
-
-                    return;
-                }
-
-
-                // 카카오 지도 내부 투영이 준비되지 않은 경우
-                // 별도의 강제 이동 없이 종료
-
+                this.programmaticMapMove =
+                    false;
             },
 
-            250
+            650
         );
     }
 
@@ -4198,13 +4407,9 @@ class MapManager {
         this.navigationTime =
             0;
 
-
-        this.selectedRoute =
-            null;
-
-
-        this.selectedRouteIndex =
-            -1;
+        // 선택 상태는 단순히 선을 다시 그릴 때 지우면 안 된다.
+        // selectRoute() -> drawNavigationRoute() -> clearNavigationRoute()
+        // 흐름에서 이 값이 사라져 "경로를 먼저 선택" 오류가 발생했었다.
     }
 
 
@@ -4216,6 +4421,14 @@ class MapManager {
 
 
         this.clearNavigationRoute();
+
+
+        this.selectedRoute =
+            null;
+
+
+        this.selectedRouteIndex =
+            -1;
 
 
         this.routeList =
@@ -4462,38 +4675,6 @@ class MapManager {
 
 
 }
-
-
-// ============================================================
-// 출발지 선택 후 두 번째 클릭 처리 보완
-// ============================================================
-
-const originalSetPendingLocation =
-    MapManager.prototype.setPendingLocation;
-
-
-MapManager.prototype.setPendingLocation =
-    function (location) {
-
-
-        if (
-            this.selectionMode ===
-            'destination-after-origin'
-        ) {
-
-            this.confirmSecondPointAsDestination(
-                location
-            );
-
-            return;
-        }
-
-
-        originalSetPendingLocation.call(
-            this,
-            location
-        );
-    };
 
 
 // ============================================================
