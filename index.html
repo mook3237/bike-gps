@@ -55,21 +55,6 @@
 
 
     <!-- ========================================= -->
-    <!-- 헤더 -->
-    <!-- ========================================= -->
-
-    <header class="header">
-
-        <h1>🚴 자전거 GPS 트래커</h1>
-
-        <p class="subtitle">
-            자전거 기록과 길안내를 한 곳에서
-        </p>
-
-    </header>
-
-
-    <!-- ========================================= -->
     <!-- 탭 -->
     <!-- ========================================= -->
 
@@ -131,12 +116,13 @@
                             출발
                         </span>
 
-                        <span
+                        <button
                             id="origin-address"
-                            class="location-address"
+                            class="location-address location-address-button"
+                            type="button"
                         >
                             현재 위치
-                        </span>
+                        </button>
 
                     </div>
 
@@ -156,12 +142,13 @@
                             도착
                         </span>
 
-                        <span
+                        <button
                             id="destination-address"
-                            class="location-address"
+                            class="location-address location-address-button"
+                            type="button"
                         >
                             목적지를 설정하세요
-                        </span>
+                        </button>
 
                     </div>
 
@@ -220,24 +207,6 @@
                     📍
                 </button>
 
-
-            </div>
-
-
-            <!-- ========================================= -->
-            <!-- 지도 축척 -->
-            <!-- ========================================= -->
-
-            <div
-                id="map-scale"
-                class="map-scale"
-            >
-
-                <div class="map-scale-line"></div>
-
-                <span id="map-scale-text">
-                    50m
-                </span>
 
             </div>
 
