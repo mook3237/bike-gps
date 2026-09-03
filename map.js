@@ -3781,3 +3781,546 @@ class MapManager {
 
 const mapManager =
     new MapManager();
+
+/* ============================================================
+   긴급 UI 레이아웃 복구 패치
+   - 지도 전체 화면 복구
+   - 상단 간판/불필요한 빈 영역 제거
+   - 목적지/현재위치 버튼 클릭 영역 복구
+   - 지도 반경 표시는 자동으로 숨김
+   ============================================================ */
+
+(function () {
+
+    'use strict';
+
+
+    // ============================================================
+    // CSS 강제 적용
+    // ============================================================
+
+    function injectEmergencyMapStyle() {
+
+        if (
+            document.getElementById(
+                'emergency-map-layout-style'
+            )
+        ) {
+            return;
+        }
+
+
+        const style =
+            document.createElement(
+                'style'
+            );
+
+
+        style.id =
+            'emergency-map-layout-style';
+
+
+        style.textContent = `
+
+            /* ====================================================
+               기본 화면
+            ==================================================== */
+
+            html,
+            body {
+
+                width: 100% !important;
+
+                height: 100% !important;
+
+                min-height: 100% !important;
+
+                margin: 0 !important;
+
+                padding: 0 !important;
+
+                overflow: hidden !important;
+            }
+
+
+
+            /* ====================================================
+               지도 전체 화면
+            ==================================================== */
+
+            #map {
+
+                position: fixed !important;
+
+                inset: 0 !important;
+
+                width: 100vw !important;
+
+                height: 100dvh !important;
+
+                min-height: 100dvh !important;
+
+                margin: 0 !important;
+
+                padding: 0 !important;
+
+                z-index: 1 !important;
+
+                overflow: hidden !important;
+            }
+
+
+
+            /* ====================================================
+               상단 간판 제거
+            ==================================================== */
+
+            .app-header,
+
+            .header,
+
+            .top-header,
+
+            .app-title,
+
+            .brand-header,
+
+            [data-role="app-header"] {
+
+                display: none !important;
+            }
+
+
+
+            /* ====================================================
+               지도와 무관하게 공간만 만드는 영역 제거
+            ==================================================== */
+
+            .map-page,
+
+            .map-screen,
+
+            .map-view,
+
+            .map-content,
+
+            .content-area {
+
+                height: 100dvh !important;
+
+                min-height: 100dvh !important;
+
+                margin: 0 !important;
+
+                padding: 0 !important;
+            }
+
+
+
+            /* ====================================================
+               지도 버튼 클릭 가능하게
+            ==================================================== */
+
+            #map .current-location-button,
+
+            #map .destination-button,
+
+            #map .route-button {
+
+                position: absolute !important;
+
+                z-index: 99999 !important;
+
+                pointer-events: auto !important;
+
+                touch-action: manipulation !important;
+            }
+
+
+
+            /* ====================================================
+               목적지 버튼 위치
+            ==================================================== */
+
+            #map .destination-button {
+
+                right: 16px !important;
+
+                bottom: 82px !important;
+            }
+
+
+
+            /* ====================================================
+               현재 위치 버튼 위치
+            ==================================================== */
+
+            #map .current-location-button {
+
+                right: 16px !important;
+
+                bottom: 22px !important;
+            }
+
+
+
+            /* ====================================================
+               지도 반경 표시
+
+               평소에는 숨김
+               .show 클래스가 붙을 때만 표시
+            ==================================================== */
+
+            .map-radius-indicator,
+
+            .radius-indicator,
+
+            [data-map-radius] {
+
+                opacity: 0 !important;
+
+                pointer-events: none !important;
+
+                transition:
+                    opacity .2s ease !important;
+            }
+
+
+
+            .map-radius-indicator.show,
+
+            .radius-indicator.show,
+
+            [data-map-radius].show {
+
+                opacity: 1 !important;
+            }
+
+        `;
+
+
+        document.head.appendChild(
+            style
+        );
+    }
+
+
+
+    // ============================================================
+    // 화면에 남아 있는
+    // "자전거 GPS 트래커" 간판 제거
+    // ============================================================
+
+    function removeVisibleHeaderByText() {
+
+        const all =
+            Array.from(
+                document.querySelectorAll(
+                    'body *'
+                )
+            );
+
+
+        all.forEach(
+            el => {
+
+                const text =
+                    (
+                        el.textContent ||
+                        ''
+                    ).trim();
+
+
+                if (
+
+                    text ===
+                    '🚴 자전거 GPS 트래커'
+
+                    ||
+
+                    text ===
+                    '자전거 GPS 트래커'
+
+                ) {
+
+                    const parent =
+                        el.closest(
+                            'header, .app-header, .header, .top-header, div'
+                        );
+
+
+                    if (
+
+                        parent
+
+                        &&
+
+                        parent !==
+                        document.body
+
+                        &&
+
+                        parent.id !==
+                        'map'
+
+                    ) {
+
+                        parent.style.display =
+                            'none';
+                    }
+                }
+            }
+        );
+    }
+
+
+
+    // ============================================================
+    // 지도 크기 강제 복구
+    // ============================================================
+
+    function forceMapRelayout() {
+
+        const map =
+            document.getElementById(
+                'map'
+            );
+
+
+        if (!map) {
+            return;
+        }
+
+
+        map.style.position =
+            'fixed';
+
+
+        map.style.inset =
+            '0';
+
+
+        map.style.width =
+            '100vw';
+
+
+        map.style.height =
+            '100dvh';
+
+
+        map.style.minHeight =
+            '100dvh';
+
+
+        map.style.zIndex =
+            '1';
+
+
+
+        // 카카오 지도 크기 다시 계산
+
+        if (
+
+            typeof mapManager !==
+            'undefined'
+
+            &&
+
+            mapManager.map
+
+            &&
+
+            window.kakao
+
+            &&
+
+            kakao.maps
+
+        ) {
+
+            setTimeout(
+                () => {
+
+                    kakao.maps.event.trigger(
+                        mapManager.map,
+                        'resize'
+                    );
+
+                },
+                50
+            );
+        }
+    }
+
+
+
+    // ============================================================
+    // 지도 버튼 클릭 영역 복구
+    // ============================================================
+
+    function repairMapControls() {
+
+        const manager =
+
+            typeof mapManager !==
+            'undefined'
+
+                ?
+
+            mapManager
+
+                :
+
+            null;
+
+
+        if (
+
+            !manager
+
+            ||
+
+            !manager.map
+
+        ) {
+
+            return;
+        }
+
+
+
+        // ========================================================
+        // 기존 버튼이 다른 레이어 아래에 묻히는 문제 방지
+        // ========================================================
+
+        [
+
+            manager.locationButton,
+
+            manager.destinationButton,
+
+            manager.routeButton
+
+        ]
+
+            .filter(
+                Boolean
+            )
+
+            .forEach(
+                button => {
+
+                    button.style.zIndex =
+                        '99999';
+
+
+                    button.style.pointerEvents =
+                        'auto';
+
+
+                    button.style.touchAction =
+                        'manipulation';
+                }
+            );
+
+
+
+        // ========================================================
+        // 목적지 버튼 강제 활성화
+        // ========================================================
+
+        if (
+            manager.destinationButton
+        ) {
+
+            manager.destinationButton.disabled =
+                false;
+
+
+            manager.destinationButton.style.pointerEvents =
+                'auto';
+        }
+    }
+
+
+
+    // ============================================================
+    // 전체 복구 실행
+    // ============================================================
+
+    function bootEmergencyFix() {
+
+        injectEmergencyMapStyle();
+
+
+        removeVisibleHeaderByText();
+
+
+        forceMapRelayout();
+
+
+        repairMapControls();
+
+
+
+        // ========================================================
+        // 화면 요소가 늦게 생성될 경우
+        // 한 번 더 실행
+        // ========================================================
+
+        setTimeout(
+            () => {
+
+                removeVisibleHeaderByText();
+
+
+                forceMapRelayout();
+
+
+                repairMapControls();
+
+            },
+            500
+        );
+    }
+
+
+
+    // ============================================================
+    // DOM 상태에 따라 실행
+    // ============================================================
+
+    if (
+        document.readyState ===
+        'loading'
+    ) {
+
+        document.addEventListener(
+            'DOMContentLoaded',
+            bootEmergencyFix
+        );
+
+    } else {
+
+        bootEmergencyFix();
+    }
+
+
+
+    // ============================================================
+    // 화면 크기 변경 시 지도 재계산
+    // ============================================================
+
+    window.addEventListener(
+        'resize',
+        forceMapRelayout
+    );
+
+
+    window.addEventListener(
+        'orientationchange',
+        forceMapRelayout
+    );
+
+
+})();
