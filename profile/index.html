@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#081522" />
+  <title>RideMate · 프로필 선택</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <main class="app" aria-label="RideMate 프로필 선택">
+    <!-- The upper 505px is kept as a reference asset so the supplied artwork
+         remains visually identical. The interactive profile area is real HTML. -->
+    <section class="hero" aria-label="환영 화면">
+      <img src="./assets/hero-reference.jpg" alt="" />
+    </section>
+
+    <section class="profile-panel">
+      <div class="panel-head">
+        <h1>프로필 선택</h1>
+        <button class="add-top" type="button" id="addTop">
+          <span>프로필 추가</span><b aria-hidden="true">＋</b>
+        </button>
+      </div>
+
+      <div class="profiles" id="profiles">
+        <button class="profile-card selected" data-profile="나" type="button">
+          <span class="selected-mark" aria-hidden="true">✓</span>
+          <img src="./assets/avatar-me.jpg" alt="나 프로필" />
+          <strong>나</strong>
+          <span>혼자여도 즐거운 라이딩</span>
+        </button>
+
+        <button class="profile-card" data-profile="하나" type="button">
+          <img src="./assets/avatar-hana.jpg" alt="하나 프로필" />
+          <strong>하나</strong>
+          <span>함께하는 라이딩이 더 특별해요</span>
+        </button>
+
+        <button class="profile-card" data-profile="준이" type="button">
+          <img src="./assets/avatar-jun.jpg" alt="준이 프로필" />
+          <strong>준이</strong>
+          <span>오늘도 쑥쑥 성장중</span>
+        </button>
+
+        <button class="profile-card" data-profile="몽이" type="button">
+          <img src="./assets/avatar-mong.jpg" alt="몽이 프로필" />
+          <strong>몽이</strong>
+          <span>라이딩도 함께하는 가족</span>
+        </button>
+
+        <button class="profile-card add-card" id="addCard" type="button">
+          <span class="plus-circle" aria-hidden="true">＋</span>
+          <strong>프로필 추가</strong>
+        </button>
+      </div>
+
+      <button class="select-button" id="selectButton" type="button">
+        <span>선택하기</span>
+        <span class="arrow" aria-hidden="true">→</span>
+      </button>
+
+      <div class="home-indicator" aria-hidden="true"></div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/shared.js"></script><script src="./app.js"></script>
+</body>
+</html>

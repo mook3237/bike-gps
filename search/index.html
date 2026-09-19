@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>RideMate - 목적지 검색</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<main class="app">
+<header class="header">
+<button class="back-btn" onclick="location.href='/map/'">‹</button>
+<h1>목적지 검색</h1>
+</header>
+
+<section class="search-section">
+<div class="search-box">
+<span class="search-icon">⌕</span>
+<input id="searchInput" type="search" placeholder="목적지를 검색해보세요." autocomplete="off" enterkeyhint="search">
+<button id="clearBtn" class="clear-btn" type="button">×</button>
+</div>
+
+<button id="bikeShopBtn" class="bike-shop-btn" type="button">
+<span class="bike-icon">♢</span><span>자전거샵</span>
+</button>
+
+<div class="quick-actions">
+<button type="button">⌂ <span>집</span></button>
+<button type="button">▣ <span>회사</span></button>
+<button type="button">★ <span>즐겨찾기</span></button>
+</div>
+</section>
+
+<section id="recentSection" class="recent-section">
+<div class="section-title"><h2>최근 검색</h2><button id="clearRecentBtn">전체 삭제</button></div>
+<div id="recentList"></div>
+</section>
+
+<section id="resultsSection" class="results-section hidden">
+<div class="section-title"><h2>검색 결과</h2></div>
+<div id="resultsList"></div>
+</section>
+</main>
+<script src="/shared.js"></script><script src="app.js"></script>
+</body>
+</html>
