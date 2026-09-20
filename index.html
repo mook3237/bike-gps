@@ -1,1 +1,117 @@
-<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RideMate</title><script>location.replace('/profile/')</script>
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>RideMate</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main id="app">
+    <div id="map" aria-label="RideMate 지도"></div>
+
+    <div id="overlayRoot">
+      <header id="mapHeader" class="top-ui">
+        <button id="menuBtn" class="icon-btn" aria-label="메뉴">☰</button>
+        <button id="searchEntry" class="search-entry"><span>⌕</span><b>목적지 검색</b></button>
+      </header>
+
+      <section id="quickActions" class="quick-actions top-ui">
+        <button data-quick="home">집</button><button data-quick="work">회사</button><button data-quick="favorite">즐겨찾기</button>
+      </section>
+
+      <section id="searchPanel" class="panel hidden">
+        <div class="search-head">
+          <button id="searchBack" class="icon-btn">‹</button>
+          <div class="search-box"><input id="searchInput" autocomplete="off" placeholder="목적지 검색"><button id="searchClear">×</button></div>
+        </div>
+        <div id="searchLanding">
+          <button id="bikeShopBtn" class="category-chip">🚲 자전거샵</button>
+          <div class="quick-actions in-panel">
+            <button data-quick="home">집</button><button data-quick="work">회사</button><button data-quick="favorite">즐겨찾기</button>
+          </div>
+          <h3>최근 검색</h3>
+          <button class="recent" data-query="한강공원">한강공원</button>
+          <button class="recent" data-query="잠실한강공원">잠실한강공원</button>
+          <button class="recent" data-query="북한강 자전거길">북한강 자전거길</button>
+        </div>
+        <div id="liveResults" class="live-results hidden"></div>
+      </section>
+
+      <section id="routeEditor" class="route-editor hidden">
+        <button id="routeBack" class="icon-btn">‹</button>
+        <div class="route-fields">
+          <button id="departureField"><small>출발</small><b>현재 위치</b></button>
+          <button id="destinationField"><small>도착</small><b>목적지</b></button>
+        </div>
+        <button id="swapBtn" class="swap-btn" aria-label="출발 도착 바꾸기">⇅</button>
+      </section>
+
+      <div id="mapControls" class="map-controls">
+        <div class="zoom-controls"><button id="zoomIn">＋</button><button id="zoomOut">－</button></div>
+        <div class="right-controls"><button id="compassBtn" aria-label="북쪽 보기">N</button><button id="locateBtn" aria-label="현재 위치">⌾</button></div>
+      </div>
+
+      <section id="sheet" class="sheet hidden">
+        <div id="sheetHandle" class="sheet-handle"><i></i></div>
+        <div id="sheetContent"></div>
+      </section>
+
+      <section id="routeCards" class="route-cards hidden"></section>
+      <button id="startNavBtn" class="primary-floating hidden">안내 시작</button>
+
+      <section id="navOverlay" class="nav-overlay hidden">
+        <div class="turn-card">
+          <div id="turnIcon" class="turn-icon">↑</div>
+          <div><b id="turnDistance">경로 안내</b><span id="turnText">경로를 따라 이동하세요</span></div>
+        </div>
+        <button id="navSearchBtn" class="nav-search">⌕</button>
+        <div id="navHud" class="nav-hud">
+          <div><small>도착 예정</small><b id="etaText">--:--</b></div>
+          <div><small>남은 시간</small><b id="remainTime">--분</b></div>
+          <div><small>남은 거리</small><b id="remainDistance">--km</b></div>
+          <button id="navMenuBtn" class="nav-menu-btn">≡</button>
+        </div>
+      </section>
+
+      <section id="navMenu" class="modal-sheet hidden">
+        <div class="modal-grab"></div>
+        <h3>주행 메뉴</h3>
+        <div class="menu-grid">
+          <button data-nav-action="volume">🔊<span>안내 음량</span></button>
+          <button data-nav-action="theme">☾<span>주야간</span></button>
+          <button data-nav-action="north">N<span>지도 방향</span></button>
+          <button data-nav-action="waypoint">＋<span>경유지</span></button>
+          <button data-nav-action="recalc">↻<span>경로 재탐색</span></button>
+          <button data-nav-action="pause">Ⅱ<span>일시정지</span></button>
+        </div>
+        <button id="endNavBtn" class="danger-btn">안내 종료</button>
+        <button id="closeNavMenu" class="secondary-btn">닫기</button>
+      </section>
+
+      <section id="saveModal" class="dialog-backdrop hidden">
+        <div class="dialog">
+          <h2>주행을 종료했습니다</h2>
+          <div class="ride-summary">
+            <div><small>이동거리</small><b id="summaryDistance">0.0 km</b></div>
+            <div><small>주행시간</small><b id="summaryDuration">0분</b></div>
+          </div>
+          <p>이번 주행 기록을 저장할까요?</p>
+          <button id="saveRideBtn" class="primary-btn">저장하기</button>
+          <button id="discardRideBtn" class="secondary-btn">저장하지 않기</button>
+        </div>
+      </section>
+
+      <div id="toast" class="toast hidden"></div>
+
+      <nav id="bottomNav" class="bottom-nav">
+        <button class="active">지도</button><button>레이싱</button><button>기록계</button>
+      </nav>
+    </div>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
