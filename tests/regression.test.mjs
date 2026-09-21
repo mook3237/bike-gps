@@ -35,14 +35,15 @@ function mockResponse() {
 test('navigation progress follows cumulative route distance, not vertex index', () => {
   const context = {};
   const hav = appFunction('hav', context);
-  const nearestProgress = appFunction('nearestProgress', context);
+  appFunction('bearing', context);
+  const projectOnRoute = appFunction('projectOnRoute', context);
   const points = [
     { latitude: 0, longitude: 0 },
     { latitude: 0, longitude: 0.001 },
     { latitude: 0, longitude: 1 },
   ];
   const expected = hav(points[0], points[1]) / hav(points[0], points[2]);
-  assert.ok(Math.abs(nearestProgress(points, points[1]) - expected) < 1e-9);
+  assert.ok(Math.abs(projectOnRoute(points, points[1]).progress - expected) < 1e-9);
 });
 
 test('history restoration rerenders results and place content in the existing SPA', () => {
@@ -122,6 +123,7 @@ test('an older failed route request cannot clear a newer successful route', asyn
     clearRoutes() {}, renderScreen() {}, updateRouteFields() {}, clearSearchMarkers() {},
     fetchRoutes: () => new Promise((resolve, reject) => pending.push({ resolve, reject })),
     extractPoints: () => [{ latitude: 37, longitude: 127 }, { latitude: 38, longitude: 128 }],
+    prepareRoutes: routes => routes.map(route => ({ ...route, _points: [{ latitude: 37, longitude: 127 }, { latitude: 38, longitude: 128 }], _steps: [] })),
     drawRoutes() {}, renderRouteCards() {}, esc: value => String(value), toast() {},
   };
   const loadRoutes = appFunction('loadRoutes', context);

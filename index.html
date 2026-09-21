@@ -66,13 +66,20 @@
       <section id="navOverlay" class="nav-overlay hidden">
         <div class="turn-card">
           <div id="turnIcon" class="turn-icon">↑</div>
-          <div><b id="turnDistance">경로 안내</b><span id="turnText">경로를 따라 이동하세요</span></div>
+          <div class="turn-copy"><b id="turnDistance">경로 안내</b><span id="turnText">경로를 따라 이동하세요</span><small id="nextTurnText">다음 안내를 준비 중입니다</small></div>
         </div>
-        <button id="navSearchBtn" class="nav-search">⌕</button>
+        <div class="nav-tools">
+          <button id="navSearchBtn" aria-label="검색">⌕</button>
+          <button id="navLocateBtn" class="active" aria-label="현재 위치 추적">◎</button>
+          <button id="navRecalcBtn" aria-label="경로 재탐색">↻</button>
+        </div>
+        <div id="navRouteStatus" class="nav-route-status" aria-live="polite"></div>
+        <div class="speed-pill"><b id="speedText">0 km/h</b><small>현재 속도</small></div>
         <div id="navHud" class="nav-hud">
-          <div><small>도착 예정</small><b id="etaText">--:--</b></div>
-          <div><small>남은 시간</small><b id="remainTime">--분</b></div>
-          <div><small>남은 거리</small><b id="remainDistance">--km</b></div>
+          <button id="navInfoToggle" class="nav-info-toggle">
+            <span><small id="navPrimaryLabel">도착 예정</small><b id="navPrimaryValue">--:--</b></span>
+            <span><small>남은 거리</small><b id="remainDistance">--km</b></span>
+          </button>
           <button id="navMenuBtn" class="nav-menu-btn">≡</button>
         </div>
       </section>
@@ -98,6 +105,8 @@
           <div class="ride-summary">
             <div><small>이동거리</small><b id="summaryDistance">0.0 km</b></div>
             <div><small>주행시간</small><b id="summaryDuration">0분</b></div>
+            <div><small>평균속도</small><b id="summaryAverageSpeed">0.0 km/h</b></div>
+            <div><small>최고속도</small><b id="summaryMaxSpeed">0.0 km/h</b></div>
           </div>
           <p>이번 주행 기록을 저장할까요?</p>
           <button id="saveRideBtn" class="primary-btn">저장하기</button>
