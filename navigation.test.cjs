@@ -3,7 +3,24 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-function loadApp() {
+function loadApp({ manualTimers = false } = {}) {
+  let now = 0, nextTimer = 1;
+  const timers = new Map();
+  const setTestTimeout = (fn, delay = 0) => {
+    if (!manualTimers) { if (typeof fn === 'function') fn(); return nextTimer++; }
+    const id = nextTimer++;
+    timers.set(id, { fn, at: now + delay });
+    return id;
+  };
+  const clearTestTimeout = id => timers.delete(id);
+  const advance = ms => {
+    now += ms;
+    for (;;) {
+      const due = [...timers.entries()].filter(([, timer]) => timer.at <= now).sort((a, b) => a[1].at - b[1].at);
+      if (!due.length) break;
+      for (const [id, timer] of due) { timers.delete(id); timer.fn(); }
+    }
+  };
   const elements = new Map();
   const makeElement = () => {
     const classes = new Set(['hidden']);
@@ -16,7 +33,7 @@ function loadApp() {
       },
       style: { setProperty() {} },
       addEventListener() {}, querySelectorAll() { return []; }, querySelector() { return makeElement(); },
-      setPointerCapture() {}, focus() {}, offsetHeight: 600, value: '', innerHTML: '', textContent: '',
+      setPointerCapture() {}, focus() { this.focused = true; this.blurred = false; }, blur() { this.focused = false; this.blurred = true; }, offsetHeight: 600, value: '', innerHTML: '', textContent: '',
     };
   };
   const document = {
@@ -37,14 +54,30 @@ function loadApp() {
   };
   const context = vm.createContext({
     console, document, localStorage, AbortController, URLSearchParams,
-    setTimeout: fn => { if (typeof fn === 'function') fn(); return 1; }, clearTimeout() {},
+    setTimeout: setTestTimeout, clearTimeout: clearTestTimeout,
     innerHeight: 800, history: { pushState() {}, back() {} },
     navigator: { geolocation: { getCurrentPosition() {}, watchPosition() { return 1; }, clearWatch() {} } },
     fetch: async () => ({ json: async () => ({ error: 'test' }), ok: false }),
   });
   context.window = { addEventListener() {}, visualViewport: null };
   vm.runInContext(fs.readFileSync('app.js', 'utf8'), context, { filename: 'app.js' });
-  return { context, localStorage };
+  return { context, localStorage, advance, hasTimer: id => timers.has(id) };
+}
+
+function runGpsSamples(samples) {
+  const { context } = loadApp();
+  context.testSamples = samples;
+  vm.runInContext(`
+    let testGpsCallback;
+    navigator.geolocation.watchPosition=callback=>{testGpsCallback=callback;return 1};
+    setGpsMarker=()=>{};followNavigationPosition=()=>{};updateNavHud=()=>{};
+    state.screen='navigation';state.map={};startWatch();
+    for(const sample of testSamples)testGpsCallback({timestamp:sample.timestamp,coords:{latitude:sample.latitude,longitude:sample.longitude,speed:sample.speed,accuracy:sample.accuracy,heading:null}});
+  `, context);
+  return {
+    currentSpeed: vm.runInContext('state.nav.currentSpeed', context),
+    maxSpeed: vm.runInContext('state.nav.maxSpeed', context),
+  };
 }
 
 test('turn guidance exposes only the compact maneuver', () => {
@@ -78,4 +111,162 @@ test('navigation search pauses follow and preserves its viewport', () => {
   assert.equal(vm.runInContext('state.nav.follow', context), false);
   assert.equal(vm.runInContext('state.navSearchViewport.level', context), 4);
   assert.equal(vm.runInContext('state.navSearchViewport.follow', context), true);
+});
+
+test('navigation level follows current speed in km/h boundaries', () => {
+  const { context } = loadApp();
+  assert.equal(vm.runInContext('typeof navigationLevelForSpeed', context), 'function');
+  for (const [kmh, level] of [[0,1],[20,1],[29.9,1],[30,2],[40,2],[59.9,2],[60,3],[65,3]]) {
+    assert.equal(vm.runInContext(`navigationLevelForSpeed(${kmh}/3.6)`, context), level, `${kmh}km/h`);
+  }
+  assert.equal(vm.runInContext('navigationLevelForSpeed(undefined)', context), 1);
+  assert.equal(vm.runInContext('typeof navigationLevelForDistance', context), 'undefined');
+});
+
+test('search distance uses metres below 1km and one decimal kilometre above it', () => {
+  const { context } = loadApp();
+  assert.equal(vm.runInContext('typeof formatPlaceDistance', context), 'function');
+  assert.equal(vm.runInContext('formatPlaceDistance(850)', context), '850m');
+  assert.equal(vm.runInContext('formatPlaceDistance(5400)', context), '5.4km');
+  assert.equal(vm.runInContext('formatPlaceDistance(null)', context), '');
+});
+
+test('live results show distance and dismiss the keyboard only after rendering', () => {
+  const { context } = loadApp();
+  const input = context.document.querySelector('#searchInput');
+  input.focus();
+  vm.runInContext("renderLive([{name:'장소',category:'카테고리',address:'주소',distance:850}])", context);
+  assert.match(context.document.querySelector('#liveResults').innerHTML, /850m/);
+  assert.equal(input.blurred, true);
+});
+
+test('route and navigation endpoint markers identify the current destination', () => {
+  const { context } = loadApp();
+  vm.runInContext(`
+    class TestLatLng { constructor(latitude, longitude) { this.latitude=latitude; this.longitude=longitude; } }
+    class TestOverlay { constructor(options) { Object.assign(this, options); } setMap(map) { this.map=map; } }
+    kakao={maps:{LatLng:TestLatLng,CustomOverlay:TestOverlay}};
+    state.map={};
+    state.departure={latitude:37.5,longitude:127,name:'현재 위치'};
+    state.destination={latitude:37.6,longitude:127.1,name:'목적지'};
+  `, context);
+  assert.equal(vm.runInContext('typeof drawRouteEndpointMarkers', context), 'function');
+  vm.runInContext('drawRouteEndpointMarkers(false)', context);
+  assert.equal(vm.runInContext('state.routeEndpointMarkers.length', context), 2);
+  vm.runInContext('drawRouteEndpointMarkers(true)', context);
+  assert.equal(vm.runInContext('state.routeEndpointMarkers.length', context), 1);
+  assert.equal(vm.runInContext('state.routeEndpointMarkers[0].position.latitude', context), 37.6);
+});
+
+test('navigation start applies the current speed level', () => {
+  const { context } = loadApp();
+  vm.runInContext(`
+    state.routes=[{_steps:[]}];state.selectedRoute=0;state.routeLines=[null];state.currentLocation=null;
+    state.nav.currentSpeed=40/3.6;state.map={setLevel(level){this.level=level}};
+    renderScreen=()=>{state.screen='navigation'};clearSearchMarkers=()=>{};drawRouteEndpointMarkers=()=>{};
+    setGpsMarker=()=>{};startWatch=()=>{};updateNavHud=()=>{};toast=()=>{};
+    startNavigation();
+  `, context);
+  assert.equal(vm.runInContext('state.map.level', context), 2);
+});
+
+test('map interaction stays unfollowed until five seconds then returns at current speed', () => {
+  const { context, advance } = loadApp({ manualTimers: true });
+  assert.equal(vm.runInContext('typeof beginNavigationMapInteraction', context), 'function');
+  assert.equal(vm.runInContext('typeof endNavigationMapInteraction', context), 'function');
+  vm.runInContext("state.screen='navigation';state.nav.follow=true;state.nav.currentSpeed=40/3.6;state.currentLocation=null;state.map={setLevel(level){this.level=level}};beginNavigationMapInteraction();endNavigationMapInteraction()", context);
+  assert.equal(vm.runInContext('state.nav.follow', context), false);
+  advance(4999);
+  assert.equal(vm.runInContext('state.nav.follow', context), false);
+  advance(1);
+  assert.equal(vm.runInContext('state.nav.follow', context), true);
+  assert.equal(vm.runInContext('state.map.level', context), 2);
+});
+
+test('another interaction resets the single return timer', () => {
+  const { context, advance, hasTimer } = loadApp({ manualTimers: true });
+  assert.equal(vm.runInContext('typeof beginNavigationMapInteraction', context), 'function');
+  assert.equal(vm.runInContext('typeof endNavigationMapInteraction', context), 'function');
+  vm.runInContext("state.screen='navigation';state.nav.follow=true;state.currentLocation=null;state.map={setLevel(level){this.level=level}};beginNavigationMapInteraction();endNavigationMapInteraction()", context);
+  const firstTimer = vm.runInContext('navReturnTimer', context);
+  advance(3000);
+  vm.runInContext('beginNavigationMapInteraction();endNavigationMapInteraction()', context);
+  const secondTimer = vm.runInContext('navReturnTimer', context);
+  assert.notEqual(secondTimer, firstTimer);
+  assert.equal(hasTimer(firstTimer), false);
+  assert.equal(hasTimer(secondTimer), true);
+  advance(2000);
+  assert.equal(vm.runInContext('state.nav.follow', context), false);
+  advance(3000);
+  assert.equal(vm.runInContext('state.nav.follow', context), true);
+});
+
+test('current-location button cancels the timer and immediately restores speed zoom', () => {
+  const { context, hasTimer } = loadApp({ manualTimers: true });
+  assert.equal(vm.runInContext('typeof endNavigationMapInteraction', context), 'function');
+  vm.runInContext("state.screen='navigation';state.nav.follow=false;state.nav.currentSpeed=65/3.6;state.currentLocation=null;state.map={setLevel(level){this.level=level}};endNavigationMapInteraction()", context);
+  const timer = vm.runInContext('navReturnTimer', context);
+  vm.runInContext("$('#navLocateBtn').onclick()", context);
+  assert.equal(vm.runInContext('state.nav.follow', context), true);
+  assert.equal(vm.runInContext('state.map.level', context), 3);
+  assert.equal(vm.runInContext('navReturnTimer', context), null);
+  assert.equal(hasTimer(timer), false);
+});
+
+test('current-location button uses level one while stopped', () => {
+  const { context } = loadApp();
+  vm.runInContext("state.nav.follow=false;state.nav.currentSpeed=0;state.currentLocation=null;state.map={setLevel(level){this.level=level}};$('#navLocateBtn').onclick()", context);
+  assert.equal(vm.runInContext('state.map.level', context), 1);
+});
+
+test('route selection keeps every returned polyline and emphasizes only the selected one', () => {
+  const { context } = loadApp();
+  vm.runInContext(`
+    class TestLatLng { constructor(latitude, longitude) { this.latitude=latitude; this.longitude=longitude; } }
+    class TestBounds { constructor(){this.points=[]} extend(point){this.points.push(point)} isEmpty(){return !this.points.length} }
+    class TestPolyline { constructor(options){this.options={...options}} setMap(map){this.map=map} setOptions(options){Object.assign(this.options,options)} }
+    class TestOverlay { constructor(options){Object.assign(this,options)} setMap(map){this.map=map} }
+    kakao={maps:{LatLng:TestLatLng,LatLngBounds:TestBounds,Polyline:TestPolyline,CustomOverlay:TestOverlay}};
+    state.map={setBounds(){}};
+    state.departure={latitude:37.5,longitude:127,name:'현재 위치'};
+    state.destination={latitude:37.6,longitude:127.1,name:'목적지'};
+    state.routes=[
+      {_points:[{latitude:37.5,longitude:127},{latitude:37.6,longitude:127.1}]},
+      {_points:[{latitude:37.5,longitude:127},{latitude:37.55,longitude:127.2}]}
+    ];
+    state.selectedRoute=0;
+    drawRoutes();
+  `, context);
+  assert.equal(vm.runInContext('state.routeLines.length', context), 2);
+  vm.runInContext('selectRoute(1)', context);
+  assert.equal(vm.runInContext("state.routeLines[0].options.strokeColor", context), '#98a7b8');
+  assert.equal(vm.runInContext("state.routeLines[1].options.strokeColor", context), '#0878f9');
+});
+
+test('stationary GPS drift and 13-16km/h spikes do not pollute current or max speed', () => {
+  const result = runGpsSamples([
+    {timestamp:1000,latitude:37.5,longitude:127,speed:0,accuracy:20},
+    {timestamp:2000,latitude:37.50002,longitude:127,speed:13/3.6,accuracy:20},
+    {timestamp:3000,latitude:37.499985,longitude:127,speed:16/3.6,accuracy:20},
+    {timestamp:4000,latitude:37.50001,longitude:127,speed:4/3.6,accuracy:20},
+  ]);
+  assert.equal(result.currentSpeed, 0);
+  assert.equal(result.maxSpeed, 0);
+});
+
+test('real 3-5km/h low-speed movement is eventually recognized', () => {
+  const result = runGpsSamples(Array.from({length:6},(_,i)=>({timestamp:(i+1)*1000,latitude:37.5+i*.00001,longitude:127,speed:4/3.6,accuracy:5})));
+  assert.ok(result.currentSpeed*3.6>=3&&result.currentSpeed*3.6<=5);
+});
+
+test('normal 10-25km/h riding is reflected without heavy lag', () => {
+  const result = runGpsSamples(Array.from({length:5},(_,i)=>({timestamp:(i+1)*1000,latitude:37.5+i*.000045,longitude:127,speed:18/3.6,accuracy:5})));
+  assert.ok(result.currentSpeed*3.6>=16&&result.currentSpeed*3.6<=20);
+});
+
+test('one speed spike during normal riding is suppressed', () => {
+  const speeds=[18,18,18,72,18];
+  const result = runGpsSamples(speeds.map((speed,i)=>({timestamp:(i+1)*1000,latitude:37.5+i*.000045,longitude:127,speed:speed/3.6,accuracy:5})));
+  assert.ok(result.currentSpeed*3.6>=16&&result.currentSpeed*3.6<=20);
+  assert.ok(result.maxSpeed*3.6<30);
 });
