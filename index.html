@@ -34,9 +34,7 @@
             <button data-quick="home">집</button><button data-quick="work">회사</button><button data-quick="favorite">즐겨찾기</button>
           </div>
           <h3>최근 검색</h3>
-          <button class="recent" data-query="한강공원">한강공원</button>
-          <button class="recent" data-query="잠실한강공원">잠실한강공원</button>
-          <button class="recent" data-query="북한강 자전거길">북한강 자전거길</button>
+          <div id="recentSearches"></div>
         </div>
         <div id="liveResults" class="live-results hidden"></div>
       </section>
@@ -70,12 +68,12 @@
         </div>
         <div class="nav-tools">
           <button id="navSearchBtn" aria-label="검색">⌕</button>
-          <button id="navLocateBtn" class="active" aria-label="현재 위치 추적">◎</button>
-          <button id="navRecalcBtn" aria-label="경로 재탐색">↻</button>
+          <button id="navLocateBtn" aria-label="현재 위치 추적">◎</button>
         </div>
         <div id="navRouteStatus" class="nav-route-status" aria-live="polite"></div>
-        <div class="speed-pill"><b id="speedText">0 km/h</b><small>현재 속도</small></div>
+        <div class="speed-pill"><b id="speedValue">0</b><small>km/h</small></div>
         <div id="navHud" class="nav-hud">
+          <button id="navRecalcBtn" class="nav-recalc-btn" aria-label="경로 재탐색">↻</button>
           <button id="navInfoToggle" class="nav-info-toggle">
             <span><small id="navPrimaryLabel">도착 예정</small><b id="navPrimaryValue">--:--</b></span>
             <span><small>남은 거리</small><b id="remainDistance">--km</b></span>
@@ -91,7 +89,6 @@
           <button data-nav-action="volume">🔊<span>안내 음량</span></button>
           <button data-nav-action="theme">☾<span>주야간</span></button>
           <button data-nav-action="north">N<span>지도 방향</span></button>
-          <button data-nav-action="waypoint">＋<span>경유지</span></button>
           <button data-nav-action="recalc">↻<span>경로 재탐색</span></button>
           <button data-nav-action="pause">Ⅱ<span>일시정지</span></button>
         </div>
