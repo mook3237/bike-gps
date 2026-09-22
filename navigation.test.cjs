@@ -68,15 +68,16 @@ function runGpsSamples(samples) {
   const { context } = loadApp();
   context.testSamples = samples;
   vm.runInContext(`
-    let testGpsCallback;
+    let testGpsCallback,testFollowCalls=0;
     navigator.geolocation.watchPosition=callback=>{testGpsCallback=callback;return 1};
-    setGpsMarker=()=>{};followNavigationPosition=()=>{};updateNavHud=()=>{};
+    setGpsMarker=()=>{};followNavigationPosition=()=>{testFollowCalls++};updateNavHud=()=>{};
     state.screen='navigation';state.map={};startWatch();
     for(const sample of testSamples)testGpsCallback({timestamp:sample.timestamp,coords:{latitude:sample.latitude,longitude:sample.longitude,speed:sample.speed,accuracy:sample.accuracy,heading:null}});
   `, context);
   return {
     currentSpeed: vm.runInContext('state.nav.currentSpeed', context),
     maxSpeed: vm.runInContext('state.nav.maxSpeed', context),
+    followCalls: vm.runInContext('testFollowCalls', context),
   };
 }
 
@@ -140,22 +141,44 @@ test('live results show distance and dismiss the keyboard only after rendering',
   assert.equal(input.blurred, true);
 });
 
-test('route and navigation endpoint markers identify the current destination', () => {
+test('route select shows fixed-size departure and destination pins', () => {
   const { context } = loadApp();
   vm.runInContext(`
     class TestLatLng { constructor(latitude, longitude) { this.latitude=latitude; this.longitude=longitude; } }
     class TestOverlay { constructor(options) { Object.assign(this, options); } setMap(map) { this.map=map; } }
     kakao={maps:{LatLng:TestLatLng,CustomOverlay:TestOverlay}};
-    state.map={};
+    state.map={setLevel(level){this.level=level}};
     state.departure={latitude:37.5,longitude:127,name:'현재 위치'};
     state.destination={latitude:37.6,longitude:127.1,name:'목적지'};
   `, context);
-  assert.equal(vm.runInContext('typeof drawRouteEndpointMarkers', context), 'function');
   vm.runInContext('drawRouteEndpointMarkers(false)', context);
   assert.equal(vm.runInContext('state.routeEndpointMarkers.length', context), 2);
+  assert.equal(vm.runInContext("state.routeEndpointMarkers[0].content.className", context), 'route-endpoint-marker departure');
+  assert.equal(vm.runInContext("state.routeEndpointMarkers[1].content.className", context), 'route-endpoint-marker destination');
+  assert.equal(vm.runInContext("state.routeEndpointMarkers[0].content.style.width", context), '40px');
+  assert.equal(vm.runInContext("state.routeEndpointMarkers[1].content.style.width", context), '40px');
+  vm.runInContext('state.map.setLevel(1);state.map.setLevel(7)', context);
+  assert.equal(vm.runInContext("state.routeEndpointMarkers[0].content.style.width", context), '40px');
+  assert.equal(vm.runInContext("state.routeEndpointMarkers[1].content.style.width", context), '40px');
+});
+
+test('navigation keeps a fixed-size destination pin', () => {
+  const { context } = loadApp();
+  vm.runInContext(`
+    class TestLatLng { constructor(latitude, longitude) { this.latitude=latitude; this.longitude=longitude; } }
+    class TestOverlay { constructor(options) { Object.assign(this, options); } setMap(map) { this.map=map; } }
+    kakao={maps:{LatLng:TestLatLng,CustomOverlay:TestOverlay}};
+    state.map={setLevel(level){this.level=level}};
+    state.departure={latitude:37.5,longitude:127,name:'현재 위치'};
+    state.destination={latitude:37.6,longitude:127.1,name:'목적지'};
+  `, context);
   vm.runInContext('drawRouteEndpointMarkers(true)', context);
   assert.equal(vm.runInContext('state.routeEndpointMarkers.length', context), 1);
   assert.equal(vm.runInContext('state.routeEndpointMarkers[0].position.latitude', context), 37.6);
+  assert.equal(vm.runInContext("state.routeEndpointMarkers[0].content.className", context), 'route-endpoint-marker destination');
+  assert.equal(vm.runInContext("state.routeEndpointMarkers[0].content.style.width", context), '40px');
+  vm.runInContext('state.map.setLevel(1);state.map.setLevel(7)', context);
+  assert.equal(vm.runInContext("state.routeEndpointMarkers[0].content.style.width", context), '40px');
 });
 
 test('navigation start applies the current speed level', () => {
@@ -269,4 +292,31 @@ test('one speed spike during normal riding is suppressed', () => {
   const result = runGpsSamples(speeds.map((speed,i)=>({timestamp:(i+1)*1000,latitude:37.5+i*.000045,longitude:127,speed:speed/3.6,accuracy:5})));
   assert.ok(result.currentSpeed*3.6>=16&&result.currentSpeed*3.6<=20);
   assert.ok(result.maxSpeed*3.6<30);
+});
+
+test('stationary GPS drift updates navigation without moving the camera', () => {
+  const result = runGpsSamples([
+    {timestamp:1000,latitude:37.5,longitude:127,speed:0,accuracy:20},
+    {timestamp:2000,latitude:37.50002,longitude:127,speed:13/3.6,accuracy:20},
+    {timestamp:3000,latitude:37.499985,longitude:127,speed:16/3.6,accuracy:20},
+  ]);
+  assert.equal(result.followCalls, 0);
+});
+
+test('confirmed movement keeps navigation camera follow active', () => {
+  const result = runGpsSamples(Array.from({length:6},(_,i)=>({timestamp:(i+1)*1000,latitude:37.5+i*.000045,longitude:127,speed:18/3.6,accuracy:5})));
+  assert.ok(result.followCalls>0);
+});
+
+test('current-location button follows immediately even while stationary', () => {
+  const { context } = loadApp();
+  vm.runInContext(`
+    kakao={maps:{LatLng:class {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}}};
+    state.nav.follow=false;state.nav.speedMoving=false;
+    state.currentLocation={latitude:37.5,longitude:127};
+    state.map={setLevel(){},setCenter(){this.centerCalls=(this.centerCalls||0)+1},panBy(){this.panCalls=(this.panCalls||0)+1}};
+    $('#navLocateBtn').onclick();
+  `, context);
+  assert.equal(vm.runInContext('state.map.centerCalls', context), 1);
+  assert.equal(vm.runInContext('state.map.panCalls', context), 1);
 });
