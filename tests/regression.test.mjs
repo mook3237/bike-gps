@@ -183,6 +183,44 @@ test('bicycle route API turns network failures into a structured 502 response', 
   }
 });
 
+test('six: bicycle route API forwards ordered waypoint coordinates', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalKey = process.env.KAKAO_REST_API_KEY;
+  process.env.KAKAO_REST_API_KEY = 'test-key';
+  const urls = [];
+  globalThis.fetch = async url => {
+    urls.push(String(url));
+    return { ok: true, status: 200, json: async () => ({ route: { properties: { totalDistance: 10, totalTime: 20 } } }) };
+  };
+  try {
+    const handler = await apiHandler('api/bicycle-route.js');
+    const { output, response } = mockResponse();
+    await handler({ method: 'GET', query: {
+      start_x: '127.1', start_y: '37.1', end_x: '127.4', end_y: '37.4',
+      via_x: '127.2,127.3', via_y: '37.2,37.3', v_name: '경유 1,경유 2',
+    } }, response);
+    assert.equal(output.status, 200);
+    assert.equal(urls.length, 3);
+    for (const url of urls) {
+      const params = new URL(url).searchParams;
+      assert.equal(params.get('via_x'), '127.2,127.3');
+      assert.equal(params.get('via_y'), '37.2,37.3');
+      assert.equal(params.get('v_name'), '경유 1,경유 2');
+    }
+    const tooMany = mockResponse();
+    await handler({ method: 'GET', query: {
+      start_x: '127.1', start_y: '37.1', end_x: '127.4', end_y: '37.4',
+      via_x: '127.1,127.2,127.3,127.4,127.5,127.6',
+      via_y: '37.1,37.2,37.3,37.4,37.5,37.6',
+    } }, tooMany.response);
+    assert.equal(tooMany.output.status, 400);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalKey === undefined) delete process.env.KAKAO_REST_API_KEY;
+    else process.env.KAKAO_REST_API_KEY = originalKey;
+  }
+});
+
 test('place search rejects invalid size and handles non-JSON upstream errors', async () => {
   const originalFetch = globalThis.fetch;
   const originalKey = process.env.KAKAO_REST_API_KEY;

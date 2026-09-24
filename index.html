@@ -43,6 +43,8 @@
         <button id="routeBack" class="icon-btn">‹</button>
         <div class="route-fields">
           <button id="departureField"><small>출발</small><b>현재 위치</b></button>
+          <div id="waypointFields"></div>
+          <button id="addWaypointBtn" class="waypoint-add"><small>경유</small><b>＋ 경유지 추가</b></button>
           <button id="destinationField"><small>도착</small><b>목적지</b></button>
         </div>
         <button id="swapBtn" class="swap-btn" aria-label="출발 도착 바꾸기">⇅</button>
@@ -50,7 +52,7 @@
 
       <div id="mapControls" class="map-controls">
         <div class="zoom-controls"><button id="zoomIn">＋</button><button id="zoomOut">－</button></div>
-        <div class="right-controls"><button id="compassBtn" aria-label="북쪽 보기">N</button><button id="locateBtn" aria-label="현재 위치">⌾</button></div>
+        <div class="right-controls"><button id="locateBtn" aria-label="현재 위치">⌾</button></div>
       </div>
 
       <section id="sheet" class="sheet hidden">
@@ -88,7 +90,6 @@
         <div class="menu-grid">
           <button data-nav-action="volume">🔊<span>안내 음량</span></button>
           <button data-nav-action="theme">☾<span>주야간</span></button>
-          <button data-nav-action="north">N<span>지도 방향</span></button>
           <button data-nav-action="recalc">↻<span>경로 재탐색</span></button>
           <button data-nav-action="pause">Ⅱ<span>일시정지</span></button>
         </div>

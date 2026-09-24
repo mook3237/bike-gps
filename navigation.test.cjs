@@ -31,7 +31,7 @@ function loadApp({ manualTimers = false } = {}) {
         toggle: (name, force) => force ? classes.add(name) : classes.delete(name),
         contains: name => classes.has(name),
       },
-      style: { setProperty() {} },
+      style: { setProperty(name, value) { this[name] = value; } },
       addEventListener() {}, querySelectorAll() { return []; }, querySelector() { return makeElement(); },
       setPointerCapture() {}, focus() { this.focused = true; this.blurred = false; }, blur() { this.focused = false; this.blurred = true; }, offsetHeight: 600, value: '', innerHTML: '', textContent: '',
     };
@@ -68,16 +68,17 @@ function runGpsSamples(samples) {
   const { context } = loadApp();
   context.testSamples = samples;
   vm.runInContext(`
-    let testGpsCallback,testFollowCalls=0;
+    let testGpsCallback;
     navigator.geolocation.watchPosition=callback=>{testGpsCallback=callback;return 1};
-    setGpsMarker=()=>{};followNavigationPosition=()=>{testFollowCalls++};updateNavHud=()=>{};
-    state.screen='navigation';state.map={};startWatch();
+    kakao={maps:{LatLng:class {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}}};
+    setGpsMarker=()=>{};updateNavHud=()=>{};
+    state.screen='navigation';state.map={panTo(){this.panCalls=(this.panCalls||0)+1}};startWatch();
     for(const sample of testSamples)testGpsCallback({timestamp:sample.timestamp,coords:{latitude:sample.latitude,longitude:sample.longitude,speed:sample.speed,accuracy:sample.accuracy,heading:null}});
   `, context);
   return {
     currentSpeed: vm.runInContext('state.nav.currentSpeed', context),
     maxSpeed: vm.runInContext('state.nav.maxSpeed', context),
-    followCalls: vm.runInContext('testFollowCalls', context),
+    followCalls: vm.runInContext('state.map.panCalls||0', context),
   };
 }
 
@@ -314,9 +315,123 @@ test('current-location button follows immediately even while stationary', () => 
     kakao={maps:{LatLng:class {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}}};
     state.nav.follow=false;state.nav.speedMoving=false;
     state.currentLocation={latitude:37.5,longitude:127};
-    state.map={setLevel(){},setCenter(){this.centerCalls=(this.centerCalls||0)+1},panBy(){this.panCalls=(this.panCalls||0)+1}};
+    state.map={setLevel(){},panTo(){this.panCalls=(this.panCalls||0)+1}};
     $('#navLocateBtn').onclick();
   `, context);
-  assert.equal(vm.runInContext('state.map.centerCalls', context), 1);
   assert.equal(vm.runInContext('state.map.panCalls', context), 1);
+});
+
+test('six: viewport metrics include the visual viewport bottom obstruction', () => {
+  const { context } = loadApp();
+  assert.equal(vm.runInContext('typeof viewportMetrics', context), 'function');
+  context.testViewport = { height: 700, offsetTop: 20 };
+  assert.deepEqual(
+    JSON.parse(vm.runInContext('JSON.stringify(viewportMetrics(testViewport, 800))', context)),
+    { height: 700, bottom: 80 },
+  );
+  context.window.innerHeight = 800;
+  context.window.visualViewport = context.testViewport;
+  vm.runInContext('syncViewportMetrics()', context);
+  assert.equal(context.document.documentElement.style['--viewport-bottom'], '80px');
+  const css = fs.readFileSync('styles.css', 'utf8');
+  assert.match(css, /env\(safe-area-inset-bottom\).*var\(--viewport-bottom/);
+  assert.match(css, /env\(safe-area-inset-left\)/);
+  assert.match(css, /env\(safe-area-inset-right\)/);
+});
+
+test('six: route fit padding follows the visible editor and route controls', () => {
+  const { context } = loadApp();
+  assert.equal(vm.runInContext('typeof routeFitPadding', context), 'function');
+  const padding = JSON.parse(vm.runInContext('JSON.stringify(routeFitPadding(800, 0, 118, 610))', context));
+  assert.deepEqual(padding, { top: 130, right: 24, bottom: 202, left: 24 });
+  const offsetPadding = JSON.parse(vm.runInContext('JSON.stringify(routeFitPadding(800, 20, 118, 610))', context));
+  assert.deepEqual(offsetPadding, { top: 110, right: 24, bottom: 222, left: 24 });
+  vm.runInContext(`
+    class TestLatLng { constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude} }
+    class TestBounds { constructor(){this.points=[]} extend(point){this.points.push(point)} isEmpty(){return !this.points.length} }
+    kakao={maps:{LatLng:TestLatLng,LatLngBounds:TestBounds}};
+    $('#routeEditor').getBoundingClientRect=()=>({bottom:118});
+    $('#routeCards').getBoundingClientRect=()=>({top:610});
+    $('#startNavBtn').getBoundingClientRect=()=>({top:730});
+    state.departure={latitude:37,longitude:127};state.destination={latitude:38,longitude:128};
+    state.routes=[{_points:[{latitude:37.1,longitude:127.1},{latitude:37.9,longitude:127.9}]},{_points:[{latitude:30,longitude:120}]}];
+    state.selectedRoute=0;state.map={setBounds(bounds,...padding){this.bounds=bounds;this.padding=padding}};
+    fitSelectedRoute();
+  `, context);
+  assert.equal(vm.runInContext('state.map.bounds.points.length', context), 4);
+  assert.deepEqual(JSON.parse(vm.runInContext('JSON.stringify(state.map.padding)', context)), [130,24,202,24]);
+  assert.equal(vm.runInContext('typeof syncRouteViewport', context), 'function');
+  vm.runInContext("let testRefits=0;fitSelectedRoute=()=>{testRefits++};state.screen='route';syncRouteViewport()", context);
+  assert.equal(vm.runInContext('testRefits', context), 1);
+});
+
+test('six: route request preserves ordered waypoints up to five', async () => {
+  const { context } = loadApp();
+  assert.equal(vm.runInContext('typeof buildRouteParams', context), 'function');
+  const query = vm.runInContext(`buildRouteParams(
+    {latitude:37.1,longitude:127.1,name:'출발'},
+    [{latitude:37.2,longitude:127.2,name:'경유 1'},{latitude:37.3,longitude:127.3,name:'경유 2'}],
+    {latitude:37.4,longitude:127.4,name:'도착'}
+  ).toString()`, context);
+  const params = new URLSearchParams(query);
+  assert.equal(params.get('via_x'), '127.2,127.3');
+  assert.equal(params.get('via_y'), '37.2,37.3');
+  assert.equal(params.get('v_name'), '경유 1,경유 2');
+  context.testWaypoint = { latitude: 37.25, longitude: 127.25, name: '검색 경유지' };
+  await vm.runInContext(`
+    let testRouteLoads=0;loadRoutes=async()=>{testRouteLoads++};
+    state.departure={latitude:37.1,longitude:127.1};state.destination={latitude:37.4,longitude:127.4};
+    state.editingEndpoint='waypoint';state.editingWaypointIndex=0;
+    choosePlace(testWaypoint)
+  `, context);
+  assert.equal(vm.runInContext('state.waypoints[0].name', context), '검색 경유지');
+  assert.equal(vm.runInContext('testRouteLoads', context), 1);
+});
+
+test('six: destination marker uses the selected route geometry endpoint', () => {
+  const { context } = loadApp();
+  vm.runInContext(`
+    class TestLatLng { constructor(latitude, longitude) { this.latitude=latitude; this.longitude=longitude; } }
+    class TestOverlay { constructor(options) { Object.assign(this, options); } setMap(map) { this.map=map; } }
+    kakao={maps:{LatLng:TestLatLng,CustomOverlay:TestOverlay}};
+    state.map={};state.departure={latitude:37.1,longitude:127.1};
+    state.destination={latitude:37.9,longitude:127.9};
+    state.routes=[{_points:[{latitude:37.1,longitude:127.1},{latitude:37.45,longitude:127.55}]}];
+    state.selectedRoute=0;drawRouteEndpointMarkers(false);
+  `, context);
+  assert.equal(vm.runInContext('state.routeEndpointMarkers[1].position.latitude', context), 37.45);
+  assert.equal(vm.runInContext('state.routeEndpointMarkers[1].position.longitude', context), 127.55);
+});
+
+test('six: compass and north-direction controls are absent', () => {
+  const html = fs.readFileSync('index.html', 'utf8');
+  const css = fs.readFileSync('styles.css', 'utf8');
+  assert.doesNotMatch(html, /id="compassBtn"|data-nav-action="north"/);
+  assert.doesNotMatch(css, /(?:#map|navigation-active)[^}]*rotate\(/);
+});
+
+test('six: camera follow ignores small fixes and blocks overlapping moves', () => {
+  const { context, advance } = loadApp({ manualTimers: true });
+  vm.runInContext(`
+    kakao={maps:{LatLng:class {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}}};
+    state.screen='navigation';state.nav.follow=true;state.nav.speedMoving=true;
+    state.map={panTo(){this.panCalls=(this.panCalls||0)+1}};
+    followNavigationPosition({latitude:37.5,longitude:127},false,5,1000);
+    followNavigationPosition({latitude:37.50001,longitude:127},false,5,1100);
+    followNavigationPosition({latitude:37.5003,longitude:127},false,5,1200);
+  `, context);
+  assert.equal(vm.runInContext('state.map.panCalls', context), 1);
+  advance(700);
+  vm.runInContext('followNavigationPosition({latitude:37.5003,longitude:127},false,5,2000)', context);
+  assert.equal(vm.runInContext('state.map.panCalls', context), 2);
+
+  const gps = runGpsSamples(Array.from({length:7},(_,i)=>({
+    timestamp:(i+1)*1000,
+    latitude:37.5+i*.000045,
+    longitude:127,
+    speed:18/3.6,
+    accuracy:5,
+  })));
+  assert.ok(gps.followCalls > 0);
+  assert.ok(gps.followCalls < 7);
 });
