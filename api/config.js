@@ -1,0 +1,1 @@
+export default function handler(req,res){const kakaoJsKey=process.env.KAKAO_JS_KEY||process.env.KAKAO_MAP_API_KEY;if(!kakaoJsKey)return res.status(500).json({error:'KAKAO JS 환경변수가 없습니다.'});res.status(200).json({kakaoJsKey});}
