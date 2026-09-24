@@ -42,9 +42,11 @@
       <section id="routeEditor" class="route-editor hidden">
         <button id="routeBack" class="icon-btn">‹</button>
         <div class="route-fields">
-          <button id="departureField"><small>출발</small><b>현재 위치</b></button>
+          <div class="route-departure-row">
+            <button id="departureField"><small>출발</small><b>현재 위치</b></button>
+            <button id="addWaypointBtn" class="waypoint-plus" aria-label="경유지 추가">+</button>
+          </div>
           <div id="waypointFields"></div>
-          <button id="addWaypointBtn" class="waypoint-add"><small>경유</small><b>＋ 경유지 추가</b></button>
           <button id="destinationField"><small>도착</small><b>목적지</b></button>
         </div>
         <button id="swapBtn" class="swap-btn" aria-label="출발 도착 바꾸기">⇅</button>
