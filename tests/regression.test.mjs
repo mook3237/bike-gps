@@ -183,6 +183,83 @@ test('bicycle route API turns network failures into a structured 502 response', 
   }
 });
 
+test('bicycle route modes stay parallel, bicycle-only, ordered, and timed', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalKey = process.env.KAKAO_REST_API_KEY;
+  process.env.KAKAO_REST_API_KEY = 'test-key';
+  const urls = [], pending = [];
+  globalThis.fetch = url => new Promise(resolve => {
+    urls.push(String(url));
+    pending.push(resolve);
+  });
+  try {
+    const handler = await apiHandler('api/bicycle-route.js');
+    const { output, response } = mockResponse();
+    const handling = handler({ method: 'GET', query: {
+      start_x: '126.9780', start_y: '37.5665', end_x: '129.0756', end_y: '35.1796',
+      via_x: '127.1,128.1', via_y: '37.1,36.1', v_name: '경유 1,경유 2',
+    } }, response);
+    assert.equal(urls.length, 3, 'all Kakao requests must start before any response resolves');
+    assert.deepEqual(urls.map(url => new URL(url).searchParams.get('route_mode')), ['BIKE_ONLY', 'SHORTEST', 'ACCESSIBLE']);
+    for (const url of urls) {
+      assert.equal(new URL(url).pathname, '/v2/routing/bicycle');
+      assert.doesNotMatch(url, /\/v1\/directions|\/v2\/directions|car/i);
+      assert.equal(new URL(url).searchParams.get('via_x'), '127.1,128.1');
+    }
+    pending.forEach(resolve => resolve({ok:true,status:200,json:async()=>({route:{properties:{totalDistance:10,totalTime:20}}})}));
+    await handling;
+    assert.equal(output.status, 200);
+    assert.equal(output.body.performance.execution, 'parallel');
+    assert.equal(output.body.performance.receivedAt, 0);
+    assert.equal(Number.isFinite(output.body.performance.serverTotalMs), true);
+    for (const mode of ['BIKE_ONLY','SHORTEST','ACCESSIBLE']) {
+      const timing = output.body.performance.modes[mode];
+      assert.equal(Number.isFinite(timing.startMs), true);
+      assert.equal(Number.isFinite(timing.endMs), true);
+      assert.equal(Number.isFinite(timing.durationMs), true);
+      assert.ok(timing.endMs >= timing.startMs);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalKey === undefined) delete process.env.KAKAO_REST_API_KEY;
+    else process.env.KAKAO_REST_API_KEY = originalKey;
+  }
+});
+
+test('bicycle total failure returns timing and never falls back to automobile routing', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalKey = process.env.KAKAO_REST_API_KEY;
+  process.env.KAKAO_REST_API_KEY = 'test-key';
+  const urls = [];
+  globalThis.fetch = async url => {
+    urls.push(String(url));
+    return {ok:false,status:404,json:async()=>({msg:'route 없음'})};
+  };
+  try {
+    const handler = await apiHandler('api/bicycle-route.js');
+    const { output, response } = mockResponse();
+    await handler({method:'GET',query:{start_x:'126.9780',start_y:'37.5665',end_x:'129.0756',end_y:'35.1796'}}, response);
+    assert.equal(output.status, 502);
+    assert.equal(urls.length, 3);
+    assert.equal(urls.every(url => new URL(url).pathname === '/v2/routing/bicycle'), true);
+    assert.equal(output.body.performance.execution, 'parallel');
+    assert.equal(Number.isFinite(output.body.performance.responseReadyMs), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalKey === undefined) delete process.env.KAKAO_REST_API_KEY;
+    else process.env.KAKAO_REST_API_KEY = originalKey;
+  }
+});
+
+test('initial, automatic, manual, destination-change and long-distance routing share the bicycle proxy', () => {
+  assert.match(appSource, /async function loadRoutes\(\)[^\n]*fetchRoutes\(/);
+  assert.match(appSource, /async function recalculateNavigationRoute\(reason='manual'\)[^\n]*fetchRoutes\(state\.currentLocation,state\.destination,\[\]/);
+  assert.match(appSource, /async function replaceNavigationDestination\(destination\)[^\n]*fetchRoutes\(state\.currentLocation,destination,\[\]/);
+  assert.match(appSource, /#navRecalcBtn'\)\.onclick=\(\)=>recalculateNavigationRoute\('manual'\)/);
+  assert.match(appSource, /recalculateNavigationRoute\('off-route'\)/);
+  assert.doesNotMatch(appSource, /dapi\.kakao\.com\/v\d+\/routing|\/v1\/directions|\/v2\/directions/);
+});
+
 test('six: bicycle route API forwards ordered waypoint coordinates', async () => {
   const originalFetch = globalThis.fetch;
   const originalKey = process.env.KAKAO_REST_API_KEY;

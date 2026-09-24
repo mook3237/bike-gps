@@ -4,7 +4,8 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 function loadApp({ manualTimers = false } = {}) {
-  let now = 0, nextTimer = 1;
+  let now = 0, nextTimer = 1, performanceNow = 0;
+  const routeLogs = [];
   const timers = new Map();
   const setTestTimeout = (fn, delay = 0) => {
     if (!manualTimers) { if (typeof fn === 'function') fn(); return nextTimer++; }
@@ -53,15 +54,17 @@ function loadApp({ manualTimers = false } = {}) {
     setItem: (key, value) => storage.set(key, String(value)),
   };
   const context = vm.createContext({
-    console, document, localStorage, AbortController, URLSearchParams,
+    console: {...console,groupCollapsed:(...args)=>routeLogs.push(args.join(' ')),groupEnd(){},log:(...args)=>routeLogs.push(args.join(' ')),table:value=>routeLogs.push(JSON.stringify(value))}, document, localStorage, AbortController, URLSearchParams,
     setTimeout: setTestTimeout, clearTimeout: clearTestTimeout,
+    performance: { now: () => ++performanceNow },
+    requestAnimationFrame: callback => { performanceNow++; callback(performanceNow); return performanceNow; },
     innerHeight: 800, history: { pushState() {}, back() {} },
     navigator: { geolocation: { getCurrentPosition() {}, watchPosition() { return 1; }, clearWatch() {} } },
     fetch: async () => ({ json: async () => ({ error: 'test' }), ok: false }),
   });
   context.window = { addEventListener() {}, visualViewport: null };
   vm.runInContext(fs.readFileSync('app.js', 'utf8'), context, { filename: 'app.js' });
-  return { context, localStorage, advance, hasTimer: id => timers.has(id) };
+  return { context, localStorage, advance, hasTimer: id => timers.has(id), routeLogs };
 }
 
 function runGpsSamples(samples) {
@@ -386,6 +389,43 @@ test('six: route request preserves ordered waypoints up to five', async () => {
   `, context);
   assert.equal(vm.runInContext('state.waypoints[0].name', context), '검색 경유지');
   assert.equal(vm.runInContext('testRouteLoads', context), 1);
+});
+
+test('route performance reports every requested browser and Kakao timing in console only', async () => {
+  const { context, routeLogs } = loadApp();
+  context.testResponse = {
+    routes: [{routeMode:'BIKE_ONLY'}],
+    performance: {
+      receivedAt: 0,
+      modes: {
+        BIKE_ONLY: {startMs:0,endMs:11,durationMs:11},
+        SHORTEST: {startMs:1,endMs:14,durationMs:13},
+        ACCESSIBLE: {startMs:1,endMs:17,durationMs:16},
+      },
+      responseReadyMs: 18, serverTotalMs: 18, execution: 'parallel',
+    },
+  };
+  await vm.runInContext(`
+    state.departure={name:'서울',latitude:37.5665,longitude:126.978};
+    state.destination={name:'부산',latitude:35.1796,longitude:129.0756};
+    state.waypoints=[];
+    fetch=async()=>({ok:true,json:async()=>testResponse});
+    clearRoutes=()=>{};renderScreen=()=>{};updateRouteFields=()=>{};clearSearchMarkers=()=>{};
+    prepareRoutes=routes=>routes.map(route=>({...route,_points:[{latitude:37.5,longitude:127}],_steps:[]}));
+    drawRoutes=()=>{};renderRouteCards=()=>{};
+    loadRoutes();
+  `, context);
+  const output = routeLogs.join('\n');
+  for (const label of ['[Route Performance]','BIKE_ONLY Kakao','SHORTEST Kakao','ACCESSIBLE Kakao','API total','Frontend processing','Map rendering','TOTAL']) {
+    assert.match(output, new RegExp(label.replace(/[\[\]]/g, '\\$&')));
+  }
+  const record = JSON.parse(vm.runInContext('JSON.stringify(window.__rideMateRoutePerformance.at(-1))', context));
+  assert.equal(record.server.execution, 'parallel');
+  assert.ok(record.apiRequestStart >= record.routeSearchStart);
+  assert.ok(record.browserResponseReceived >= record.apiRequestStart);
+  assert.ok(record.processingComplete >= record.browserResponseReceived);
+  assert.ok(record.mapRenderingComplete >= record.processingComplete);
+  assert.doesNotMatch(fs.readFileSync('index.html','utf8'), /Route Performance|routePerformance/);
 });
 
 test('six: destination marker uses the selected route geometry endpoint', () => {

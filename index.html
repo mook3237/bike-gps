@@ -56,6 +56,7 @@
         <div class="zoom-controls"><button id="zoomIn">＋</button><button id="zoomOut">－</button></div>
         <div class="right-controls"><button id="locateBtn" aria-label="현재 위치">⌾</button></div>
       </div>
+      <button id="searchHereBtn" class="search-here-btn hidden">여기서 재검색</button>
 
       <section id="sheet" class="sheet hidden">
         <div id="sheetHandle" class="sheet-handle"><i></i></div>
@@ -113,6 +114,17 @@
           <button id="discardRideBtn" class="secondary-btn">저장하지 않기</button>
         </div>
       </section>
+
+      <aside id="placeDebugPanel" class="place-debug-panel hidden" aria-label="장소 터치 진단">
+        <div class="place-debug-head">
+          <button id="placeDebugToggle" type="button" aria-expanded="false">Place Debug <b id="placeDebugLatest">READY</b></button>
+          <button id="placeDebugClear" type="button">CLEAR</button>
+        </div>
+        <div id="placeDebugBody" class="place-debug-body hidden">
+          <div id="placeDebugCurrent" class="place-debug-current"></div>
+          <ol id="placeDebugRecords" class="place-debug-records"></ol>
+        </div>
+      </aside>
 
       <div id="toast" class="toast hidden"></div>
 
