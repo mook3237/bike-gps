@@ -35,7 +35,11 @@ function loadApp(search = '', deferTimers = false) {
         toggle: (name, force) => force ? classes.add(name) : classes.delete(name),
         contains: name => classes.has(name),
       },
-      style: { setProperty() {} },
+      style: {
+        values: new Map(),
+        setProperty(name, value) { this.values.set(name, value); },
+        getPropertyValue(name) { return this.values.get(name) || ''; },
+      },
       addEventListener(type, listener) { listeners.set(type, listener); },
       dispatch(type, event = {}) { return listeners.get(type)?.({stopPropagation() {},preventDefault() {},pointerId:1,clientY:0,...event}); },
       querySelectorAll() { return []; },
@@ -227,21 +231,11 @@ test('idle refreshes after map movement or zoom and programmatic fitting does no
   assert.equal(context.document.querySelector('#searchHereBtn').classList.contains('hidden'), false);
 });
 
-test('screen-space hit testing chooses a unique nearest place and rejects empty or ambiguous taps', () => {
-  const context = loadApp();
-  vm.runInContext(`
-    class TestLatLng { constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude} }
-    kakao={maps:{LatLng:TestLatLng}};
-    testProjection={pointFromCoords(ll){return{x:ll.longitude,y:ll.latitude}}};
-    testPlaces=[{id:'nearest',latitude:100,longitude:103},{id:'farther',latitude:100,longitude:120}];
-    testAmbiguous=[{id:'one',latitude:100,longitude:98},{id:'two',latitude:100,longitude:102}];
-  `, context);
-  assert.equal(vm.runInContext("closestVisiblePlace({x:100,y:100},testPlaces,testProjection)?.id", context), 'nearest');
-  assert.equal(vm.runInContext("closestVisiblePlace({x:300,y:300},testPlaces,testProjection)", context), null);
-  assert.equal(vm.runInContext("closestVisiblePlace({x:100,y:100},testAmbiguous,testProjection)", context), null);
+test('map click handler never invokes the legacy nearest-place hit test', () => {
+  assert.doesNotMatch(appSource,/function handleMapClick\([^\n]+visiblePlaceHitTest/);
 });
 
-test('every map click reports a complete Place Tap Debug decision', () => {
+test('base-map click reports that Kakao supplied no place identity', () => {
   const context = loadApp();
   const records = [];
   context.console = {
@@ -251,32 +245,18 @@ test('every map click reports a complete Place Tap Debug decision', () => {
     log() {}, debug() {},
   };
   vm.runInContext(`
-    class TestLatLng { constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude} }
-    kakao={maps:{LatLng:TestLatLng}};
     state.screen='map';state.mapClickBlockedUntil=0;
-    state.map={getLevel:()=>4,getBounds:()=>({getSouthWest:()=>({getLng:()=>126.9,getLat:()=>37.4}),getNorthEast:()=>({getLng:()=>127.1,getLat:()=>37.6})}),getProjection:()=>({pointFromCoords:ll=>({x:ll.longitude,y:ll.latitude})})};
-    state.visiblePlaces=[{id:'near',name:'가까운 곳',latitude:100,longitude:103},{id:'second',name:'두 번째',latitude:100,longitude:120}];
-    state.visiblePlaceKey=visiblePlaceKey();openPlace=()=>{};
+    state.map={getLevel:()=>4,getBounds:()=>({getSouthWest:()=>({getLng:()=>126.9,getLat:()=>37.4}),getNorthEast:()=>({getLng:()=>127.1,getLat:()=>37.6})})};
+    state.visiblePlaces=[{id:'near',name:'가까운 곳',latitude:100,longitude:103}];
+    state.visiblePlaceKey=visiblePlaceKey();openPlace=()=>{throw new Error('base map must not open a place')};
     handleMapClick({point:{x:100,y:100}});
-    state.mapClickBlockedUntil=Infinity;handleMapClick({point:{x:100,y:100}});
-    state.mapClickBlockedUntil=Date.now()+300;handleMapClick({point:{x:100,y:100}});
-    state.mapClickBlockedUntil=0;state.visiblePlaceKey='old';handleMapClick({point:{x:100,y:100}});
-    state.visiblePlaceKey=visiblePlaceKey();state.visiblePlaces=[];handleMapClick({point:{x:100,y:100}});
-    state.visiblePlaces=[{id:'far',name:'먼 곳',latitude:300,longitude:300}];handleMapClick({point:{x:100,y:100}});
-    state.visiblePlaces=[{id:'one',name:'한 곳',latitude:100,longitude:98},{id:'two',name:'두 곳',latitude:100,longitude:102}];handleMapClick({point:{x:100,y:100}});
-    state.screen='results';handleMapClick({point:{x:100,y:100}});
-    state.screen='map';handleMapClick({});
   `, context);
-  assert.deepEqual(records.map(record => record['최종 결과']), [
-    'SELECTED','BLOCKED_BY_DRAG','BLOCKED_BY_TIME','STALE_VIEWPORT','NO_VISIBLE_PLACES',
-    'NO_NEARBY_PLACE','AMBIGUOUS','WRONG_SCREEN','NO_EVENT_POINT',
-  ]);
+  assert.deepEqual(records.map(record => record['최종 결과']), ['BASE_MAP_NO_PLACE_ID']);
   const selected = records[0];
   for (const key of ['screen','event.point','map level','visiblePlaces count','visiblePlaceKey','current visiblePlaceKey()','mapClickBlockedUntil','현재 blocked 여부','가장 가까운 장소','가장 가까운 장소 pixel distance','두 번째로 가까운 장소','두 번째 장소 pixel distance','ambiguity 판정','최종 결과']) {
     assert.equal(Object.hasOwn(selected, key), true, key);
   }
-  assert.equal(selected['가장 가까운 장소'], '가까운 곳');
-  assert.equal(selected['가장 가까운 장소 pixel distance'], 3);
+  assert.equal(selected['가장 가까운 장소'], null);
 });
 
 test('pointer and Kakao map lifecycle diagnostics are registered without intercepting touch', () => {
@@ -326,7 +306,7 @@ test('a map click suppressed by dragging never opens a place', async () => {
   assert.equal(result.opened, null);
 });
 
-test('a genuine map click opens the cached viewport place through openPlace', async () => {
+test('a genuine base-map click does not open a cached viewport place', async () => {
   const context = loadApp();
   const result = await vm.runInContext(`
     state.screen='map';
@@ -339,8 +319,8 @@ test('a genuine map click opens the cached viewport place through openPlace', as
     openPlace=place=>{testOpened=place};
     Promise.resolve(handleMapClick({point:{x:100,y:100}})).then(place=>({returned:place?.id,opened:testOpened?.id}));
   `, context);
-  assert.equal(result.returned, 'inside');
-  assert.equal(result.opened, 'inside');
+  assert.equal(result.returned, undefined);
+  assert.equal(result.opened, undefined);
 });
 
 test('a map tap closes place history and allows the next map place to open', () => {
@@ -364,9 +344,9 @@ test('a map tap closes place history and allows the next map place to open', () 
     state.screen='map';state.mapClickBlockedUntil=0;
     placeA={id:'a',name:'장소 A',latitude:100,longitude:103};
     placeB={id:'b',name:'장소 B',latitude:100,longitude:104};
-    state.visiblePlaces=[placeA];state.visiblePlaceKey=visiblePlaceKey();
+    state.visiblePlaces=[placeA];state.visiblePlaceKey=visiblePlaceKey();state.visiblePlaceGeneration=1;
     handleMapPointerEvent({type:'pointerdown',pointerType:'touch',pointerId:1});
-    first=handleMapClick({point:{x:100,y:100}});
+    first=handleCategoryMarkerClick(placeA,1,state.visiblePlaceKey,[placeA]);
     screenAfterFirst=state.screen;
     handleMapPointerEvent({type:'pointerdown',pointerType:'touch',pointerId:2});
     closeResult=handleMapClick({point:{x:200,y:200}});
@@ -374,7 +354,7 @@ test('a map tap closes place history and allows the next map place to open', () 
     closeRecord=placeDebugState.records.at(-1);
     state.visiblePlaces=[placeB];state.visiblePlaceKey=visiblePlaceKey();
     handleMapPointerEvent({type:'pointerdown',pointerType:'touch',pointerId:3});
-    second=handleMapClick({point:{x:100,y:100}});
+    second=handleCategoryMarkerClick(placeB,1,state.visiblePlaceKey,[placeB]);
     ({first:first?.id,screenAfterFirst,closeResult,screenAfterClose,closeScreen:closeRecord.screen,closeHash:closeRecord.locationHash,closeHistoryScreen:closeRecord.historyStateScreen,second:second?.id,selected:state.selectedPlace?.id});
   `, context);
 
@@ -484,6 +464,74 @@ test('search here uses the active query and current map rectangle', async () => 
   assert.match(html, /id="searchHereBtn"[^>]*>여기서 재검색<\/button>/);
 });
 
+test('live Kakao autocomplete keeps the keyboard open and selects the exact place object', () => {
+  const context=loadApp();
+  const box=context.document.querySelector('#liveResults'),input=context.document.querySelector('#searchInput');
+  let blurCount=0;input.blur=()=>{blurCount++};
+  const placeButton={dataset:{i:'0'}},routeButtons=[];
+  box.querySelectorAll=selector=>selector==='[data-i]'?[placeButton]:routeButtons;
+  context.testPlaces=[
+    {id:'starbucks',name:'스타벅스 동광주DT점',category:'카페',address:'광주 북구',distance:120},
+    {id:'other',name:'스타커피',category:'카페',address:'광주 북구',distance:250}
+  ];
+  const result=vm.runInContext(`
+    testChosen=null;choosePlace=place=>{testChosen=place};
+    renderLive(testPlaces,'스타',null);
+    document.querySelector('#liveResults').querySelectorAll('[data-i]')[0].onclick();
+    ({chosen:testChosen===testPlaces[0],html:document.querySelector('#liveResults').innerHTML});
+  `,context);
+  assert.equal(blurCount,0);
+  assert.equal(result.chosen,true);
+  assert.match(result.html,/스타벅스 동광주DT점/);
+});
+
+test('only the newest rapid autocomplete response is rendered', async () => {
+  const context=loadApp();
+  const result=await vm.runInContext(`
+    testResolvers={};testRenders=[];
+    searchPlaces=query=>new Promise(resolve=>{testResolvers[query]=resolve});
+    renderLive=(places,query)=>testRenders.push({query,id:places[0]?.id});
+    const first=doSearch('스',true),second=doSearch('스타',true),third=doSearch('스타벅',true);
+    testResolvers['스타벅']([{id:'latest'}]);
+    testResolvers['스']([{id:'old-1'}]);
+    testResolvers['스타']([{id:'old-2'}]);
+    Promise.all([first,second,third]).then(()=>testRenders);
+  `,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),[{query:'스타벅',id:'latest'}]);
+});
+
+test('first-use place spelling correction handles common Hangul typos conservatively', () => {
+  const context=loadApp();
+  const result=vm.runInContext(`({
+    pork:findSearchCorrection('삽겹살',[]),
+    coffee:findSearchCorrection('스타벅수',[]),
+    correct:findSearchCorrection('삼겹살',[]),
+    special:findSearchCorrection('삽겹살연구소',[{name:'삽겹살연구소',category:'음식점'}]),
+    ambiguous:findSearchCorrection('가바다',[],['가나다','가마다'])
+  })`,context);
+  assert.equal(result.pork?.term,'삼겹살');
+  assert.equal(result.coffee?.term,'스타벅스');
+  assert.equal(result.correct,null);
+  assert.equal(result.special,null);
+  assert.equal(result.ambiguous,null);
+});
+
+test('spelling suggestion is separate from autocomplete and searches only after user choice', () => {
+  const context=loadApp();
+  const box=context.document.querySelector('#liveResults'),correctionButton={dataset:{correction:'삼겹살'}};
+  box.querySelectorAll=selector=>selector==='[data-correction]'?[correctionButton]:[];
+  const result=vm.runInContext(`
+    testSearches=[];doSearch=(query,live)=>testSearches.push({query,live});
+    renderLive([], '삽겹살', {term:'삼겹살'});
+    before=testSearches.length;
+    document.querySelector('#liveResults').querySelectorAll('[data-correction]')[0].onclick();
+    ({before,searches:testSearches,html:document.querySelector('#liveResults').innerHTML});
+  `,context);
+  assert.equal(result.before,0);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.searches)),[{query:'삼겹살',live:false}]);
+  assert.match(result.html,/혹시 <b>삼겹살<\/b>/);
+});
+
 test('existing search result marker still opens the selected place', () => {
   const context = loadApp();
   vm.runInContext(`
@@ -497,6 +545,178 @@ test('existing search result marker still opens the selected place', () => {
     testMarkerClick();
   `, context);
   assert.equal(vm.runInContext('testOpened.id', context), 'result-place');
+});
+
+test('category markers keep a one-to-one place object and never run nearest-place selection', async () => {
+  const context = loadApp();
+  const result = await vm.runInContext(`(async()=>{
+    testMarkerListeners=[];
+    class TestLatLng { constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude} }
+    class TestMarker {
+      constructor(options){Object.assign(this,options);this.listeners={}}
+      setMap(map){this.map=map}
+    }
+    class TestSize { constructor(width,height){this.width=width;this.height=height} }
+    class TestPoint { constructor(x,y){this.x=x;this.y=y} }
+    class TestMarkerImage { constructor(src,size,options){this.src=src;this.size=size;this.options=options} }
+    kakao={maps:{LatLng:TestLatLng,Size:TestSize,Point:TestPoint,MarkerImage:TestMarkerImage,Marker:TestMarker,
+      services:{Status:{OK:'OK',ZERO_RESULT:'ZERO_RESULT'}},
+      event:{addListener(target,type,listener){target.listeners[type]=listener;testMarkerListeners.push({target,type,listener})}}
+    }};
+    state.map={getLevel:()=>4,getBounds:()=>({getSouthWest:()=>({getLng:()=>126.9,getLat:()=>37.4}),getNorthEast:()=>({getLng:()=>127.1,getLat:()=>37.6})})};
+    testCalls=[];state.placesService={categorySearch(code,callback,options){testCalls.push({code,callback,options})}};
+    testOpened=[];openPlace=place=>testOpened.push(place);
+    const refreshing=refreshVisiblePlaces();
+    const starbucks={id:'starbucks',place_name:'스타벅스 동광주DT점',category_name:'음식점 > 카페',category_group_code:'CE7',phone:'062-000-0000',address_name:'광주 북구',road_address_name:'광주 북구 길',x:'126.91',y:'37.51',place_url:'https://place.map.kakao.com/starbucks'};
+    const soup={id:'soup',place_name:'두암골설렁탕',category_name:'음식점',category_group_code:'FD6',x:'126.92',y:'37.52'};
+    testCalls.forEach((call,index)=>call.callback(index===0?[starbucks,soup]:[],index===0?'OK':'ZERO_RESULT'));
+    await refreshing;
+    const markerA=state.categoryPlaceMarkers.find(entry=>entry.place.id==='starbucks');
+    const markerB=state.categoryPlaceMarkers.find(entry=>entry.place.id==='soup');
+    markerA.marker.listeners.click();
+    markerB.marker.listeners.click();
+    return ({
+      markerCount:state.categoryPlaceMarkers.length,
+      clickable:state.categoryPlaceMarkers.every(entry=>entry.marker.clickable===true),
+      targetWidth:markerA.marker.image.size.width,
+      opened:testOpened.map(place=>place.id),
+      sameObject:testOpened[0]===markerA.place,
+      categoryGroupCode:markerA.place.categoryGroupCode
+    });
+  })()
+  `, context);
+  assert.equal(result.markerCount, 2);
+  assert.equal(result.clickable, true);
+  assert.equal(result.targetWidth, 40);
+  assert.deepEqual([...result.opened], ['starbucks', 'soup']);
+  assert.equal(result.sameObject, true);
+  assert.equal(result.categoryGroupCode, 'CE7');
+});
+
+test('category marker selection remains reliable for ten closes and opens', () => {
+  const context = loadApp();
+  const result = vm.runInContext(`
+    state.screen='map';state.visiblePlaceGeneration=7;state.visiblePlaceKey='viewport';
+    visiblePlaceKey=()=> 'viewport';
+    const placeA={id:'a',name:'A'},placeB={id:'b',name:'B'};
+    testOpened=[];openPlace=place=>{testOpened.push(place.id);state.screen='place'};
+    for(let i=0;i<10;i++){
+      state.screen='map';
+      handleCategoryMarkerClick(i%2?placeB:placeA,7,'viewport',[i%2?placeB:placeA]);
+    }
+    testOpened;
+  `, context);
+  assert.deepEqual([...result], ['a','b','a','b','a','b','a','b','a','b']);
+});
+
+test('category markers replace an open place card with one tap and one history entry', () => {
+  const context=loadApp();
+  const result=vm.runInContext(`
+    class TestLatLng { constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude} }
+    kakao={maps:{LatLng:TestLatLng}};
+    state.map={panTo(){},relayout(){}};state.visiblePlaceGeneration=8;state.visiblePlaceKey='viewport';visiblePlaceKey=()=> 'viewport';
+    testPushes=[];testReplaces=[];history={pushState(entry){testPushes.push(entry)},replaceState(entry){testReplaces.push(entry)}};
+    const places=[1,2,3].map(id=>({id:String(id),name:'Place '+id,latitude:37+id/100,longitude:127}));
+    const selected=[];renderPlaceContent=place=>selected.push(place.id);
+    for(const place of places)handleCategoryMarkerClick(place,8,'viewport',[place]);
+    ({selected,pushes:testPushes.map(entry=>entry.place.id),replaces:testReplaces.map(entry=>entry.place.id),current:state.selectedPlace.id,screen:state.screen});
+  `,context);
+  assert.deepEqual([...result.selected],['1','2','3']);
+  assert.deepEqual([...result.pushes],['1']);
+  assert.deepEqual([...result.replaces],['2','3']);
+  assert.equal(result.current,'3');
+  assert.equal(result.screen,'place');
+});
+
+test('a marker tap replaces place detail instead of being consumed as dismissal', () => {
+  const context=loadApp();
+  const result=vm.runInContext(`
+    state.visiblePlaceGeneration=5;state.visiblePlaceKey='viewport';visiblePlaceKey=()=> 'viewport';
+    state.screen='place';testBacks=0;testOpened=[];history={back(){testBacks++;state.screen='map'}};openPlace=place=>testOpened.push(place.id);
+    const placeB={id:'b'};
+    const closeResult=handleCategoryMarkerClick(placeB,5,'viewport',[placeB]);
+    ({backs:testBacks,opened:testOpened,closeResult:closeResult?.id});
+  `,context);
+  assert.equal(result.backs,0);
+  assert.deepEqual([...result.opened],['b']);
+  assert.equal(result.closeResult,'b');
+});
+
+test('stale category marker and blank base-map click cannot open a guessed place', () => {
+  const context = loadApp();
+  const result = vm.runInContext(`
+    state.screen='map';state.visiblePlaceGeneration=2;state.visiblePlaceKey='new';
+    visiblePlaceKey=()=> 'new';
+    testOpened=[];openPlace=place=>testOpened.push(place.id);
+    handleCategoryMarkerClick({id:'old'},1,'old',[{id:'old'}]);
+    state.mapClickBlockedUntil=0;
+    state.visiblePlaces=[{id:'near',latitude:100,longitude:100}];
+    state.map={getLevel:()=>4,getBounds:()=>({getSouthWest:()=>({getLng:()=>0,getLat:()=>0}),getNorthEast:()=>({getLng:()=>1,getLat:()=>1})}),getProjection:()=>({pointFromCoords:()=>({x:100,y:100})})};
+    state.visiblePlaceKey=visiblePlaceKey();
+    handleMapClick({point:{x:100,y:100}});
+    testOpened;
+  `, context);
+  assert.deepEqual([...result], []);
+});
+
+test('bounds change removes old category targets before idle refresh', () => {
+  const context=loadApp();
+  const result=vm.runInContext(`
+    testWest=126.9;visiblePlaceKey=()=>String(testWest);
+    state.visiblePlaceKey='126.9';state.visiblePlaceGeneration=4;state.visiblePlaces=[{id:'old'}];
+    testRemoved=0;state.categoryPlaceMarkers=[{marker:{setMap(map){if(map===null)testRemoved++}}}];
+    testWest=127.2;handleMapBoundsChanged();
+    ({removed:testRemoved,markers:state.categoryPlaceMarkers.length,places:state.visiblePlaces.length,key:state.visiblePlaceKey});
+  `,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{removed:1,markers:0,places:0,key:''});
+  assert.match(appSource,/addListener\(state\.map,'bounds_changed',handleMapBoundsChanged\)/);
+});
+
+test('coincident category markers offer an explicit choice instead of opening an arbitrary place', () => {
+  const context = loadApp();
+  const result = vm.runInContext(`
+    state.screen='map';state.visiblePlaceGeneration=3;state.visiblePlaceKey='viewport';
+    visiblePlaceKey=()=> 'viewport';
+    const starbucks={id:'starbucks',name:'스타벅스'},restaurant={id:'restaurant',name:'맛자랑가족사랑'};
+    testOpened=[];testChoices=[];
+    openPlace=place=>testOpened.push(place.id);
+    openCategoryPlaceChoice=places=>testChoices=places;
+    handleCategoryMarkerClick(starbucks,3,'viewport',[starbucks,restaurant]);
+    ({opened:testOpened,choices:testChoices.map(place=>place.id)});
+  `, context);
+  assert.deepEqual([...result.opened], []);
+  assert.deepEqual([...result.choices], ['starbucks','restaurant']);
+});
+
+test('blank map tap dismisses an overlapping-place chooser and its place history entry once', () => {
+  const context=loadApp();
+  const result=vm.runInContext(`
+    state.screen='place';state.categoryPlaceChoices=[{id:'a'},{id:'b'}];
+    state.mapClickBlockedUntil=0;testBacks=0;
+    history={state:{screen:'place'},back(){testBacks++;state.screen='map'}};
+    document.querySelector('#navMenu').classList.add('hidden');
+    handleMapClick({point:{x:300,y:300}});
+    ({backs:testBacks,choices:state.categoryPlaceChoices.length});
+  `,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{backs:1,choices:0});
+});
+
+test('category marker recent search stores the exact opened place', () => {
+  const context = loadApp();
+  const stored = new Map();
+  context.localStorage={getItem:key=>stored.get(key)||null,setItem:(key,value)=>stored.set(key,value)};
+  vm.runInContext(`
+    class TestLatLng { constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude} }
+    kakao={maps:{LatLng:TestLatLng}};
+    state.map={panTo(){},relayout(){}};
+    state.screen='map';state.visiblePlaceGeneration=4;state.visiblePlaceKey='viewport';visiblePlaceKey=()=> 'viewport';
+    history={pushState(){}};
+    testStarbucks={id:'starbucks',name:'스타벅스 동광주DT점',latitude:37.51,longitude:126.91};
+    handleCategoryMarkerClick(testStarbucks,4,'viewport',[testStarbucks]);
+  `, context);
+  const recent = JSON.parse(stored.get('ridemate_recent_searches'));
+  assert.equal(recent[0].place.id, 'starbucks');
+  assert.equal(recent[0].place.name, '스타벅스 동광주DT점');
 });
 
 test('route editor has one compact waypoint add button in the departure row', () => {
@@ -521,16 +741,24 @@ test('waypoint rows stay empty until a waypoint is actually selected', async () 
 test('Kakao place normalization preserves official detail fields without inventing values', () => {
   const context = loadApp();
   context.testPlace = {
-    id:'123', place_name:'Test Cafe', category_name:'Food > Cafe', phone:'02-123-4567',
+    id:'123', place_name:'Test Cafe', category_name:'Food > Cafe', category_group_code:'CE7', phone:'02-123-4567',
     road_address_name:'Road 1', address_name:'Lot 2', place_url:'https://place.map.kakao.com/123',
     x:'127.1', y:'37.5', distance:'850'
   };
   const normalized = JSON.parse(JSON.stringify(vm.runInContext('normalizeKakaoPlace(testPlace)', context)));
-  assert.deepEqual(normalized, {
-    id:'123', name:'Test Cafe', category:'Food > Cafe', address:'Road 1',
+  assert.deepEqual({
+    id:normalized.id,name:normalized.name,category:normalized.category,categoryGroupCode:normalized.categoryGroupCode,address:normalized.address,
+    roadAddress:normalized.roadAddress,lotAddress:normalized.lotAddress,placeUrl:normalized.placeUrl,
+    latitude:normalized.latitude,longitude:normalized.longitude,distance:normalized.distance,phone:normalized.phone
+  }, {
+    id:'123', name:'Test Cafe', category:'Food > Cafe', categoryGroupCode:'CE7', address:'Road 1',
     roadAddress:'Road 1', lotAddress:'Lot 2', placeUrl:'https://place.map.kakao.com/123',
     latitude:37.5, longitude:127.1, distance:850, phone:'02-123-4567'
   });
+  assert.equal(normalized.place_name,'Test Cafe');
+  assert.equal(normalized.category_group_code,'CE7');
+  assert.equal(normalized.x,'127.1');
+  assert.equal(normalized.y,'37.5');
   context.emptyPlace = {id:'empty',place_name:'Empty',x:'127',y:'37'};
   const empty = vm.runInContext('normalizeKakaoPlace(emptyPlace)', context);
   assert.equal(empty.phone, '');
@@ -597,6 +825,7 @@ test('place handle expands, collapses, and dismisses without adding history', ()
 
   handle.dispatch('pointerdown',{clientY:300});
   handle.dispatch('pointermove',{clientY:220});
+  assert.notEqual(sheet.style.getPropertyValue('--sheet-y'),'0px');
   handle.dispatch('pointerup',{clientY:220});
   assert.equal(sheet.classList.contains('place-expanded'),true);
   assert.equal(pushes,0);
@@ -614,6 +843,59 @@ test('place handle expands, collapses, and dismisses without adding history', ()
   assert.equal(pushes,0);
 });
 
+test('place sheet keeps actions fixed, uses a smaller expanded height, and exposes continuous snap CSS', () => {
+  const css=fs.readFileSync(new URL('../styles.css',import.meta.url),'utf8');
+  assert.match(css,/\.sheet\.place-detail[^}]*height:min\(58dvh,480px\)/);
+  assert.match(css,/\.detail-actions[^}]*position:sticky[^}]*bottom:0/);
+  assert.match(css,/\.place-detail-body[^}]*overflow-y:auto/);
+  const context=loadApp();
+  context.testPlace={name:'Place',category:'Cafe',address:'Road'};
+  vm.runInContext('state.screen="place";renderPlaceContent(testPlace)',context);
+  assert.match(context.document.querySelector('#sheetContent').innerHTML,/class="place-detail-body"/);
+});
+
+test('navigation place supports destination replacement, waypoint addition, and cancel', () => {
+  const context=loadApp();
+  context.testPlace={id:'new',name:'New stop',category:'Cafe',address:'Road'};
+  vm.runInContext('state.screen="navigation-place";renderNavigationPlaceContent(testPlace)',context);
+  const content=context.document.querySelector('#sheetContent').innerHTML;
+  assert.match(content,/id="changeNavDestination"/);
+  assert.match(content,/id="addNavWaypoint"/);
+  assert.match(content,/id="cancelNavPlace"/);
+});
+
+test('adding a navigation place reuses waypoints and keeps the current destination', async () => {
+  const context=loadApp();
+  const result=await vm.runInContext(`
+    const existing={id:'existing',name:'Existing'},added={id:'added',name:'Added'},destination={id:'destination',name:'Destination'};
+    state.screen='navigation-place';state.currentLocation={latitude:37,longitude:127};state.destination=destination;state.waypoints=[existing];
+    state.routes=[{routeMode:'BIKE_ONLY'}];state.selectedRoute=0;state.nav.recalculating=false;
+    testFetchArgs=null;fetchRoutes=async(a,b,waypoints)=>{testFetchArgs={a,b,waypoints};return[{routeMode:'BIKE_ONLY',route:{},totalDistance:100}]};
+    prepareRoutes=routes=>routes.map(route=>({...route,_points:[state.currentLocation,destination],_steps:[]}));
+    drawNavigationRoute=()=>{};updateNavHud=()=>{};history={back(){}};toast=()=>{};
+    addNavigationWaypoint(added).then(()=>({waypoints:state.waypoints.map(place=>place.id),destination:state.destination.id,requested:testFetchArgs.waypoints.map(place=>place.id)}));
+  `, context);
+  assert.deepEqual([...result.waypoints],['existing','added']);
+  assert.equal(result.destination,'destination');
+  assert.deepEqual([...result.requested],['existing','added']);
+});
+
+test('navigation menu has route addition, no close button, and map tap dismisses it once', () => {
+  assert.match(html,/data-nav-action="add-route"/);
+  assert.doesNotMatch(html,/id="closeNavMenu"/);
+  const context=loadApp();
+  const menu=context.document.querySelector('#navMenu');
+  menu.classList.remove('hidden');
+  const result=vm.runInContext(`
+    state.screen='navigation';testOpened=[];openPlace=place=>testOpened.push(place);
+    const returned=handleMapClick({point:{x:10,y:10}});
+    ({returned,hidden:document.querySelector('#navMenu').classList.contains('hidden'),opened:testOpened.length});
+  `,context);
+  assert.equal(result.returned,null);
+  assert.equal(result.hidden,true);
+  assert.equal(result.opened,0);
+});
+
 test('navigation destination sheet keeps its existing non-draggable behavior', () => {
   const context=loadApp();
   let backs=0;
@@ -629,10 +911,11 @@ test('navigation destination sheet keeps its existing non-draggable behavior', (
   assert.equal(backs,0);
 });
 
-test('expanded place content is scrollable and safe-area padded while map hit thresholds stay fixed', () => {
+test('expanded place content is scrollable and category selection uses native marker targets', () => {
   const css=fs.readFileSync(new URL('../styles.css',import.meta.url),'utf8');
   assert.match(css,/\.sheet\.place-detail\.place-expanded/);
   assert.match(css,/\.place-extra/);
   assert.match(css,/env\(safe-area-inset-bottom\)/);
-  assert.match(appSource,/PLACE_HIT_RADIUS_PX=28,PLACE_AMBIGUITY_PX=6/);
+  assert.match(appSource,/CATEGORY_MARKER_SIZE_PX=40,CATEGORY_COLLISION_PX=8/);
+  assert.doesNotMatch(appSource,/function handleMapClick\([^\n]+visiblePlaceHitTest/);
 });
