@@ -212,6 +212,14 @@ test('bicycle route modes stay parallel, bicycle-only, ordered, and timed', asyn
     assert.equal(output.body.performance.execution, 'parallel');
     assert.equal(output.body.performance.receivedAt, 0);
     assert.equal(Number.isFinite(output.body.performance.serverTotalMs), true);
+    assert.equal(Number.isFinite(output.body.performance.kakaoWaitingMs), true);
+    assert.equal(Number.isFinite(output.body.performance.serverProcessingMs), true);
+    assert.ok(output.body.performance.kakaoWaitingMs >= 0);
+    assert.ok(output.body.performance.serverProcessingMs >= 0);
+    assert.ok(Math.abs(
+      output.body.performance.kakaoWaitingMs + output.body.performance.serverProcessingMs
+      - output.body.performance.serverTotalMs
+    ) < 0.01);
     for (const mode of ['BIKE_ONLY','SHORTEST','ACCESSIBLE']) {
       const timing = output.body.performance.modes[mode];
       assert.equal(Number.isFinite(timing.startMs), true);

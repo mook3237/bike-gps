@@ -1,6 +1,6 @@
 export default async function handler(req,res){
- const clock=()=>globalThis.performance?.now?.()??Date.now(),requestReceived=clock(),performance={receivedAt:0,modes:{},responseReadyMs:0,serverTotalMs:0,execution:'parallel'};
- const finishPerformance=()=>{performance.responseReadyMs=clock()-requestReceived;performance.serverTotalMs=performance.responseReadyMs;return performance};
+ const clock=()=>globalThis.performance?.now?.()??Date.now(),requestReceived=clock(),performance={receivedAt:0,modes:{},kakaoWaitingMs:0,serverProcessingMs:0,responseReadyMs:0,serverTotalMs:0,execution:'parallel'};
+ const finishPerformance=()=>{performance.responseReadyMs=clock()-requestReceived;performance.serverTotalMs=performance.responseReadyMs;const timings=Object.values(performance.modes);if(timings.length){const firstStart=Math.min(...timings.map(timing=>timing.startMs)),lastEnd=Math.max(...timings.map(timing=>timing.endMs));performance.kakaoWaitingMs=Math.max(0,lastEnd-firstStart)}performance.serverProcessingMs=Math.max(0,performance.serverTotalMs-performance.kakaoWaitingMs);return performance};
  if(req.method!=='GET')return res.status(405).json({error:'Method Not Allowed'});
  const key=process.env.KAKAO_REST_API_KEY;if(!key)return res.status(500).json({error:'KAKAO_REST_API_KEY 환경변수가 없습니다.'});
  const {start_x,start_y,end_x,end_y,via_x='',via_y='',v_name=''}=req.query;if(!start_x||!start_y||!end_x||!end_y)return res.status(400).json({error:'출발/도착 좌표가 필요합니다.'});

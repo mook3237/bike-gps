@@ -509,6 +509,7 @@ test('route performance reports every requested browser and Kakao timing in cons
         SHORTEST: {startMs:1,endMs:14,durationMs:13},
         ACCESSIBLE: {startMs:1,endMs:17,durationMs:16},
       },
+      kakaoWaitingMs: 17, serverProcessingMs: 1,
       responseReadyMs: 18, serverTotalMs: 18, execution: 'parallel',
     },
   };
@@ -523,16 +524,43 @@ test('route performance reports every requested browser and Kakao timing in cons
     loadRoutes();
   `, context);
   const output = routeLogs.join('\n');
-  for (const label of ['[Route Performance]','BIKE_ONLY Kakao','SHORTEST Kakao','ACCESSIBLE Kakao','API total','Frontend processing','Map rendering','TOTAL']) {
+  for (const label of ['[Route Performance]','Route:','Straight distance','BIKE_ONLY Kakao','SHORTEST Kakao','ACCESSIBLE Kakao','Kakao waiting total','Server processing','Network/API total','Frontend processing','Map rendering','TOTAL','Largest share']) {
     assert.match(output, new RegExp(label.replace(/[\[\]]/g, '\\$&')));
   }
   const record = JSON.parse(vm.runInContext('JSON.stringify(window.__rideMateRoutePerformance.at(-1))', context));
   assert.equal(record.server.execution, 'parallel');
+  assert.ok(record.straightDistanceM > 300000 && record.straightDistanceM < 400000);
+  assert.equal(typeof record.summary.largest.label, 'string');
+  assert.equal(Number.isFinite(record.summary.largest.durationMs), true);
+  assert.equal(Number.isFinite(record.summary.largest.percent), true);
   assert.ok(record.apiRequestStart >= record.routeSearchStart);
   assert.ok(record.browserResponseReceived >= record.apiRequestStart);
   assert.ok(record.processingComplete >= record.browserResponseReceived);
   assert.ok(record.mapRenderingComplete >= record.processingComplete);
   assert.doesNotMatch(fs.readFileSync('index.html','utf8'), /Route Performance|routePerformance/);
+});
+
+test('route performance identifies the largest non-overlapping share of TOTAL', () => {
+  const { context, routeLogs } = loadApp();
+  vm.runInContext(`reportRoutePerformance({
+    type:'initial', origin:'Seoul', destination:'Busan', straightDistanceM:325000,
+    routeSearchStart:0, apiRequestStart:5, browserResponseReceived:105,
+    processingComplete:125, mapRenderingComplete:135,
+    server:{
+      execution:'parallel', receivedAt:0, kakaoWaitingMs:80, serverProcessingMs:10,
+      responseReadyMs:90, serverTotalMs:90,
+      modes:{
+        BIKE_ONLY:{startMs:1,endMs:71,durationMs:70},
+        SHORTEST:{startMs:1,endMs:81,durationMs:80},
+        ACCESSIBLE:{startMs:2,endMs:76,durationMs:74}
+      }
+    }
+  })`, context);
+  const record = JSON.parse(vm.runInContext('JSON.stringify(window.__rideMateRoutePerformance.at(-1))', context));
+  assert.equal(record.summary.largest.label, 'Network/API total');
+  assert.equal(record.summary.largest.durationMs, 100);
+  assert.ok(Math.abs(record.summary.largest.percent - (100 / 135 * 100)) < 0.01);
+  assert.match(routeLogs.join('\n'), /Largest share: Network\/API total: 100\.0 ms \(74\.1%\)/);
 });
 
 test('six: destination marker uses the selected route geometry endpoint', () => {
