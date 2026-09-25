@@ -1,7 +1,7 @@
 function norm(s=''){return String(s).replace(/\s+/g,'').toLowerCase()}
 function transit(c=''){return /(지하철|철도|기차|역사|교통|수도권전철)/.test(c)}
 function score(x,q){const n=norm(x.place_name),z=norm(q);return (n===z?100000:0)+(/역$/.test(z)&&transit(x.category_name)?20000:0)+(n.startsWith(z)?5000:0)+(n.includes(z)?1000:0)}
-function place(x){return{id:x.id,name:x.place_name,category:x.category_name||'',address:x.road_address_name||x.address_name||'',latitude:+x.y,longitude:+x.x,distance:x.distance?+x.distance:null,phone:x.phone||''}}
+function place(x){const roadAddress=x.road_address_name||'',lotAddress=x.address_name||'';return{id:x.id,name:x.place_name,category:x.category_name||'',address:roadAddress||lotAddress,roadAddress,lotAddress,placeUrl:x.place_url||'',latitude:+x.y,longitude:+x.x,distance:x.distance?+x.distance:null,phone:x.phone||''}}
 export default async function handler(req,res){
  if(req.method!=='GET')return res.status(405).json({error:'Method Not Allowed'});
  const key=process.env.KAKAO_REST_API_KEY;if(!key)return res.status(500).json({error:'KAKAO_REST_API_KEY 환경변수가 없습니다.'});

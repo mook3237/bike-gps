@@ -81,6 +81,8 @@ function runGpsSamples(samples) {
   return {
     currentSpeed: vm.runInContext('state.nav.currentSpeed', context),
     maxSpeed: vm.runInContext('state.nav.maxSpeed', context),
+    distance: vm.runInContext('state.nav.distance', context),
+    speedMoving: vm.runInContext('state.nav.speedMoving', context),
     followCalls: vm.runInContext('state.map.panCalls||0', context),
   };
 }
@@ -185,7 +187,7 @@ test('navigation keeps a fixed-size destination pin', () => {
   assert.equal(vm.runInContext("state.routeEndpointMarkers[0].content.style.width", context), '40px');
 });
 
-test('navigation start applies the current speed level', () => {
+test('navigation start discards stale speed and starts at the stopped level', () => {
   const { context } = loadApp();
   vm.runInContext(`
     state.routes=[{_steps:[]}];state.selectedRoute=0;state.routeLines=[null];state.currentLocation=null;
@@ -194,7 +196,8 @@ test('navigation start applies the current speed level', () => {
     setGpsMarker=()=>{};startWatch=()=>{};updateNavHud=()=>{};toast=()=>{};
     startNavigation();
   `, context);
-  assert.equal(vm.runInContext('state.map.level', context), 2);
+  assert.equal(vm.runInContext('state.map.level', context), 1);
+  assert.equal(vm.runInContext('state.nav.currentSpeed', context), 0);
 });
 
 test('map interaction stays unfollowed until five seconds then returns at current speed', () => {
@@ -284,6 +287,110 @@ test('stationary GPS drift and 13-16km/h spikes do not pollute current or max sp
 test('real 3-5km/h low-speed movement is eventually recognized', () => {
   const result = runGpsSamples(Array.from({length:6},(_,i)=>({timestamp:(i+1)*1000,latitude:37.5+i*.00001,longitude:127,speed:4/3.6,accuracy:5})));
   assert.ok(result.currentSpeed*3.6>=3&&result.currentSpeed*3.6<=5);
+});
+
+test('good-accuracy one-direction stationary drift does not start movement or add distance', () => {
+  const result = runGpsSamples(Array.from({length:14},(_,i)=>({
+    timestamp:(i+1)*1000,
+    latitude:37.5+i*.000004,
+    longitude:127,
+    speed:4/3.6,
+    accuracy:5,
+  })));
+  assert.equal(result.currentSpeed, 0);
+  assert.equal(result.speedMoving, false);
+  assert.equal(result.distance, 0);
+});
+
+test('confirmed 4km/h movement records speed and distance after enough evidence', () => {
+  const result = runGpsSamples(Array.from({length:14},(_,i)=>({
+    timestamp:(i+1)*1000,
+    latitude:37.5+i*.00001,
+    longitude:127,
+    speed:4/3.6,
+    accuracy:5,
+  })));
+  assert.ok(result.currentSpeed*3.6>=3&&result.currentSpeed*3.6<=5);
+  assert.equal(result.speedMoving, true);
+  assert.ok(result.distance>5);
+});
+
+test('stationary drift followed by riding becomes moving within a few fixes', () => {
+  const samples=[];
+  let latitude=37.5;
+  for(let i=0;i<8;i++){
+    samples.push({timestamp:(i+1)*1000,latitude,longitude:127,speed:4/3.6,accuracy:5});
+    latitude+=.000004;
+  }
+  for(let i=8;i<18;i++){
+    latitude+=.000045;
+    samples.push({timestamp:(i+1)*1000,latitude,longitude:127,speed:18/3.6,accuracy:5});
+  }
+  const result=runGpsSamples(samples);
+  assert.equal(result.speedMoving,true);
+  assert.ok(result.currentSpeed*3.6>=16&&result.currentSpeed*3.6<=20);
+  assert.ok(result.distance>10);
+});
+
+test('riding followed by coherent stationary drift settles at zero without drift distance', () => {
+  const {context}=loadApp();
+  vm.runInContext(`
+    let testGpsCallback;
+    navigator.geolocation.watchPosition=callback=>{testGpsCallback=callback;return 1};
+    kakao={maps:{LatLng:class {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}}};
+    setGpsMarker=()=>{};followNavigationPosition=()=>{};updateNavHud=()=>{};
+    state.screen='navigation';state.map={};startWatch();
+    let latitude=37.5;
+    for(let i=0;i<10;i++){
+      testGpsCallback({timestamp:(i+1)*1000,coords:{latitude,longitude:127,speed:18/3.6,accuracy:5,heading:null}});
+      latitude+=.000045;
+    }
+    distanceWhileRiding=state.nav.distance;
+    for(let i=10;i<24;i++){
+      latitude+=.000006;
+      testGpsCallback({timestamp:(i+1)*1000,coords:{latitude,longitude:127,speed:4/3.6,accuracy:5,heading:null}});
+    }
+    distanceAfterSettling=state.nav.distance;
+    for(let i=24;i<32;i++){
+      latitude+=.000006;
+      testGpsCallback({timestamp:(i+1)*1000,coords:{latitude,longitude:127,speed:4/3.6,accuracy:5,heading:null}});
+    }
+  `, context);
+  assert.equal(vm.runInContext('state.nav.currentSpeed',context),0);
+  assert.equal(vm.runInContext('state.nav.speedMoving',context),false);
+  assert.equal(vm.runInContext('state.nav.distance',context),vm.runInContext('distanceAfterSettling',context));
+  assert.ok(vm.runInContext('distanceAfterSettling',context)>=vm.runInContext('distanceWhileRiding',context));
+});
+
+test('pause resume and navigation watch re-entry reseed transient speed state', () => {
+  const {context}=loadApp();
+  vm.runInContext(`
+    navigator.geolocation.watchPosition=callback=>{testGpsCallback=callback;return ++testWatchId};
+    navigator.geolocation.clearWatch=()=>{};
+    testWatchId=0;
+    state.nav.currentSpeed=5;state.nav.speedMoving=true;state.nav.speedSamples=[5];
+    state.nav.lastPos={latitude:37.5,longitude:127};state.nav.lastTimestamp=1000;
+    startWatch();
+    watchReset={speed:state.nav.currentSpeed,moving:state.nav.speedMoving,samples:state.nav.speedSamples.length,lastPos:state.nav.lastPos};
+    state.nav.currentSpeed=4;state.nav.speedMoving=true;state.nav.speedSamples=[4];
+    setNavigationPaused(true,2000);
+    setNavigationPaused(false,3000);
+    resumeReset={speed:state.nav.currentSpeed,moving:state.nav.speedMoving,samples:state.nav.speedSamples.length,lastPos:state.nav.lastPos};
+  `,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(vm.runInContext('watchReset',context))),{speed:0,moving:false,samples:0,lastPos:null});
+  assert.deepEqual(JSON.parse(JSON.stringify(vm.runInContext('resumeReset',context))),{speed:0,moving:false,samples:0,lastPos:null});
+});
+
+test('a new navigation never carries the previous displayed speed', () => {
+  const {context}=loadApp();
+  vm.runInContext(`
+    state.routes=[{_steps:[]}];state.selectedRoute=0;state.routeLines=[null];
+    state.nav.currentSpeed=40/3.6;state.map={setLevel(){}};
+    renderScreen=()=>{state.screen='navigation'};clearSearchMarkers=()=>{};drawRouteEndpointMarkers=()=>{};
+    setGpsMarker=()=>{};startWatch=()=>{};updateNavHud=()=>{};toast=()=>{};followNavigationPosition=()=>{};
+    startNavigation();
+  `,context);
+  assert.equal(vm.runInContext('state.nav.currentSpeed',context),0);
 });
 
 test('normal 10-25km/h riding is reflected without heavy lag', () => {
