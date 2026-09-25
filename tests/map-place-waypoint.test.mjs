@@ -25,10 +25,21 @@ function mockResponse() {
 function loadApp(search = '', deferTimers = false) {
   const elements = new Map();
   const pendingTimers = [];
-  const makeElement = () => {
-    const classes = new Set(['hidden']);
+  const matchesSelector = (element, selector) => {
+    const dataMatch = selector.match(/^\[data-([\w-]+)(?:="([^"]+)")?\]$/);
+    if (dataMatch) {
+      const key = dataMatch[1].replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+      return element.dataset[key] != null && (dataMatch[2] == null || element.dataset[key] === dataMatch[2]);
+    }
+    return selector.startsWith('#') && element.id === selector.slice(1);
+  };
+  const makeElement = (initial = {}) => {
+    const classes = new Set(initial.classes || ['hidden']);
     const listeners = new Map();
-    return {
+    const children = [];
+    let htmlValue = '';
+    const element = {
+      id: initial.id || '', dataset: {...(initial.dataset || {})}, onclick: null,
       classList: {
         add: (...names) => names.forEach(name => classes.add(name)),
         remove: (...names) => names.forEach(name => classes.delete(name)),
@@ -42,18 +53,41 @@ function loadApp(search = '', deferTimers = false) {
       },
       addEventListener(type, listener) { listeners.set(type, listener); },
       dispatch(type, event = {}) { return listeners.get(type)?.({stopPropagation() {},preventDefault() {},pointerId:1,clientY:0,...event}); },
-      querySelectorAll() { return []; },
-      querySelector() { return makeElement(); },
+      querySelectorAll(selector) { return children.filter(child => matchesSelector(child, selector)); },
+      querySelector(selector) { return children.find(child => matchesSelector(child, selector)) || makeElement({classes:[]}); },
       setPointerCapture() {}, focus() {}, blur() {},
-      offsetHeight: 600, value: '', innerHTML: '', textContent: '',
+      getBoundingClientRect() { return {top: 100, bottom: 200, height: 100}; },
+      offsetHeight: 600, value: '', textContent: '',
     };
+    Object.defineProperty(element, 'innerHTML', {
+      get() { return htmlValue; },
+      set(value) {
+        htmlValue = String(value);
+        children.length = 0;
+        for (const match of htmlValue.matchAll(/<button\b([^>]*)>/gi)) {
+          const attributes = match[1];
+          const id = attributes.match(/\bid="([^"]+)"/)?.[1] || '';
+          const classNames = attributes.match(/\bclass="([^"]+)"/)?.[1].split(/\s+/).filter(Boolean) || [];
+          const dataset = {};
+          for (const data of attributes.matchAll(/\bdata-([\w-]+)="([^"]*)"/g)) {
+            const key = data[1].replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+            dataset[key] = data[2];
+          }
+          const child = makeElement({id, classes: classNames, dataset});
+          children.push(child);
+          if (id) elements.set(`#${id}`, child);
+        }
+      },
+    });
+    return element;
   };
+  const navActions = ['volume', 'theme', 'recalc', 'pause', 'add-route'].map(navAction => makeElement({classes:[], dataset:{navAction}}));
   const document = {
     querySelector(selector) {
       if (!elements.has(selector)) elements.set(selector, makeElement());
       return elements.get(selector);
     },
-    querySelectorAll() { return []; },
+    querySelectorAll(selector) { return selector === '[data-nav-action]' ? navActions : []; },
     createElement() { return makeElement(); },
     addEventListener() {}, body: makeElement(), documentElement: makeElement(),
   };
@@ -69,6 +103,48 @@ function loadApp(search = '', deferTimers = false) {
   context.runPendingTimers = () => pendingTimers.splice(0).forEach(fn => fn());
   vm.runInContext(appSource, context, { filename: 'app.js' });
   return context;
+}
+
+function installNavigationFlowEnvironment(context) {
+  const recentPlace={id:'added',name:'Added',latitude:37.02,longitude:127.02};
+  const stored=new Map([['ridemate_recent_searches',JSON.stringify([{query:'Added',place:recentPlace}])]]);
+  context.localStorage={getItem:key=>stored.get(key)||null,setItem:(key,value)=>stored.set(key,value)};
+  context.testPreviewRoutes=[
+    {id:'preview-a',label:'A',routeMode:'BIKE_ONLY',totalDistance:1200,totalTime:600,route:{legs:[{steps:[{properties:{guidance:'직진',distance:1200,time:600},path:{points:[[127,37],[127.02,37.02]]}}]}]}},
+    {id:'preview-b',label:'B',routeMode:'SHORTEST',totalDistance:1000,totalTime:500,route:{legs:[{steps:[{properties:{guidance:'우회전',distance:1000,time:500},path:{points:[[127,37],[127.01,37.01],[127.02,37.02]]}}]}]}}
+  ];
+  context.testRouteRequests=[];
+  context.fetch=async url=>{context.testRouteRequests.push(String(url));return{ok:true,json:async()=>({routes:context.testPreviewRoutes,performance:{}})}};
+  context.testWatchStarts=0;
+  context.navigator={geolocation:{getCurrentPosition(){},watchPosition(){context.testWatchStarts++;return 999},clearWatch(){}}};
+  vm.runInContext(`
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    class TestBounds {constructor(){this.points=[]}extend(point){this.points.push(point)}isEmpty(){return this.points.length===0}}
+    class TestPolyline {constructor(options){Object.assign(this,options);testPolylines.push(this)}setMap(map){this.map=map}setOptions(options){Object.assign(this,options)}setPath(path){this.path=path}}
+    class TestOverlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setPosition(position){this.position=position}}
+    class TestMarker {constructor(options){Object.assign(this,options);this.listeners={}}setMap(map){this.map=map}}
+    class TestMarkerImage {constructor(source,size,options){Object.assign(this,{source,size,options})}}
+    class TestSize {constructor(width,height){Object.assign(this,{width,height})}}
+    class TestPoint {constructor(x,y){Object.assign(this,{x,y})}}
+    testPolylines=[];
+    kakao={maps:{LatLng:TestLatLng,LatLngBounds:TestBounds,Polyline:TestPolyline,CustomOverlay:TestOverlay,Marker:TestMarker,MarkerImage:TestMarkerImage,Size:TestSize,Point:TestPoint,event:{addListener(target,type,listener){target.listeners[type]=listener}}}};
+    testOrigin={id:'origin',name:'Current',latitude:37,longitude:127};
+    testExisting={id:'existing',name:'Existing',latitude:37.01,longitude:127.01};
+    testDestination={id:'destination',name:'Destination',latitude:37.03,longitude:127.03};
+    testOriginalRoute={id:'original',routeMode:'BIKE_ONLY',totalDistance:1500,totalTime:700,_points:[testOrigin,testDestination],_steps:[{guidance:'기존 안내',_startAlong:0,_endAlong:1500,points:[testOrigin,testDestination]}]};
+    state.currentLocation=testOrigin;state.waypoints=[testExisting];state.destination=testDestination;state.routes=[testOriginalRoute];state.selectedRoute=0;
+    state.nav.watchId=88;state.nav.steps=testOriginalRoute._steps;state.nav.progressDistance=300;state.nav.currentStep=0;state.nav.follow=true;
+    state.map={getLevel:()=>4,getCenter:()=>testOrigin,getBounds:()=>({getSouthWest:()=>({getLng:()=>126.9,getLat:()=>36.9}),getNorthEast:()=>({getLng:()=>127.1,getLat:()=>37.1})}),getProjection:()=>({pointFromCoords:point=>({x:point.longitude*1000,y:point.latitude*1000})}),setLevel(){},setCenter(){},setBounds(){},relayout(){},panTo(){}};
+    testEntries=[{state:{screen:'navigation'},hash:'#navigation'}];testHistoryIndex=0;
+    history={
+      get state(){return testEntries[testHistoryIndex].state},
+      pushState(entry,title,hash){testEntries.splice(testHistoryIndex+1);testEntries.push({state:entry,hash});testHistoryIndex++;window.location.hash=hash},
+      replaceState(entry,title,hash){testEntries[testHistoryIndex]={state:entry,hash};window.location.hash=hash},
+      back(){if(testHistoryIndex>0)testHistoryIndex--;window.location.hash=testEntries[testHistoryIndex].hash;handlePopState({state:this.state})}
+    };
+    renderScreen('navigation',false);
+  `,context);
+  return {recentPlace};
 }
 
 test('place debug panel is enabled only by the exact debug query', () => {
@@ -505,12 +581,14 @@ test('first-use place spelling correction handles common Hangul typos conservati
   const result=vm.runInContext(`({
     pork:findSearchCorrection('삽겹살',[]),
     coffee:findSearchCorrection('스타벅수',[]),
+    bicycle:findSearchCorrection('쟈전거',[]),
     correct:findSearchCorrection('삼겹살',[]),
     special:findSearchCorrection('삽겹살연구소',[{name:'삽겹살연구소',category:'음식점'}]),
     ambiguous:findSearchCorrection('가바다',[],['가나다','가마다'])
   })`,context);
   assert.equal(result.pork?.term,'삼겹살');
   assert.equal(result.coffee?.term,'스타벅스');
+  assert.equal(result.bicycle?.term,'자전거');
   assert.equal(result.correct,null);
   assert.equal(result.special,null);
   assert.equal(result.ambiguous,null);
@@ -579,6 +657,7 @@ test('category markers keep a one-to-one place object and never run nearest-plac
       markerCount:state.categoryPlaceMarkers.length,
       clickable:state.categoryPlaceMarkers.every(entry=>entry.marker.clickable===true),
       targetWidth:markerA.marker.image.size.width,
+      markerImage:decodeURIComponent(markerA.marker.image.src),
       opened:testOpened.map(place=>place.id),
       sameObject:testOpened[0]===markerA.place,
       categoryGroupCode:markerA.place.categoryGroupCode
@@ -588,6 +667,8 @@ test('category markers keep a one-to-one place object and never run nearest-plac
   assert.equal(result.markerCount, 2);
   assert.equal(result.clickable, true);
   assert.equal(result.targetWidth, 40);
+  assert.match(result.markerImage,/fill="transparent"/);
+  assert.doesNotMatch(result.markerImage,/#0878ee|<circle/);
   assert.deepEqual([...result.opened], ['starbucks', 'soup']);
   assert.equal(result.sameObject, true);
   assert.equal(result.categoryGroupCode, 'CE7');
@@ -699,6 +780,20 @@ test('blank map tap dismisses an overlapping-place chooser and its place history
     ({backs:testBacks,choices:state.categoryPlaceChoices.length});
   `,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{backs:1,choices:0});
+});
+
+test('blank navigation map tap dismisses an overlapping-place chooser without leaving navigation', () => {
+  const context=loadApp();
+  const result=vm.runInContext(`
+    state.screen='navigation';state.categoryPlaceChoices=[{id:'a'},{id:'b'}];
+    state.mapClickBlockedUntil=0;testBacks=0;
+    history={state:{screen:'navigation'},back(){testBacks++}};
+    document.querySelector('#navMenu').classList.add('hidden');
+    document.querySelector('#sheet').classList.remove('hidden');
+    handleMapClick({point:{x:300,y:300}});
+    ({backs:testBacks,choices:state.categoryPlaceChoices.length,sheetHidden:document.querySelector('#sheet').classList.contains('hidden'),screen:state.screen});
+  `,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{backs:0,choices:0,sheetHidden:true,screen:'navigation'});
 });
 
 test('category marker recent search stores the exact opened place', () => {
@@ -822,10 +917,11 @@ test('place handle expands, collapses, and dismisses without adding history', ()
   vm.runInContext('state.screen="place";renderPlaceContent(testPlace)',context);
   const handle=context.document.querySelector('#sheetHandle');
   const sheet=context.document.querySelector('#sheet');
+  const compactHeight=sheet.style.getPropertyValue('--place-sheet-height');
 
   handle.dispatch('pointerdown',{clientY:300});
   handle.dispatch('pointermove',{clientY:220});
-  assert.notEqual(sheet.style.getPropertyValue('--sheet-y'),'0px');
+  assert.notEqual(sheet.style.getPropertyValue('--place-sheet-height'),compactHeight);
   handle.dispatch('pointerup',{clientY:220});
   assert.equal(sheet.classList.contains('place-expanded'),true);
   assert.equal(pushes,0);
@@ -843,41 +939,49 @@ test('place handle expands, collapses, and dismisses without adding history', ()
   assert.equal(pushes,0);
 });
 
-test('place sheet keeps actions fixed, uses a smaller expanded height, and exposes continuous snap CSS', () => {
+test('collapsed place sheet contains basic info and actions without an inverse-transform hack', () => {
   const css=fs.readFileSync(new URL('../styles.css',import.meta.url),'utf8');
-  assert.match(css,/\.sheet\.place-detail[^}]*height:min\(58dvh,480px\)/);
-  assert.match(css,/\.detail-actions[^}]*position:sticky[^}]*bottom:0/);
+  assert.match(css,/\.sheet\.place-detail[^}]*height:var\(--place-sheet-height/);
+  assert.doesNotMatch(css,/detail-actions[^}]*translateY|detail-actions[^}]*--sheet-y/);
   assert.match(css,/\.place-detail-body[^}]*overflow-y:auto/);
   const context=loadApp();
   context.testPlace={name:'Place',category:'Cafe',address:'Road'};
-  vm.runInContext('state.screen="place";renderPlaceContent(testPlace)',context);
-  assert.match(context.document.querySelector('#sheetContent').innerHTML,/class="place-detail-body"/);
+  const result=vm.runInContext(`
+    state.screen='place';renderPlaceContent(testPlace);
+    ({height:parseFloat(document.querySelector('#sheet').style.getPropertyValue('--place-sheet-height')),html:document.querySelector('#sheetContent').innerHTML});
+  `,context);
+  assert.ok(result.height>=260);
+  assert.match(result.html,/class="place-detail-body"/);
+  assert.match(result.html,/id="setStart"/);
+  assert.match(result.html,/id="setEnd"/);
 });
 
-test('navigation place supports destination replacement, waypoint addition, and cancel', () => {
+test('navigation place exposes only destination replacement and route addition', () => {
   const context=loadApp();
   context.testPlace={id:'new',name:'New stop',category:'Cafe',address:'Road'};
   vm.runInContext('state.screen="navigation-place";renderNavigationPlaceContent(testPlace)',context);
   const content=context.document.querySelector('#sheetContent').innerHTML;
   assert.match(content,/id="changeNavDestination"/);
   assert.match(content,/id="addNavWaypoint"/);
-  assert.match(content,/id="cancelNavPlace"/);
+  assert.doesNotMatch(content,/id="cancelNavPlace"|>취소</);
 });
 
-test('adding a navigation place reuses waypoints and keeps the current destination', async () => {
+test('navigation category markers open and replace exact place cards with one tap', () => {
   const context=loadApp();
-  const result=await vm.runInContext(`
-    const existing={id:'existing',name:'Existing'},added={id:'added',name:'Added'},destination={id:'destination',name:'Destination'};
-    state.screen='navigation-place';state.currentLocation={latitude:37,longitude:127};state.destination=destination;state.waypoints=[existing];
-    state.routes=[{routeMode:'BIKE_ONLY'}];state.selectedRoute=0;state.nav.recalculating=false;
-    testFetchArgs=null;fetchRoutes=async(a,b,waypoints)=>{testFetchArgs={a,b,waypoints};return[{routeMode:'BIKE_ONLY',route:{},totalDistance:100}]};
-    prepareRoutes=routes=>routes.map(route=>({...route,_points:[state.currentLocation,destination],_steps:[]}));
-    drawNavigationRoute=()=>{};updateNavHud=()=>{};history={back(){}};toast=()=>{};
-    addNavigationWaypoint(added).then(()=>({waypoints:state.waypoints.map(place=>place.id),destination:state.destination.id,requested:testFetchArgs.waypoints.map(place=>place.id)}));
-  `, context);
-  assert.deepEqual([...result.waypoints],['existing','added']);
-  assert.equal(result.destination,'destination');
-  assert.deepEqual([...result.requested],['existing','added']);
+  const result=vm.runInContext(`
+    state.screen='navigation';state.visiblePlaceGeneration=9;state.visiblePlaceKey='viewport';visiblePlaceKey=()=> 'viewport';
+    state.map={relayout(){}};testPushes=[];testReplaces=[];testCards=[];
+    history={pushState(entry){testPushes.push(entry)},replaceState(entry){testReplaces.push(entry)}};
+    renderNavigationPlaceContent=place=>testCards.push(place.id);
+    const first={id:'one',name:'One'},second={id:'two',name:'Two'};
+    handleCategoryMarkerClick(first,9,'viewport',[first]);
+    handleCategoryMarkerClick(second,9,'viewport',[second]);
+    ({cards:testCards,pushes:testPushes.map(x=>x.place?.id),replaces:testReplaces.map(x=>x.place?.id),screen:state.screen});
+  `,context);
+  assert.deepEqual([...result.cards],['one','two']);
+  assert.deepEqual([...result.pushes],['one']);
+  assert.deepEqual([...result.replaces],['two']);
+  assert.equal(result.screen,'navigation-place');
 });
 
 test('navigation menu has route addition, no close button, and map tap dismisses it once', () => {
@@ -894,9 +998,10 @@ test('navigation menu has route addition, no close button, and map tap dismisses
   assert.equal(result.returned,null);
   assert.equal(result.hidden,true);
   assert.equal(result.opened,0);
+  assert.match(appSource,/a==='add-route'[^}]+openNavigationSearch\('add-waypoint'\)/);
 });
 
-test('navigation destination sheet keeps its existing non-draggable behavior', () => {
+test('navigation place sheet supports the same continuous expansion as a normal place', () => {
   const context=loadApp();
   let backs=0;
   context.history={pushState(){},back(){backs++}};
@@ -907,8 +1012,222 @@ test('navigation destination sheet keeps its existing non-draggable behavior', (
   handle.dispatch('pointerdown',{clientY:300});
   handle.dispatch('pointermove',{clientY:200});
   handle.dispatch('pointerup',{clientY:200});
-  assert.equal(sheet.classList.contains('place-expanded'),false);
+  assert.equal(sheet.classList.contains('place-expanded'),true);
   assert.equal(backs,0);
+});
+
+test('navigation add-route search selection calculates a pending route and opens reusable overview', async () => {
+  const context=loadApp();
+  const result=await vm.runInContext(`(async()=>{
+    const origin={id:'origin',name:'Current',latitude:37,longitude:127},existing={id:'existing',name:'Existing'},added={id:'added',name:'Added'},destination={id:'destination',name:'Destination'};
+    const originalRoute={id:'original',routeMode:'BIKE_ONLY',_steps:[{guidance:'old'}]},previewRoute={id:'preview',routeMode:'BIKE_ONLY',route:{},totalDistance:100};
+    state.screen='navigation';state.currentLocation=origin;state.destination=destination;state.waypoints=[existing];state.routes=[originalRoute];state.selectedRoute=0;
+    state.map={getLevel:()=>4,getCenter:()=>origin,relayout(){}};state.nav.watchId=77;state.nav.progressDistance=321;
+    testFetch=null;testDraws=0;testCards=0;
+    fetchRoutes=async(a,b,waypoints)=>{testFetch={a,b,waypoints};return[previewRoute]};
+    prepareRoutes=routes=>routes.map(route=>({...route,_points:[origin,added,destination],_steps:[{guidance:'new'}]}));
+    drawRoutes=()=>{testDraws++};renderRouteCards=()=>{testCards++};updateRouteFields=()=>{};finishRoutePerformance=()=>{};setGpsMarker=()=>{};
+    history={pushState(){},replaceState(){}};
+    openNavigationSearch('add-waypoint');
+    await choosePlace(added);
+    return {mode:state.navigationSearchMode,screen:state.screen,pending:state.navigationRouteDraft?.place.id,confirmed:state.waypoints.map(x=>x.id),requested:testFetch.waypoints.map(x=>x.id),draws:testDraws,cards:testCards,startHidden:document.querySelector('#startNavBtn').classList.contains('hidden'),cancelHidden:document.querySelector('#cancelRoutePreviewBtn').classList.contains('hidden')};
+  })()`,context);
+  assert.equal(result.screen,'route');
+  assert.equal(result.pending,'added');
+  assert.deepEqual([...result.confirmed],['existing']);
+  assert.deepEqual([...result.requested],['existing','added']);
+  assert.equal(result.draws,1);
+  assert.equal(result.cards,1);
+  assert.equal(result.startHidden,false);
+  assert.equal(result.cancelHidden,false);
+});
+
+test('navigation menu add-route flows through recent place, rendered route selection, and start guidance', async () => {
+  const context=loadApp();
+  const {recentPlace}=installNavigationFlowEnvironment(context);
+  const navMenuButton=context.document.querySelector('#navMenuBtn');
+  navMenuButton.onclick();
+  const addRouteButton=context.document.querySelectorAll('[data-nav-action]').find(button=>button.dataset.navAction==='add-route');
+  assert.ok(addRouteButton,'navigation add-route action must be wired');
+  await addRouteButton.onclick();
+  assert.equal(vm.runInContext('state.screen',context),'search');
+  assert.equal(vm.runInContext('state.navigationSearchMode',context),'add-waypoint');
+
+  const recentButton=context.document.querySelector('#recentSearches').querySelectorAll('[data-recent]')[0];
+  assert.ok(recentButton,'recent place must be rendered');
+  recentButton.onclick();
+  await new Promise(resolve=>setImmediate(resolve));
+
+  assert.equal(vm.runInContext('state.navigationRouteDraft.place.id',context),recentPlace.id);
+  assert.equal(vm.runInContext('state.screen',context),'route');
+  assert.equal(context.document.querySelector('#routeCards').classList.contains('hidden'),false);
+  const routeButtons=context.document.querySelector('#routeCards').querySelectorAll('[data-i]');
+  assert.equal(routeButtons.length,2);
+  routeButtons[1].onclick();
+  context.document.querySelector('#startNavBtn').onclick();
+
+  const result=vm.runInContext(`({screen:state.screen,waypoints:state.waypoints.map(place=>place.id),selectedRoute:state.selectedRoute,route:state.routes[state.selectedRoute].id,draft:state.navigationRouteDraft,watch:state.nav.watchId})`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'navigation',waypoints:['existing','added'],selectedRoute:1,route:'preview-b',draft:null,watch:88});
+  assert.equal(context.testWatchStarts,0);
+  assert.equal(context.testRouteRequests.length,1);
+});
+
+test('navigation menu add-route cancel restores the live navigation session through rendered UI', async () => {
+  const context=loadApp();
+  installNavigationFlowEnvironment(context);
+  vm.runInContext(`
+    testOriginalRoutes=state.routes;testOriginalRoute=state.routes[0];testOriginalWaypoints=state.waypoints;testOriginalDestination=state.destination;
+    testOriginalSteps=state.nav.steps;testOriginalProgress=state.nav.progressDistance;testOriginalStep=state.nav.currentStep;
+    testOriginalFollow=state.nav.follow;testOriginalWatch=state.nav.watchId;
+  `,context);
+
+  context.document.querySelector('#navMenuBtn').onclick();
+  const addRouteButton=context.document.querySelectorAll('[data-nav-action]').find(button=>button.dataset.navAction==='add-route');
+  await addRouteButton.onclick();
+  context.document.querySelector('#recentSearches').querySelectorAll('[data-recent]')[0].onclick();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(vm.runInContext('state.screen',context),'route');
+
+  vm.runInContext(`testLiveLocation={id:'live-after-preview',name:'Live',latitude:37.0001,longitude:127.0001};state.currentLocation=testLiveLocation`,context);
+  context.document.querySelector('#cancelRoutePreviewBtn').onclick();
+
+  const result=vm.runInContext(`({
+    screen:state.screen,sameRoutes:state.routes===testOriginalRoutes,sameRoute:state.routes[0]===testOriginalRoute,selected:state.selectedRoute,
+    sameWaypoints:state.waypoints===testOriginalWaypoints,waypoints:state.waypoints.map(place=>place.id),sameDestination:state.destination===testOriginalDestination,
+    progress:state.nav.progressDistance,currentStep:state.nav.currentStep,sameSteps:state.nav.steps===testOriginalSteps,follow:state.nav.follow,
+    watch:state.nav.watchId,sameLiveLocation:state.currentLocation===testLiveLocation,draft:state.navigationRouteDraft,
+    hud:document.querySelector('#turnText').textContent,routeRendered:!!state.routeLines[state.selectedRoute]
+  })`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    screen:'navigation',sameRoutes:true,sameRoute:true,selected:0,sameWaypoints:true,waypoints:['existing'],sameDestination:true,
+    progress:300,currentStep:0,sameSteps:true,follow:true,watch:88,sameLiveLocation:true,draft:null,hud:'직진',routeRendered:true
+  });
+  assert.equal(context.testWatchStarts,0);
+});
+
+test('navigation category marker card adds a selected route through actual marker and button events', async () => {
+  const context=loadApp();
+  installNavigationFlowEnvironment(context);
+  context.testMarkerPlace={id:'marker-stop',name:'Marker Stop',category:'Cafe',address:'Road',latitude:37.015,longitude:127.015};
+  vm.runInContext(`
+    state.visiblePlaceGeneration=12;state.visiblePlaceKey=visiblePlaceKey();
+    renderCategoryPlaceMarkers([testMarkerPlace],12,state.visiblePlaceKey);
+    state.categoryPlaceMarkers[0].marker.listeners.click();
+  `,context);
+  assert.equal(vm.runInContext('state.screen',context),'navigation-place');
+  assert.equal(vm.runInContext('state.selectedPlace===testMarkerPlace',context),true);
+
+  const addButton=context.document.querySelector('#addNavWaypoint');
+  assert.ok(addButton?.onclick,'navigation place add button must be rendered and wired');
+  addButton.onclick();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(vm.runInContext('state.navigationRouteDraft.place===testMarkerPlace',context),true);
+  const routeButtons=context.document.querySelector('#routeCards').querySelectorAll('[data-i]');
+  routeButtons[1].onclick();
+  context.document.querySelector('#startNavBtn').onclick();
+
+  const result=vm.runInContext(`({screen:state.screen,waypoints:state.waypoints.map(place=>place.id),route:state.routes[state.selectedRoute].id,draft:state.navigationRouteDraft})`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'navigation',waypoints:['existing','marker-stop'],route:'preview-b',draft:null});
+  assert.equal(context.testWatchStarts,0);
+});
+
+test('navigation category marker card cancel returns to the unchanged live navigation through UI', async () => {
+  const context=loadApp();
+  installNavigationFlowEnvironment(context);
+  context.testMarkerPlace={id:'marker-cancel',name:'Marker Cancel',category:'Cafe',address:'Road',latitude:37.016,longitude:127.016};
+  vm.runInContext(`
+    testOriginalRoutes=state.routes;testOriginalWaypoints=state.waypoints;testOriginalDestination=state.destination;testOriginalSteps=state.nav.steps;
+    state.visiblePlaceGeneration=13;state.visiblePlaceKey=visiblePlaceKey();
+    renderCategoryPlaceMarkers([testMarkerPlace],13,state.visiblePlaceKey);
+    state.categoryPlaceMarkers[0].marker.listeners.click();
+  `,context);
+  context.document.querySelector('#addNavWaypoint').onclick();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(vm.runInContext('state.screen',context),'route');
+  vm.runInContext(`testMarkerLive={id:'marker-live',latitude:37.0002,longitude:127.0002};state.currentLocation=testMarkerLive`,context);
+  context.document.querySelector('#cancelRoutePreviewBtn').onclick();
+
+  const result=vm.runInContext(`({
+    screen:state.screen,sameRoutes:state.routes===testOriginalRoutes,selected:state.selectedRoute,
+    sameWaypoints:state.waypoints===testOriginalWaypoints,waypoints:state.waypoints.map(place=>place.id),sameDestination:state.destination===testOriginalDestination,
+    progress:state.nav.progressDistance,currentStep:state.nav.currentStep,sameSteps:state.nav.steps===testOriginalSteps,follow:state.nav.follow,
+    watch:state.nav.watchId,sameLive:state.currentLocation===testMarkerLive,draft:state.navigationRouteDraft,
+    hud:document.querySelector('#turnText').textContent,routeRendered:!!state.routeLines[state.selectedRoute]
+  })`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    screen:'navigation',sameRoutes:true,selected:0,sameWaypoints:true,waypoints:['existing'],sameDestination:true,
+    progress:300,currentStep:0,sameSteps:true,follow:true,watch:88,sameLive:true,draft:null,hud:'직진',routeRendered:true
+  });
+  assert.equal(context.testWatchStarts,0);
+});
+
+test('navigation place actions use the same pending preview flow for waypoint and destination', () => {
+  const context=loadApp();
+  context.testPlace={id:'new',name:'New',category:'Cafe',address:'Road'};
+  const add=context.document.querySelector('#addNavWaypoint'),change=context.document.querySelector('#changeNavDestination');
+  const result=vm.runInContext(`
+    testDrafts=[];beginNavigationRoutePreview=(kind,place)=>testDrafts.push({kind,id:place.id});
+    state.screen='navigation-place';renderNavigationPlaceContent(testPlace);
+    document.querySelector('#addNavWaypoint').onclick();
+    document.querySelector('#changeNavDestination').onclick();
+    testDrafts;
+  `,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),[{kind:'waypoint',id:'new'},{kind:'destination',id:'new'}]);
+});
+
+test('confirming a navigation route preview is the only point that commits waypoint and route', () => {
+  const context=loadApp();
+  const result=vm.runInContext(`
+    const existing={id:'existing'},added={id:'added'},destination={id:'destination'},original={id:'original'},preview={id:'preview',_steps:[{guidance:'new'}]};
+    state.screen='route';state.waypoints=[existing];state.destination=destination;state.routes=[preview];state.selectedRoute=0;state.nav.watchId=71;state.nav.progressDistance=450;
+    state.navigationRouteDraft={kind:'waypoint',place:added,waypoints:[existing,added],destination,routes:[preview],selectedRoute:0,original:{routes:[original],selectedRoute:0}};
+    testWatchStarts=0;startWatch=()=>{testWatchStarts++};drawNavigationRoute=()=>{};updateNavHud=()=>{};renderScreen=screen=>{state.screen=screen};history={replaceState(){}};
+    confirmNavigationRoutePreview();
+    ({waypoints:state.waypoints.map(x=>x.id),route:state.routes[0].id,steps:state.nav.steps[0].guidance,progress:state.nav.progressDistance,watch:state.nav.watchId,watchStarts:testWatchStarts,draft:state.navigationRouteDraft,screen:state.screen});
+  `,context);
+  assert.deepEqual([...result.waypoints],['existing','added']);
+  assert.equal(result.route,'preview');
+  assert.equal(result.steps,'new');
+  assert.equal(result.progress,0);
+  assert.equal(result.watch,71);
+  assert.equal(result.watchStarts,0);
+  assert.equal(result.draft,null);
+  assert.equal(result.screen,'navigation');
+});
+
+test('confirming a preview commits the route candidate selected in the overview', () => {
+  const context=loadApp();
+  const result=vm.runInContext(`
+    const existing={id:'existing'},added={id:'added'},destination={id:'destination'},original={id:'original'};
+    const first={id:'preview-first',_steps:[]},second={id:'preview-second',_steps:[{guidance:'selected'}]};
+    state.screen='route';state.waypoints=[existing];state.destination=destination;state.routes=[first,second];state.selectedRoute=0;
+    state.routeLines=[{setOptions(){}},{setOptions(){}}];
+    state.navigationRouteDraft={kind:'waypoint',place:added,waypoints:[existing,added],destination,routes:[first,second],selectedRoute:0,original:{routes:[original],selectedRoute:0,follow:true}};
+    drawRouteEndpointMarkers=()=>{};fitSelectedRoute=()=>{};renderRouteCards=()=>{};
+    selectRoute(1);
+    const selectedInDraft=state.navigationRouteDraft.selectedRoute;
+    drawNavigationRoute=()=>{};updateNavHud=()=>{};renderScreen=screen=>{state.screen=screen};history={replaceState(){}};
+    confirmNavigationRoutePreview();
+    ({selectedInDraft,selectedRoute:state.selectedRoute,route:state.routes[state.selectedRoute].id,steps:state.nav.steps.map(step=>step.guidance)});
+  `,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{selectedInDraft:1,selectedRoute:1,route:'preview-second',steps:['selected']});
+});
+
+test('cancelling preview restores confirmed navigation context without rewinding live GPS or restarting watch', async () => {
+  const context=loadApp();
+  const result=await vm.runInContext(`(async()=>{
+    const origin={id:'live-before',latitude:37,longitude:127},liveAfter={id:'live-after',latitude:37.1,longitude:127.1},existing={id:'existing'},added={id:'added'},destination={id:'destination'},original={id:'original',routeMode:'BIKE_ONLY',_steps:[{guidance:'old'}]},preview={id:'preview',routeMode:'BIKE_ONLY',route:{},totalDistance:100};
+    state.screen='navigation-place';state.currentLocation=origin;state.waypoints=[existing];state.destination=destination;state.routes=[original];state.selectedRoute=0;
+    state.nav.watchId=88;state.nav.progressDistance=777;state.nav.currentStep=4;state.nav.steps=original._steps;state.nav.follow=false;state.nav.heading=123;
+    const navIdentity=state.nav,stepsIdentity=state.nav.steps,waypointsIdentity=state.waypoints;
+    testWatchStarts=0;startWatch=()=>{testWatchStarts++};fetchRoutes=async()=>[preview];prepareRoutes=routes=>routes.map(route=>({...route,_points:[origin,added,destination],_steps:[{guidance:'new'}]}));
+    testNavigationDraws=0;drawRoutes=()=>{};renderRouteCards=()=>{};updateRouteFields=()=>{};drawNavigationRoute=()=>{testNavigationDraws++};drawRouteEndpointMarkers=()=>{};updateNavHud=()=>{};setGpsMarker=()=>{};finishRoutePerformance=()=>{};renderScreen=screen=>{state.screen=screen};history={replaceState(){},back(){handlePopState({state:{screen:'navigation'}})}};
+    await beginNavigationRoutePreview('waypoint',added);
+    state.currentLocation=liveAfter;
+    cancelNavigationRoutePreview();
+    return {sameNav:state.nav===navIdentity,sameSteps:state.nav.steps===stepsIdentity,progress:state.nav.progressDistance,currentStep:state.nav.currentStep,follow:state.nav.follow,heading:state.nav.heading,watch:state.nav.watchId,watchStarts:testWatchStarts,sameWaypoints:state.waypoints===waypointsIdentity,waypoints:state.waypoints.map(x=>x.id),destination:state.destination.id,route:state.routes[0].id,selected:state.selectedRoute,gps:state.currentLocation.id,draft:state.navigationRouteDraft,screen:state.screen,navigationDraws:testNavigationDraws};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{sameNav:true,sameSteps:true,progress:777,currentStep:4,follow:false,heading:123,watch:88,watchStarts:0,sameWaypoints:true,waypoints:['existing'],destination:'destination',route:'original',selected:0,gps:'live-after',draft:null,screen:'navigation',navigationDraws:1});
 });
 
 test('expanded place content is scrollable and category selection uses native marker targets', () => {

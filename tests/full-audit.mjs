@@ -110,13 +110,22 @@ await check('adjacent duplicate geometry points are removed', () => {
   assert.equal(extractPoints({ points: [[127.1, 37.1], [127.1, 37.1]] }).length, 1);
 });
 await check('navigation progress uses cumulative distance', () => {
-  const c = functions(['hav', 'nearestProgress']);
+  const c = functions(['hav', 'bearing', 'projectOnRoute']);
   const p = [{ latitude: 0, longitude: 0 }, { latitude: 0, longitude: 0.001 }, { latitude: 0, longitude: 1 }];
-  assert.ok(Math.abs(c.nearestProgress(p, p[1]) - 0.001) < 1e-9);
+  const projection = c.projectOnRoute(p, p[1]);
+  const firstSegment = c.hav(p[0], p[1]);
+  const total = c.hav(p[0], p[1]) + c.hav(p[1], p[2]);
+  assert.ok(Math.abs(projection.alongDistance - firstSegment) < 1e-6);
+  assert.ok(Math.abs(projection.totalDistance - total) < 1e-6);
+  assert.ok(Math.abs(projection.progress - firstSegment / total) < 1e-9);
 });
 await check('navigation progress handles missing positions', () => {
-  const c = functions(['hav', 'nearestProgress']);
-  assert.equal(c.nearestProgress([], null), 0);
+  const c = functions(['hav', 'bearing', 'projectOnRoute']);
+  const projection = c.projectOnRoute([], null);
+  assert.equal(projection.progress, 0);
+  assert.equal(projection.alongDistance, 0);
+  assert.equal(projection.totalDistance, 0);
+  assert.equal(projection.offRouteDistance, Infinity);
 });
 await check('history restores result content', () => {
   const calls = [];
