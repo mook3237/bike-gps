@@ -25,6 +25,8 @@ function mockResponse() {
 function loadApp(search = '', deferTimers = false) {
   const elements = new Map();
   const pendingTimers = [];
+  const cancelledTimers = new Set();
+  let nextTimerId = 1;
   const matchesSelector = (element, selector) => {
     const dataMatch = selector.match(/^\[data-([\w-]+)(?:="([^"]+)")?\]$/);
     if (dataMatch) {
@@ -94,13 +96,13 @@ function loadApp(search = '', deferTimers = false) {
   const context = vm.createContext({
     console, document, localStorage: { getItem() { return null; }, setItem() {} },
     AbortController, URLSearchParams, innerHeight: 800,
-    setTimeout(fn) { if (typeof fn !== 'function') return 1; if (deferTimers) pendingTimers.push(fn); else fn(); return pendingTimers.length || 1; }, clearTimeout() {},
+    setTimeout(fn) { if (typeof fn !== 'function') return 1; const id=nextTimerId++; if (deferTimers) pendingTimers.push({id,fn}); else fn(); return id; }, clearTimeout(id) { cancelledTimers.add(id); },
     history: { pushState() {}, back() {} },
     navigator: { geolocation: { getCurrentPosition() {}, watchPosition() { return 1; }, clearWatch() {} } },
     fetch: async () => ({ ok: false, json: async () => ({ error: 'test' }) }),
   });
   context.window = { addEventListener() {}, visualViewport: null, location: { search, hash: '' } };
-  context.runPendingTimers = () => pendingTimers.splice(0).forEach(fn => fn());
+  context.runPendingTimers = () => pendingTimers.splice(0).forEach(timer => { if (!cancelledTimers.has(timer.id)) timer.fn(); });
   vm.runInContext(appSource, context, { filename: 'app.js' });
   return context;
 }
@@ -322,11 +324,37 @@ test('idle refreshes after map movement or zoom and programmatic fitting does no
   assert.equal(context.document.querySelector('#searchHereBtn').classList.contains('hidden'), false);
 });
 
-test('map click handler never invokes the legacy nearest-place hit test', () => {
-  assert.doesNotMatch(appSource,/function handleMapClick\([^\n]+visiblePlaceHitTest/);
+test('map click handler evaluates the existing unambiguous POI hit test before address fallback', () => {
+  assert.match(appSource,/function handleMapClick\([^\n]+visiblePlaceHitTest/);
 });
 
-test('a general map tap reverse geocodes and opens the exact coordinate in the existing place card', () => {
+test('an unambiguous cached POI hit opens the exact business instead of an address card', () => {
+  const context = loadApp();
+  const result = vm.runInContext(`
+    state.screen='map';state.mapClickBlockedUntil=0;
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    testGeocodeRequests=0;testOpened=null;
+    class TestGeocoder {coord2Address(){testGeocodeRequests++}}
+    kakao={maps:{LatLng:TestLatLng,services:{Geocoder:TestGeocoder,Status:{OK:'OK'}}}};
+    state.map={
+      getLevel:()=>4,
+      getBounds:()=>({getSouthWest:()=>({getLng:()=>126.9,getLat:()=>37.4}),getNorthEast:()=>({getLng:()=>127.1,getLat:()=>37.6})}),
+      getProjection:()=>({containerPointFromCoords:()=>({x:104.1,y:100})})
+    };
+    const business={id:'cu',name:'CU 방학점',category:'편의점',latitude:37.6654,longitude:127.0423};
+    state.visiblePlaceKey=visiblePlaceKey();state.visiblePlaceCache.set(state.visiblePlaceKey,{places:[business],createdAt:Date.now()});
+    renderTempPoiDiagnostic=()=>{};
+    openPlace=(place,preserveViewport)=>{testOpened={place,preserveViewport}};
+    handleMapClick({point:{x:100,y:100},latLng:{getLat:()=>37.6654321,getLng:()=>127.0423456}});
+    ({opened:testOpened,geocodeRequests:testGeocodeRequests});
+  `, context);
+  assert.equal(result.opened.place.id,'cu');
+  assert.equal(result.opened.place.name,'CU 방학점');
+  assert.equal(result.opened.preserveViewport,true);
+  assert.equal(result.geocodeRequests,0);
+});
+
+test('a short map tap without a confident POI does nothing', () => {
   const context = loadApp();
   const result = vm.runInContext(`
     state.screen='map';state.mapClickBlockedUntil=0;
@@ -339,12 +367,74 @@ test('a general map tap reverse geocodes and opens the exact coordinate in the e
     handleMapClick({point:{x:100,y:100},latLng:{getLat:()=>37.6654321,getLng:()=>127.0423456}});
     ({requests:testGeocodeRequests,opened:testOpened});
   `, context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.requests)),[]);
+  assert.equal(result.opened,null);
+});
+
+test('a one-second map long press reverse geocodes the exact pressed coordinate', () => {
+  const context = loadApp('',true);
+  const result = vm.runInContext(`
+    state.screen='map';state.mapClickBlockedUntil=0;
+    testGeocodeRequests=[];testOpened=[];
+    class TestPoint {constructor(x,y){this.x=x;this.y=y}}
+    class TestGeocoder {coord2Address(x,y,callback){testGeocodeRequests.push({x,y});callback([{road_address:{address_name:'서울 도봉구 도봉로 123'},address:{address_name:'서울 도봉구 방학동 456'}}],'OK')}}
+    kakao={maps:{Point:TestPoint,services:{Geocoder:TestGeocoder,Status:{OK:'OK'}}}};
+    state.map={getProjection:()=>({coordsFromContainerPoint:point=>({getLat:()=>37.6654321+point.y*0,getLng:()=>127.0423456+point.x*0})})};
+    $('#map').getBoundingClientRect=()=>({left:20,top:40,width:320,height:500});
+    openPlace=(place,preserveViewport)=>testOpened.push({place,preserveViewport});
+    handleMapPointerEvent({type:'pointerdown',pointerType:'touch',pointerId:7,clientX:120,clientY:240});
+    runPendingTimers();
+    ({requests:testGeocodeRequests,opened:testOpened});
+  `, context);
   assert.deepEqual(JSON.parse(JSON.stringify(result.requests)),[{x:127.0423456,y:37.6654321}]);
-  assert.equal(result.opened.place.name,'서울 도봉구 도봉로 123');
-  assert.equal(result.opened.place.address,'서울 도봉구 도봉로 123');
-  assert.equal(result.opened.place.latitude,37.6654321);
-  assert.equal(result.opened.place.longitude,127.0423456);
-  assert.equal(result.opened.preserveViewport,true);
+  assert.equal(result.opened.length,1);
+  assert.equal(result.opened[0].place.name,'서울 도봉구 도봉로 123');
+  assert.equal(result.opened[0].place.latitude,37.6654321);
+  assert.equal(result.opened[0].place.longitude,127.0423456);
+});
+
+test('a map drag cancels a pending long press address selection', () => {
+  const context = loadApp('',true);
+  const opened = vm.runInContext(`
+    state.screen='map';
+    class TestPoint {constructor(x,y){this.x=x;this.y=y}}
+    kakao={maps:{Point:TestPoint}};
+    state.map={getProjection:()=>({coordsFromContainerPoint:()=>({getLat:()=>37.5,getLng:()=>127})})};
+    $('#map').getBoundingClientRect=()=>({left:0,top:0,width:320,height:500});
+    testOpened=0;openMapAddress=()=>{testOpened++};
+    handleMapPointerEvent({type:'pointerdown',pointerType:'touch',pointerId:8,clientX:100,clientY:150});
+    handleMapDragStart({});
+    runPendingTimers();
+    testOpened;
+  `, context);
+  assert.equal(opened,0);
+});
+
+test('the Kakao click emitted after a completed long press is suppressed', () => {
+  const context = loadApp('',true);
+  const result = vm.runInContext(`
+    state.screen='map';state.mapClickBlockedUntil=0;
+    class TestPoint {constructor(x,y){this.x=x;this.y=y}}
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    kakao={maps:{Point:TestPoint,LatLng:TestLatLng}};
+    state.map={
+      getLevel:()=>4,
+      getBounds:()=>({getSouthWest:()=>({getLng:()=>126.9,getLat:()=>37.4}),getNorthEast:()=>({getLng:()=>127.1,getLat:()=>37.6})}),
+      getProjection:()=>({coordsFromContainerPoint:()=>({getLat:()=>37.5,getLng:()=>127}),containerPointFromCoords:()=>({x:100,y:100})})
+    };
+    $('#map').getBoundingClientRect=()=>({left:0,top:0,width:320,height:500});
+    const business={id:'poi',name:'업체',latitude:37.5,longitude:127};
+    state.visiblePlaceKey=visiblePlaceKey();state.visiblePlaceCache.set(state.visiblePlaceKey,{places:[business],createdAt:Date.now()});
+    testAddresses=0;testPlaces=[];renderTempPoiDiagnostic=()=>{};
+    openMapAddress=()=>{testAddresses++;return {latitude:37.5,longitude:127}};
+    openPlace=place=>testPlaces.push(place.id);
+    handleMapPointerEvent({type:'pointerdown',pointerType:'touch',pointerId:9,clientX:100,clientY:100});
+    runPendingTimers();
+    handleMapClick({point:{x:100,y:100},latLng:{getLat:()=>37.5,getLng:()=>127}});
+    ({addresses:testAddresses,places:testPlaces});
+  `, context);
+  assert.equal(result.addresses,1);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.places)),[]);
 });
 
 test('base-map click reports that Kakao supplied no place identity', () => {
@@ -380,6 +470,22 @@ test('pointer and Kakao map lifecycle diagnostics are registered without interce
   }
   assert.match(appSource, /\[Place Gesture\]/);
   assert.match(appSource, /\[Place Cache Invalidate\]/);
+});
+
+test('the map blocks Safari long-press callouts without changing Kakao touch handling', () => {
+  const context = loadApp();
+  let prevented = 0;
+  context.document.querySelector('#map').dispatch('contextmenu', {
+    preventDefault() { prevented++; },
+  });
+  assert.equal(prevented, 1);
+
+  const css = fs.readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+  const mapRule = css.match(/#map\{([^}]*)\}/)?.[1] || '';
+  assert.match(mapRule, /-webkit-touch-callout:none/);
+  assert.match(mapRule, /-webkit-user-select:none/);
+  assert.match(mapRule, /(?:^|;)user-select:none/);
+  assert.match(mapRule, /touch-action:auto/);
 });
 
 test('completed category refresh reports Place Cache counts and viewport identity', async () => {
@@ -1576,7 +1682,7 @@ test('expanded place content remains scrollable and safe-area aware', () => {
   assert.match(css,/\.sheet\.place-detail\.place-expanded/);
   assert.match(css,/\.place-extra/);
   assert.match(css,/env\(safe-area-inset-bottom\)/);
-  assert.doesNotMatch(appSource,/function handleMapClick\([^\n]+visiblePlaceHitTest/);
+  assert.match(appSource,/function handleMapClick\([^\n]+visiblePlaceHitTest/);
 });
 
 function installConfirmedWaypointFixture(context) {
