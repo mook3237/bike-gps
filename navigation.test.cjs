@@ -193,7 +193,7 @@ test('navigation start discards stale speed and starts at the stopped level', ()
   vm.runInContext(`
     state.routes=[{_steps:[]}];state.selectedRoute=0;state.routeLines=[null];state.currentLocation=null;
     state.nav.currentSpeed=40/3.6;state.map={setLevel(level){this.level=level}};
-    renderScreen=()=>{state.screen='navigation'};clearSearchMarkers=()=>{};drawRouteEndpointMarkers=()=>{};
+    renderScreen=()=>{state.screen='navigation'};clearSearchMarkers=()=>{};drawNavigationRoute=()=>{};
     setGpsMarker=()=>{};startWatch=()=>{};updateNavHud=()=>{};toast=()=>{};
     startNavigation();
   `, context);
@@ -395,7 +395,7 @@ test('a new navigation never carries the previous displayed speed', () => {
   vm.runInContext(`
     state.routes=[{_steps:[]}];state.selectedRoute=0;state.routeLines=[null];
     state.nav.currentSpeed=40/3.6;state.map={setLevel(){}};
-    renderScreen=()=>{state.screen='navigation'};clearSearchMarkers=()=>{};drawRouteEndpointMarkers=()=>{};
+    renderScreen=()=>{state.screen='navigation'};clearSearchMarkers=()=>{};drawNavigationRoute=()=>{};
     setGpsMarker=()=>{};startWatch=()=>{};updateNavHud=()=>{};toast=()=>{};followNavigationPosition=()=>{};
     startNavigation();
   `,context);
