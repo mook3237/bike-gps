@@ -34,6 +34,7 @@ function loadApp({ manualTimers = false } = {}) {
       },
       style: { setProperty(name, value) { this[name] = value; } },
       addEventListener() {}, querySelectorAll() { return []; }, querySelector() { return makeElement(); },
+      getBoundingClientRect() { return { top: 600, bottom: 120, left: 0, right: 0, width: 0, height: 0 }; },
       setPointerCapture() {}, focus() { this.focused = true; this.blurred = false; }, blur() { this.focused = false; this.blurred = true; }, offsetHeight: 600, value: '', innerHTML: '', textContent: '',
     };
   };
@@ -196,7 +197,7 @@ test('navigation start discards stale speed and starts at the stopped level', ()
     setGpsMarker=()=>{};startWatch=()=>{};updateNavHud=()=>{};toast=()=>{};
     startNavigation();
   `, context);
-  assert.equal(vm.runInContext('state.map.level', context), 1);
+  assert.equal(vm.runInContext('state.map.level', context), 2);
   assert.equal(vm.runInContext('state.nav.currentSpeed', context), 0);
 });
 
@@ -210,7 +211,7 @@ test('map interaction stays unfollowed until five seconds then returns at curren
   assert.equal(vm.runInContext('state.nav.follow', context), false);
   advance(1);
   assert.equal(vm.runInContext('state.nav.follow', context), true);
-  assert.equal(vm.runInContext('state.map.level', context), 2);
+  assert.equal(vm.runInContext('state.map.level', context), 3);
 });
 
 test('another interaction resets the single return timer', () => {
@@ -238,15 +239,23 @@ test('current-location button cancels the timer and immediately restores speed z
   const timer = vm.runInContext('navReturnTimer', context);
   vm.runInContext("$('#navLocateBtn').onclick()", context);
   assert.equal(vm.runInContext('state.nav.follow', context), true);
-  assert.equal(vm.runInContext('state.map.level', context), 3);
+  assert.equal(vm.runInContext('state.map.level', context), 4);
   assert.equal(vm.runInContext('navReturnTimer', context), null);
   assert.equal(hasTimer(timer), false);
 });
 
-test('current-location button uses level one while stopped', () => {
+test('current-location button restores navigation zoom, follow and forward offset while stopped', () => {
   const { context } = loadApp();
-  vm.runInContext("state.nav.follow=false;state.nav.currentSpeed=0;state.currentLocation=null;state.map={setLevel(level){this.level=level}};$('#navLocateBtn').onclick()", context);
-  assert.equal(vm.runInContext('state.map.level', context), 1);
+  const result=vm.runInContext(`
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    class TestPoint {constructor(x,y){this.x=x;this.y=y}}
+    kakao={maps:{LatLng:TestLatLng,Point:TestPoint}};
+    state.screen='navigation';state.nav.follow=false;state.nav.currentSpeed=0;state.currentLocation={latitude:37,longitude:127};
+    state.routes=[{_points:[state.currentLocation,{latitude:37.001,longitude:127}]}];state.selectedRoute=0;
+    state.map={setLevel(level){this.level=level},getProjection:()=>({pointFromCoords:()=>({x:500,y:500}),coordsFromPoint:point=>({x:point.x,y:point.y})}),panTo(target){this.target=target}};
+    $('#navLocateBtn').onclick();({level:state.map.level,follow:state.nav.follow,target:state.map.target});
+  `,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{level:2,follow:true,target:{x:500,y:390}});
 });
 
 test('route selection keeps every returned polyline and emphasizes only the selected one', () => {
@@ -468,11 +477,66 @@ test('six: route fit padding follows the visible editor and route controls', () 
     state.selectedRoute=0;state.map={setBounds(bounds,...padding){this.bounds=bounds;this.padding=padding}};
     fitSelectedRoute();
   `, context);
-  assert.equal(vm.runInContext('state.map.bounds.points.length', context), 4);
+  assert.equal(vm.runInContext('state.map.bounds.points.length', context), 5);
   assert.deepEqual(JSON.parse(vm.runInContext('JSON.stringify(state.map.padding)', context)), [130,24,202,24]);
   assert.equal(vm.runInContext('typeof syncRouteViewport', context), 'function');
   vm.runInContext("let testRefits=0;fitSelectedRoute=()=>{testRefits++};state.screen='route';syncRouteViewport()", context);
   assert.equal(vm.runInContext('testRefits', context), 1);
+});
+
+test('route overview fits once and route card changes only visual emphasis', () => {
+  const { context }=loadApp();
+  const result=vm.runInContext(`
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    class TestBounds {constructor(){this.points=[]}extend(point){this.points.push(point)}isEmpty(){return !this.points.length}}
+    class TestPolyline {constructor(options){this.options={...options}}setMap(map){this.map=map}setOptions(options){Object.assign(this.options,options)}}
+    class TestOverlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}}
+    kakao={maps:{LatLng:TestLatLng,LatLngBounds:TestBounds,Polyline:TestPolyline,CustomOverlay:TestOverlay}};
+    $('#routeEditor').getBoundingClientRect=()=>({bottom:120});$('#routeCards').getBoundingClientRect=()=>({top:600});$('#startNavBtn').getBoundingClientRect=()=>({top:720});
+    state.departure={name:'Start',latitude:37,longitude:127};state.destination={name:'End',latitude:37.03,longitude:127.03};
+    state.routes=[
+      {label:'Bike',_points:[state.departure,{latitude:37.01,longitude:127.01},state.destination]},
+      {label:'Short',_points:[state.departure,{latitude:37.02,longitude:127.04},state.destination]},
+      {label:'Comfort',_points:[state.departure,{latitude:37.025,longitude:126.99},state.destination]}
+    ];state.selectedRoute=0;
+    testCamera={bounds:0,levels:0,centers:0,pans:0};state.map={setBounds(){testCamera.bounds++},setLevel(){testCamera.levels++},setCenter(){testCamera.centers++},panTo(){testCamera.pans++}};
+    drawRoutes();const afterFit={...testCamera};selectRoute(1);selectRoute(2);selectRoute(0);
+    ({afterFit,afterCards:testCamera,colors:state.routeLines.map(line=>line.options.strokeColor),weights:state.routeLines.map(line=>line.options.strokeWeight)});
+  `,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    afterFit:{bounds:1,levels:0,centers:0,pans:0},afterCards:{bounds:1,levels:0,centers:0,pans:0},
+    colors:['#0878f9','#98a7b8','#98a7b8'],weights:[8,5,5]
+  });
+});
+
+test('navigation camera zooms one level wider and offsets opposite every route direction', () => {
+  const { context }=loadApp();
+  const result=vm.runInContext(`
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    class TestPoint {constructor(x,y){this.x=x;this.y=y}}
+    kakao={maps:{LatLng:TestLatLng,Point:TestPoint}};
+    testLevels=[];state.map={setLevel(level){testLevels.push(level)},getProjection:()=>({pointFromCoords:()=>({x:500,y:500}),coordsFromPoint:point=>({x:Math.round(point.x),y:Math.round(point.y)})})};
+    state.nav.currentSpeed=0;setNavigationZoom();
+    const p={latitude:37.5,longitude:127};
+    ({level:testLevels[0],north:navigationCameraTarget(p,0),east:navigationCameraTarget(p,90),south:navigationCameraTarget(p,180),west:navigationCameraTarget(p,270),diagonal:navigationCameraTarget(p,45)});
+  `,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    level:2,north:{x:500,y:390},east:{x:610,y:500},south:{x:500,y:610},west:{x:390,y:500},diagonal:{x:578,y:422}
+  });
+});
+
+test('navigation route heading uses future geometry and ignores small direction noise', () => {
+  const { context }=loadApp();
+  const result=vm.runInContext(`
+    const p={latitude:37,longitude:127};state.nav.cameraHeading=null;
+    const north=[p,{latitude:37.001,longitude:127},{latitude:37.002,longitude:127.0001}];
+    const first=navigationRouteHeading(p,north);const stable=navigationRouteHeading(p,[p,{latitude:37.001,longitude:127.0001},{latitude:37.002,longitude:127.0002}]);
+    const east=navigationRouteHeading(p,[p,{latitude:37,longitude:127.001},{latitude:37,longitude:127.002}]);
+    ({first,stable,east});
+  `,context);
+  assert.ok(result.first<5||result.first>355);
+  assert.equal(result.stable,result.first);
+  assert.ok(result.east>80&&result.east<100);
 });
 
 test('six: route request preserves ordered waypoints up to five', async () => {

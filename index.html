@@ -15,13 +15,9 @@
 
     <div id="overlayRoot">
       <header id="mapHeader" class="top-ui">
-        <button id="menuBtn" class="icon-btn" aria-label="메뉴">☰</button>
         <button id="searchEntry" class="search-entry"><span>⌕</span><b>목적지 검색</b></button>
+        <button id="menuBtn" class="icon-btn" aria-label="메뉴">☰</button>
       </header>
-
-      <section id="quickActions" class="quick-actions top-ui">
-        <button data-quick="home">집</button><button data-quick="work">회사</button><button data-quick="favorite">즐겨찾기</button>
-      </section>
 
       <section id="searchPanel" class="panel hidden">
         <div class="search-head">
@@ -29,9 +25,10 @@
           <div class="search-box"><input id="searchInput" autocomplete="off" placeholder="목적지 검색"><button id="searchClear">×</button></div>
         </div>
         <div id="searchLanding">
-          <button id="bikeShopBtn" class="category-chip">🚲 자전거샵</button>
-          <div class="quick-actions in-panel">
-            <button data-quick="home">집</button><button data-quick="work">회사</button><button data-quick="favorite">즐겨찾기</button>
+          <div class="search-shortcuts" aria-label="저장 장소 바로가기">
+            <button data-quick="home"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 10.8 12 3l9 7.8v9.7h-6v-6H9v6H3z"/></svg><span>집</span></button>
+            <button data-quick="work"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 21V7h5V3h6v4h5v14h-6v-4h-4v4zm7-14h2V5h-2z"/></svg><span>회사</span></button>
+            <button data-quick="favorite"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m12 2.8 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-2.9L6.4 20l1.1-6.2L3 9.4l6.2-.9z"/></svg><span>즐겨찾기</span></button>
           </div>
           <h3>최근 검색</h3>
           <div id="recentSearches"></div>
@@ -97,6 +94,7 @@
           <button data-nav-action="recalc">↻<span>경로 재탐색</span></button>
           <button data-nav-action="pause">Ⅱ<span>일시정지</span></button>
           <button data-nav-action="add-route">＋<span>경로 추가</span></button>
+          <button data-nav-action="alternate-route">≋<span>다른 경로 보기</span></button>
         </div>
         <button id="endNavBtn" class="danger-btn">안내 종료</button>
       </section>
