@@ -324,51 +324,40 @@ test('idle refreshes after map movement or zoom and programmatic fitting does no
   assert.equal(context.document.querySelector('#searchHereBtn').classList.contains('hidden'), false);
 });
 
-test('map click handler evaluates the existing unambiguous POI hit test before address fallback', () => {
-  assert.match(appSource,/function handleMapClick\([^\n]+visiblePlaceHitTest/);
-});
-
-test('an unambiguous cached POI hit opens the exact business instead of an address card', () => {
+test('a short map tap searches around the touch and opens a business missing from the viewport cache', async () => {
   const context = loadApp();
-  const result = vm.runInContext(`
+  const result = await vm.runInContext(`
     state.screen='map';state.mapClickBlockedUntil=0;
-    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
-    testGeocodeRequests=0;testOpened=null;
-    class TestGeocoder {coord2Address(){testGeocodeRequests++}}
-    kakao={maps:{LatLng:TestLatLng,services:{Geocoder:TestGeocoder,Status:{OK:'OK'}}}};
-    state.map={
-      getLevel:()=>4,
-      getBounds:()=>({getSouthWest:()=>({getLng:()=>126.9,getLat:()=>37.4}),getNorthEast:()=>({getLng:()=>127.1,getLat:()=>37.6})}),
-      getProjection:()=>({containerPointFromCoords:()=>({x:104.1,y:100})})
-    };
-    const business={id:'cu',name:'CU 방학점',category:'편의점',latitude:37.6654,longitude:127.0423};
-    state.visiblePlaceKey=visiblePlaceKey();state.visiblePlaceCache.set(state.visiblePlaceKey,{places:[business],createdAt:Date.now()});
+    state.map={getLevel:()=>4};state.visiblePlaceCache.clear();
+    testRequests=[];testOpened=null;
+    fetch=async url=>{testRequests.push(String(url));return{ok:true,json:async()=>({results:[{id:'cu',name:'CU 방학점',category:'편의점',latitude:37.66543,longitude:127.04234}]})}};
     renderTempPoiDiagnostic=()=>{};
     openPlace=(place,preserveViewport)=>{testOpened={place,preserveViewport}};
-    handleMapClick({point:{x:100,y:100},latLng:{getLat:()=>37.6654321,getLng:()=>127.0423456}});
-    ({opened:testOpened,geocodeRequests:testGeocodeRequests});
+    handleMapClick({point:{x:100,y:100},latLng:{getLat:()=>37.6654321,getLng:()=>127.0423456}}).then(returned=>({opened:testOpened,returned,requests:testRequests}));
   `, context);
   assert.equal(result.opened.place.id,'cu');
   assert.equal(result.opened.place.name,'CU 방학점');
-  assert.equal(result.opened.preserveViewport,true);
-  assert.equal(result.geocodeRequests,0);
+  assert.equal(result.returned.id,'cu');
+  const params=new URL(result.requests[0],'https://example.test').searchParams;
+  assert.equal(params.get('nearby'),'1');
+  assert.equal(params.get('x'),'127.0423456');
+  assert.equal(params.get('y'),'37.6654321');
+  assert.equal(params.get('radius'),'12');
 });
 
-test('a short map tap without a confident POI does nothing', () => {
+test('a short map tap with no nearby business does nothing', async () => {
   const context = loadApp();
-  const result = vm.runInContext(`
+  const result = await vm.runInContext(`
     state.screen='map';state.mapClickBlockedUntil=0;
-    state.map={getLevel:()=>4,getBounds:()=>({getSouthWest:()=>({getLng:()=>126.9,getLat:()=>37.4}),getNorthEast:()=>({getLng:()=>127.1,getLat:()=>37.6})})};
-    testGeocodeRequests=[];testOpened=null;
-    class TestGeocoder {coord2Address(x,y,callback){testGeocodeRequests.push({x,y});callback([{road_address:{address_name:'서울 도봉구 도봉로 123'},address:{address_name:'서울 도봉구 방학동 456'}}],'OK')}}
-    kakao={maps:{services:{Geocoder:TestGeocoder,Status:{OK:'OK'}}}};
+    state.map={getLevel:()=>4};testOpened=null;testAddressCalls=0;
+    fetch=async()=>({ok:true,json:async()=>({results:[]})});
     renderTempPoiDiagnostic=()=>{};
-    openPlace=(place,preserveViewport)=>{testOpened={place,preserveViewport}};
-    handleMapClick({point:{x:100,y:100},latLng:{getLat:()=>37.6654321,getLng:()=>127.0423456}});
-    ({requests:testGeocodeRequests,opened:testOpened});
+    openMapAddress=()=>{testAddressCalls++};openPlace=place=>{testOpened=place};
+    handleMapClick({point:{x:100,y:100},latLng:{getLat:()=>37.6654321,getLng:()=>127.0423456}}).then(returned=>({returned,opened:testOpened,addressCalls:testAddressCalls}));
   `, context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result.requests)),[]);
+  assert.equal(result.returned,null);
   assert.equal(result.opened,null);
+  assert.equal(result.addressCalls,0);
 });
 
 test('a one-second map long press reverse geocodes the exact pressed coordinate', () => {
@@ -642,7 +631,7 @@ test('a genuine user drag during result fitting still exposes search here', () =
   assert.equal(context.document.querySelector('#searchHereBtn').classList.contains('hidden'), false);
 });
 
-test('place search forwards valid map bounds and removes nearby radius mode', async () => {
+test('place search forwards valid map bounds and supports the historical 18-category nearby mode', async () => {
   const originalFetch = globalThis.fetch;
   const originalKey = process.env.KAKAO_REST_API_KEY;
   process.env.KAKAO_REST_API_KEY = 'test-key';
@@ -658,9 +647,19 @@ test('place search forwards valid map bounds and removes nearby radius mode', as
     assert.equal(output.status, 200);
     const keywordUrl=requestedUrls.find(url=>url.includes('/search/keyword.json'));
     assert.equal(new URL(keywordUrl).searchParams.get('rect'), '126.9,37.4,127.1,37.6');
+    requestedUrls.length=0;
     const nearby = mockResponse();
     await handler({ method: 'GET', query: { nearby: '1', x: '127', y: '37.5', radius: '20' } }, nearby.response);
-    assert.equal(nearby.output.status, 400);
+    assert.equal(nearby.output.status, 200);
+    assert.equal(requestedUrls.length,18);
+    for(const url of requestedUrls){
+      const params=new URL(url).searchParams;
+      assert.equal(params.get('x'),'127');
+      assert.equal(params.get('y'),'37.5');
+      assert.equal(params.get('radius'),'20');
+      assert.equal(params.get('sort'),'distance');
+      assert.equal(params.get('size'),'3');
+    }
   } finally {
     globalThis.fetch = originalFetch;
     if (originalKey == null) delete process.env.KAKAO_REST_API_KEY;
