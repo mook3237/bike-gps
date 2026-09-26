@@ -220,7 +220,7 @@ test('place debug panel keeps ten recent taps and exposes a missing Kakao click'
   assert.equal(vm.runInContext('placeDebugState.records.at(-1).kakaoClick', context), false);
 });
 
-test('place debug panel stays empty when RideMate category overlays are disabled', async () => {
+test('place debug panel reflects visible places after an invalidated cache refills', async () => {
   const context = loadApp('?debug=place');
   vm.runInContext(`
     class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
@@ -238,14 +238,15 @@ test('place debug panel stays empty when RideMate category overlays are disabled
     logPlaceTap({point:{x:100,y:100}},'NO_VISIBLE_PLACES',null,visiblePlaceKey());
   `, context);
   const refresh = vm.runInContext('refreshVisiblePlaces()', context);
+  context.testCalls.forEach((callback,index)=>callback(index===0?[{id:'refilled',place_name:'다시 채워진 장소',y:'37.5',x:'127'}]:[],index===0?'OK':'ZERO_RESULT'));
   await refresh;
 
   assert.equal(vm.runInContext('placeDebugState.records[0].visiblePlaces', context), 0);
-  assert.equal(context.testCalls.length, 0);
-  assert.match(context.document.querySelector('#placeDebugCurrent').innerHTML, /live visiblePlaces: 0/);
+  assert.match(context.document.querySelector('#placeDebugCurrent').innerHTML, /live visiblePlaces: 1/);
+  assert.match(context.document.querySelector('#placeDebugCurrent').innerHTML, /다시 채워진 장소/);
 });
 
-test('Kakao SDK keeps search services but does not index categories for map overlays', async () => {
+test('Kakao SDK loads services and viewport refresh indexes all official categories', async () => {
   const context = loadApp();
   assert.match(appSource, /libraries=services/);
   vm.runInContext(`
@@ -264,15 +265,21 @@ test('Kakao SDK keeps search services but does not index categories for map over
     state.placesService={categorySearch(code,callback,options){testCategoryCalls.push({code,callback,options})}};
   `, context);
   const refresh = vm.runInContext('refreshVisiblePlaces()', context);
+  assert.equal(context.testCategoryCalls.length, 18);
+  for (const [index, call] of context.testCategoryCalls.entries()) {
+    const results = index < 2 ? [{id:'shared',place_name:'카페',category_name:'음식점 > 카페',road_address_name:'주소',y:'37.5',x:'127'}] : [];
+    call.callback(results, results.length ? 'OK' : 'ZERO_RESULT');
+    assert.equal(call.options.useMapBounds, true);
+  }
   await refresh;
-  assert.equal(context.testCategoryCalls.length, 0);
-  assert.equal(vm.runInContext('state.visiblePlaces.length', context), 0);
+  assert.equal(vm.runInContext('state.visiblePlaces.length', context), 1);
+  assert.equal(vm.runInContext('state.visiblePlaces[0].name', context), '카페');
   const cached = vm.runInContext('refreshVisiblePlaces()', context);
   await cached;
-  assert.equal(context.testCategoryCalls.length, 0);
+  assert.equal(context.testCategoryCalls.length, 18);
 });
 
-test('viewport refreshes cannot repopulate disabled RideMate POI overlays', async () => {
+test('an older viewport response cannot replace newer bounds results', async () => {
   const context = loadApp();
   vm.runInContext(`
     class TestLatLng { constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude} }
@@ -288,10 +295,12 @@ test('viewport refreshes cannot repopulate disabled RideMate POI overlays', asyn
   const oldRefresh = vm.runInContext('refreshVisiblePlaces()', context);
   vm.runInContext('testWest=127.2', context);
   const newRefresh = vm.runInContext('refreshVisiblePlaces()', context);
+  const oldCalls = context.testCalls.slice(0,18), newCalls = context.testCalls.slice(18);
+  newCalls.forEach((call,index)=>call.callback(index===0?[{id:'new',place_name:'새 장소',y:'37.5',x:'127.3'}]:[],index===0?'OK':'ZERO_RESULT'));
   await newRefresh;
+  oldCalls.forEach((call,index)=>call.callback(index===0?[{id:'old',place_name:'옛 장소',y:'37.5',x:'127'}]:[],index===0?'OK':'ZERO_RESULT'));
   await oldRefresh;
-  assert.equal(context.testCalls.length, 0);
-  assert.equal(vm.runInContext('state.visiblePlaces.length', context), 0);
+  assert.equal(vm.runInContext('state.visiblePlaces[0].id', context), 'new');
 });
 
 test('idle refreshes after map movement or zoom and programmatic fitting does not expose search here', () => {
@@ -307,7 +316,8 @@ test('idle refreshes after map movement or zoom and programmatic fitting does no
   assert.equal(vm.runInContext('state.visiblePlaces.length', context), 0);
   assert.equal(context.document.querySelector('#searchHereBtn').classList.contains('hidden'), true);
   vm.runInContext('handleMapIdle()', context);
-  assert.equal(context.testCategoryCalls.length, 0);
+  assert.equal(context.testCategoryCalls.length, 18);
+  context.testCategoryCalls.forEach(call => call.callback([], 'ZERO_RESULT'));
   vm.runInContext('handleMapZoomChanged()', context);
   assert.equal(context.document.querySelector('#searchHereBtn').classList.contains('hidden'), false);
 });
@@ -351,7 +361,7 @@ test('pointer and Kakao map lifecycle diagnostics are registered without interce
   assert.match(appSource, /\[Place Cache Invalidate\]/);
 });
 
-test('disabled category refresh does not issue or report category searches', async () => {
+test('completed category refresh reports Place Cache counts and viewport identity', async () => {
   const context = loadApp();
   const cacheRecords = [];
   context.console = {...console,groupCollapsed(){},groupEnd(){},log(){},debug(){},table(value){if(value?.['category 요청 수']===18)cacheRecords.push(value)}};
@@ -361,10 +371,16 @@ test('disabled category refresh does not issue or report category searches', asy
     testCalls=[];state.placesService={categorySearch(code,callback,options){testCalls.push({code,callback,options})}};
   `, context);
   const refreshing = vm.runInContext('refreshVisiblePlaces()', context);
+  context.testCalls.forEach((call,index)=>call.callback(index===0?[{id:'same',place_name:'장소',y:'37.5',x:'127'}]:index===1?[{id:'same',place_name:'장소',y:'37.5',x:'127'}]:[],index===17?'ERROR':index<2?'OK':'ZERO_RESULT'));
   await refreshing;
-  assert.equal(context.testCalls.length, 0);
-  assert.equal(cacheRecords.length, 0);
-  assert.equal(vm.runInContext('state.visiblePlaces.length', context), 0);
+  assert.equal(cacheRecords.length, 1);
+  assert.equal(cacheRecords[0]['성공 category 수'], 17);
+  assert.equal(cacheRecords[0]['실패 category 수'], 1);
+  assert.equal(cacheRecords[0]['총 검색 결과 수'], 2);
+  assert.equal(cacheRecords[0]['cache 적용'], false);
+  assert.equal(typeof cacheRecords[0].bounds, 'string');
+  assert.equal(cacheRecords[0].zoom, 4);
+  assert.equal(typeof cacheRecords[0].visiblePlaceKey, 'string');
 });
 
 test('a map click suppressed by dragging never opens a place', async () => {
@@ -659,36 +675,38 @@ test('existing search result marker still opens the selected place', () => {
   assert.equal(vm.runInContext('testOpened.id', context), 'result-place');
 });
 
-test('RideMate category POI overlays stay disabled on map and navigation', async () => {
+test('categorySearch creates clickable default pins bound to exact normalized places without pill labels', async () => {
   const context = loadApp();
   const result = await vm.runInContext(`(async()=>{
-    testCategoryCalls=[];testMarkerCount=0;testListeners=0;
-    class TestMarker {constructor(){testMarkerCount++}setMap(){}}
-    kakao={maps:{Marker:TestMarker,event:{addListener(){testListeners++}},services:{Status:{OK:'OK',ZERO_RESULT:'ZERO_RESULT'}}}};
-    state.map={getLevel:()=>4,getBounds:()=>({getSouthWest:()=>({getLng:()=>126.9,getLat:()=>37.4}),getNorthEast:()=>({getLng:()=>127.1,getLat:()=>37.6})})};
+    testCategoryCalls=[];testSelected=[];
+    class TestLatLng {constructor(latitude,longitude){Object.assign(this,{latitude,longitude})}}
+    class TestMarker {constructor(options){Object.assign(this,options);this.listeners={}}setMap(map){this.map=map}}
+    kakao={maps:{LatLng:TestLatLng,Marker:TestMarker,event:{addListener(target,type,listener){target.listeners[type]=listener}},services:{Status:{OK:'OK',ZERO_RESULT:'ZERO_RESULT'}}}};
+    state.map={getLevel:()=>4,getBounds:()=>({getSouthWest:()=>({getLng:()=>126.9,getLat:()=>37.4}),getNorthEast:()=>({getLng:()=>127.1,getLat:()=>37.6})}),getProjection:()=>({pointFromCoords:point=>({x:point.longitude*10000,y:point.latitude*10000})})};
     state.placesService={categorySearch(code,callback,options){testCategoryCalls.push({code,callback,options})}};
-    const place={id:'poi',name:'POI',latitude:37.5,longitude:127};
-    state.screen='map';renderCategoryPlaceMarkers([place],0,'');await refreshVisiblePlaces();
-    const map={markers:state.categoryPlaceMarkers.length,visible:state.visiblePlaces.length};
-    state.screen='navigation';renderCategoryPlaceMarkers([place],0,'');await refreshVisiblePlaces();
-    return {map,navigation:{markers:state.categoryPlaceMarkers.length,visible:state.visiblePlaces.length},categoryCalls:testCategoryCalls.length,created:testMarkerCount,listeners:testListeners};
+    selectRideMatePlace=(place,selectionContext)=>testSelected.push({place,selectionContext});
+    const raw={id:'poi',place_name:'POI',category_name:'카페',x:'127',y:'37.5'};
+    const refreshing=refreshVisiblePlaces();
+    testCategoryCalls.forEach((call,index)=>call.callback(index===0?[raw]:[],index===0?'OK':'ZERO_RESULT'));
+    await refreshing;
+    const entry=state.categoryPlaceMarkers[0];entry.marker.listeners.click();
+    return {categoryCalls:testCategoryCalls.length,markers:state.categoryPlaceMarkers.length,visible:state.visiblePlaces.length,
+      hasImage:Object.hasOwn(entry.marker,'image'),sameObject:testSelected[0].place===entry.place,
+      selectedId:testSelected[0].place.id,source:testSelected[0].selectionContext.source,clickable:entry.marker.clickable};
   })()`, context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    map:{markers:0,visible:0},navigation:{markers:0,visible:0},categoryCalls:0,created:0,listeners:0
+    categoryCalls:18,markers:1,visible:1,hasImage:false,sameObject:true,selectedId:'poi',source:'visible-map-poi',clickable:true
   });
-  assert.doesNotMatch(appSource,/function categoryMarkerImage|CATEGORY_POI_/);
+  assert.doesNotMatch(appSource,/function categoryMarkerImage|<text[^>]*>\$\{label\}|업체명\s*\+?\s*N/);
 });
 
-test('category candidates create no grouped labels, individual pills, or click targets', () => {
+test('category candidates render only non-colliding individual default pins without grouping', () => {
   const context=loadApp();
   const result=vm.runInContext(`
     testListeners=[];
     class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
     class TestMarker {constructor(options){Object.assign(this,options);this.listeners={}}setMap(map){this.map=map}}
-    class TestMarkerImage {constructor(src,size,options){Object.assign(this,{src,size,options})}}
-    class TestSize {constructor(width,height){Object.assign(this,{width,height})}}
-    class TestPoint {constructor(x,y){Object.assign(this,{x,y})}}
-    kakao={maps:{LatLng:TestLatLng,Marker:TestMarker,MarkerImage:TestMarkerImage,Size:TestSize,Point:TestPoint,event:{addListener(target,type,listener){target.listeners[type]=listener;testListeners.push(listener)}}}};
+    kakao={maps:{LatLng:TestLatLng,Marker:TestMarker,event:{addListener(target,type,listener){target.listeners[type]=listener;testListeners.push(listener)}}}};
     state.map={getProjection:()=>({pointFromCoords:point=>({x:point.longitude,y:point.latitude})})};
     visiblePlaceKey=()=> 'viewport';state.visiblePlaceKey='viewport';state.visiblePlaceGeneration=4;
     const first={id:'first',name:'First Cafe',latitude:100,longitude:100};
@@ -696,26 +714,25 @@ test('category candidates create no grouped labels, individual pills, or click t
     const separate={id:'separate',name:'Separate Cafe',latitude:100,longitude:300};
     testOpened=[];selectRideMatePlace=place=>testOpened.push(place.id);
     renderCategoryPlaceMarkers([first,hidden,separate],4,'viewport');
-    ({markers:state.categoryPlaceMarkers.length,listeners:testListeners.length,visible:state.visiblePlaces.length,opened:testOpened});
+    state.categoryPlaceMarkers[0].marker.listeners.click();
+    ({markers:state.categoryPlaceMarkers.length,listeners:testListeners.length,visible:state.visiblePlaces.map(place=>place.id),opened:testOpened,
+      grouped:state.categoryPlaceMarkers.some(entry=>entry.choices.length!==1),images:state.categoryPlaceMarkers.filter(entry=>Object.hasOwn(entry.marker,'image')).length});
   `,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)),{markers:0,listeners:0,visible:0,opened:[]});
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{markers:2,listeners:2,visible:['first','separate'],opened:['first'],grouped:false,images:0});
 });
 
-test('navigation creates no RideMate POI overlay layer', () => {
+test('navigation renders the same clickable default category pin without a pill image', () => {
   const context=loadApp();
   const result=vm.runInContext(`
     class TestLatLng {constructor(latitude,longitude){Object.assign(this,{latitude,longitude})}}
     class TestMarker {constructor(options){Object.assign(this,options);this.listeners={}}setMap(map){this.map=map}}
-    class TestMarkerImage {constructor(src,size,options){Object.assign(this,{src,size,options})}}
-    class TestSize {constructor(width,height){Object.assign(this,{width,height})}}
-    class TestPoint {constructor(x,y){Object.assign(this,{x,y})}}
-    kakao={maps:{LatLng:TestLatLng,Marker:TestMarker,MarkerImage:TestMarkerImage,Size:TestSize,Point:TestPoint,event:{addListener(target,type,listener){target.listeners[type]=listener}}}};
+    kakao={maps:{LatLng:TestLatLng,Marker:TestMarker,event:{addListener(target,type,listener){target.listeners[type]=listener}}}};
     state.screen='navigation';state.map={getProjection:()=>({pointFromCoords:()=>({x:100,y:100})})};
     visiblePlaceKey=()=> 'viewport';state.visiblePlaceKey='viewport';state.visiblePlaceGeneration=5;
     renderCategoryPlaceMarkers([{id:'poi',name:'POI',latitude:37.5,longitude:127}],5,'viewport');
-    ({markers:state.categoryPlaceMarkers.length,visible:state.visiblePlaces.length});
+    ({markers:state.categoryPlaceMarkers.length,visible:state.visiblePlaces.length,hasImage:Object.hasOwn(state.categoryPlaceMarkers[0].marker,'image'),clickable:state.categoryPlaceMarkers[0].marker.clickable});
   `,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)),{markers:0,visible:0});
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{markers:1,visible:1,hasImage:false,clickable:true});
 });
 
 test('category marker selection remains reliable for ten closes and opens', () => {
