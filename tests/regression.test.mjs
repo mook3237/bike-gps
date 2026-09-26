@@ -261,7 +261,7 @@ test('bicycle total failure returns timing and never falls back to automobile ro
 
 test('initial, automatic, manual, and navigation preview routing share the bicycle proxy', () => {
   assert.match(appSource, /async function loadRoutes\(\)[^\n]*fetchRoutes\(/);
-  assert.match(appSource, /async function recalculateNavigationRoute\(reason='manual'\)[^\n]*fetchRoutes\(state\.currentLocation,state\.destination,\[\]/);
+  assert.match(appSource, /async function recalculateNavigationRoute\(reason='manual'\)[^\n]*confirmedNavigationWaypoints\(\)[^\n]*fetchRoutes\(state\.currentLocation,state\.destination,waypoints/);
   assert.match(appSource, /async function beginNavigationRoutePreview\(kind,place(?:=null)?\)[^\n]*fetchRoutes\(origin,destination,waypoints/);
   assert.match(appSource, /#navRecalcBtn'\)\.onclick=\(\)=>recalculateNavigationRoute\('manual'\)/);
   assert.match(appSource, /recalculateNavigationRoute\('off-route'\)/);

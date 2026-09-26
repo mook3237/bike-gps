@@ -220,7 +220,7 @@ test('place debug panel keeps ten recent taps and exposes a missing Kakao click'
   assert.equal(vm.runInContext('placeDebugState.records.at(-1).kakaoClick', context), false);
 });
 
-test('place debug panel reflects visible places after an invalidated cache refills', async () => {
+test('place debug panel stays empty when RideMate category overlays are disabled', async () => {
   const context = loadApp('?debug=place');
   vm.runInContext(`
     class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
@@ -238,15 +238,14 @@ test('place debug panel reflects visible places after an invalidated cache refil
     logPlaceTap({point:{x:100,y:100}},'NO_VISIBLE_PLACES',null,visiblePlaceKey());
   `, context);
   const refresh = vm.runInContext('refreshVisiblePlaces()', context);
-  context.testCalls.forEach((callback,index)=>callback(index===0?[{id:'refilled',place_name:'다시 채워진 장소',y:'37.5',x:'127'}]:[],index===0?'OK':'ZERO_RESULT'));
   await refresh;
 
   assert.equal(vm.runInContext('placeDebugState.records[0].visiblePlaces', context), 0);
-  assert.match(context.document.querySelector('#placeDebugCurrent').innerHTML, /live visiblePlaces: 1/);
-  assert.match(context.document.querySelector('#placeDebugCurrent').innerHTML, /다시 채워진 장소/);
+  assert.equal(context.testCalls.length, 0);
+  assert.match(context.document.querySelector('#placeDebugCurrent').innerHTML, /live visiblePlaces: 0/);
 });
 
-test('Kakao SDK loads services and viewport refresh indexes all official categories', async () => {
+test('Kakao SDK keeps search services but does not index categories for map overlays', async () => {
   const context = loadApp();
   assert.match(appSource, /libraries=services/);
   vm.runInContext(`
@@ -265,21 +264,15 @@ test('Kakao SDK loads services and viewport refresh indexes all official categor
     state.placesService={categorySearch(code,callback,options){testCategoryCalls.push({code,callback,options})}};
   `, context);
   const refresh = vm.runInContext('refreshVisiblePlaces()', context);
-  assert.equal(context.testCategoryCalls.length, 18);
-  for (const [index, call] of context.testCategoryCalls.entries()) {
-    const results = index < 2 ? [{id:'shared',place_name:'카페',category_name:'음식점 > 카페',road_address_name:'주소',y:'37.5',x:'127'}] : [];
-    call.callback(results, results.length ? 'OK' : 'ZERO_RESULT');
-    assert.equal(call.options.useMapBounds, true);
-  }
   await refresh;
-  assert.equal(vm.runInContext('state.visiblePlaces.length', context), 1);
-  assert.equal(vm.runInContext('state.visiblePlaces[0].name', context), '카페');
+  assert.equal(context.testCategoryCalls.length, 0);
+  assert.equal(vm.runInContext('state.visiblePlaces.length', context), 0);
   const cached = vm.runInContext('refreshVisiblePlaces()', context);
   await cached;
-  assert.equal(context.testCategoryCalls.length, 18);
+  assert.equal(context.testCategoryCalls.length, 0);
 });
 
-test('an older viewport response cannot replace newer bounds results', async () => {
+test('viewport refreshes cannot repopulate disabled RideMate POI overlays', async () => {
   const context = loadApp();
   vm.runInContext(`
     class TestLatLng { constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude} }
@@ -295,12 +288,10 @@ test('an older viewport response cannot replace newer bounds results', async () 
   const oldRefresh = vm.runInContext('refreshVisiblePlaces()', context);
   vm.runInContext('testWest=127.2', context);
   const newRefresh = vm.runInContext('refreshVisiblePlaces()', context);
-  const oldCalls = context.testCalls.slice(0,18), newCalls = context.testCalls.slice(18);
-  newCalls.forEach((call,index)=>call.callback(index===0?[{id:'new',place_name:'새 장소',y:'37.5',x:'127.3'}]:[],index===0?'OK':'ZERO_RESULT'));
   await newRefresh;
-  oldCalls.forEach((call,index)=>call.callback(index===0?[{id:'old',place_name:'옛 장소',y:'37.5',x:'127'}]:[],index===0?'OK':'ZERO_RESULT'));
   await oldRefresh;
-  assert.equal(vm.runInContext('state.visiblePlaces[0].id', context), 'new');
+  assert.equal(context.testCalls.length, 0);
+  assert.equal(vm.runInContext('state.visiblePlaces.length', context), 0);
 });
 
 test('idle refreshes after map movement or zoom and programmatic fitting does not expose search here', () => {
@@ -316,8 +307,7 @@ test('idle refreshes after map movement or zoom and programmatic fitting does no
   assert.equal(vm.runInContext('state.visiblePlaces.length', context), 0);
   assert.equal(context.document.querySelector('#searchHereBtn').classList.contains('hidden'), true);
   vm.runInContext('handleMapIdle()', context);
-  assert.equal(context.testCategoryCalls.length, 18);
-  context.testCategoryCalls.forEach(call => call.callback([], 'ZERO_RESULT'));
+  assert.equal(context.testCategoryCalls.length, 0);
   vm.runInContext('handleMapZoomChanged()', context);
   assert.equal(context.document.querySelector('#searchHereBtn').classList.contains('hidden'), false);
 });
@@ -361,7 +351,7 @@ test('pointer and Kakao map lifecycle diagnostics are registered without interce
   assert.match(appSource, /\[Place Cache Invalidate\]/);
 });
 
-test('completed category refresh reports Place Cache counts and viewport identity', async () => {
+test('disabled category refresh does not issue or report category searches', async () => {
   const context = loadApp();
   const cacheRecords = [];
   context.console = {...console,groupCollapsed(){},groupEnd(){},log(){},debug(){},table(value){if(value?.['category 요청 수']===18)cacheRecords.push(value)}};
@@ -371,16 +361,10 @@ test('completed category refresh reports Place Cache counts and viewport identit
     testCalls=[];state.placesService={categorySearch(code,callback,options){testCalls.push({code,callback,options})}};
   `, context);
   const refreshing = vm.runInContext('refreshVisiblePlaces()', context);
-  context.testCalls.forEach((call,index)=>call.callback(index===0?[{id:'same',place_name:'장소',y:'37.5',x:'127'}]:index===1?[{id:'same',place_name:'장소',y:'37.5',x:'127'}]:[],index===17?'ERROR':index<2?'OK':'ZERO_RESULT'));
   await refreshing;
-  assert.equal(cacheRecords.length, 1);
-  assert.equal(cacheRecords[0]['성공 category 수'], 17);
-  assert.equal(cacheRecords[0]['실패 category 수'], 1);
-  assert.equal(cacheRecords[0]['총 검색 결과 수'], 2);
-  assert.equal(cacheRecords[0]['cache 적용'], false);
-  assert.equal(typeof cacheRecords[0].bounds, 'string');
-  assert.equal(cacheRecords[0].zoom, 4);
-  assert.equal(typeof cacheRecords[0].visiblePlaceKey, 'string');
+  assert.equal(context.testCalls.length, 0);
+  assert.equal(cacheRecords.length, 0);
+  assert.equal(vm.runInContext('state.visiblePlaces.length', context), 0);
 });
 
 test('a map click suppressed by dragging never opens a place', async () => {
@@ -675,58 +659,27 @@ test('existing search result marker still opens the selected place', () => {
   assert.equal(vm.runInContext('testOpened.id', context), 'result-place');
 });
 
-test('visible category POIs use visible labels and exact normalized place identity', async () => {
+test('RideMate category POI overlays stay disabled on map and navigation', async () => {
   const context = loadApp();
   const result = await vm.runInContext(`(async()=>{
-    testMarkerListeners=[];
-    class TestLatLng { constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude} }
-    class TestMarker {
-      constructor(options){Object.assign(this,options);this.listeners={}}
-      setMap(map){this.map=map}
-    }
-    class TestSize { constructor(width,height){this.width=width;this.height=height} }
-    class TestPoint { constructor(x,y){this.x=x;this.y=y} }
-    class TestMarkerImage { constructor(src,size,options){this.src=src;this.size=size;this.options=options} }
-    kakao={maps:{LatLng:TestLatLng,Size:TestSize,Point:TestPoint,MarkerImage:TestMarkerImage,Marker:TestMarker,
-      services:{Status:{OK:'OK',ZERO_RESULT:'ZERO_RESULT'}},
-      event:{addListener(target,type,listener){target.listeners[type]=listener;testMarkerListeners.push({target,type,listener})}}
-    }};
-    state.map={getLevel:()=>4,getBounds:()=>({getSouthWest:()=>({getLng:()=>126.9,getLat:()=>37.4}),getNorthEast:()=>({getLng:()=>127.1,getLat:()=>37.6})}),getProjection:()=>({pointFromCoords:point=>({x:point.longitude*10000,y:point.latitude*10000})})};
-    testCalls=[];state.placesService={categorySearch(code,callback,options){testCalls.push({code,callback,options})}};
-    testOpened=[];selectRideMatePlace=(place,context)=>testOpened.push({place,context});
-    const refreshing=refreshVisiblePlaces();
-    const starbucks={id:'starbucks',place_name:'스타벅스 동광주DT점',category_name:'음식점 > 카페',category_group_code:'CE7',phone:'062-000-0000',address_name:'광주 북구',road_address_name:'광주 북구 길',x:'126.91',y:'37.51',place_url:'https://place.map.kakao.com/starbucks'};
-    const soup={id:'soup',place_name:'두암골설렁탕',category_name:'음식점',category_group_code:'FD6',x:'126.92',y:'37.52'};
-    testCalls.forEach((call,index)=>call.callback(index===0?[starbucks,soup]:[],index===0?'OK':'ZERO_RESULT'));
-    await refreshing;
-    const markerA=state.categoryPlaceMarkers.find(entry=>entry.place.id==='starbucks');
-    const markerB=state.categoryPlaceMarkers.find(entry=>entry.place.id==='soup');
-    markerA.marker.listeners.click();
-    markerB.marker.listeners.click();
-    return ({
-      markerCount:state.categoryPlaceMarkers.length,
-      clickable:state.categoryPlaceMarkers.every(entry=>entry.marker.clickable===true),
-      targetWidth:markerA.marker.image.size.width,
-      markerImage:decodeURIComponent(markerA.marker.image.src),
-      opened:testOpened.map(entry=>entry.place.id),
-      sameObject:testOpened[0].place===markerA.place,
-      source:testOpened[0].context.source,
-      categoryGroupCode:markerA.place.categoryGroupCode
-    });
-  })()
-  `, context);
-  assert.equal(result.markerCount, 2);
-  assert.equal(result.clickable, true);
-  assert.ok(result.targetWidth >= 72);
-  assert.doesNotMatch(result.markerImage,/fill="transparent"/);
-  assert.match(result.markerImage,/#0878ee|<circle/);
-  assert.deepEqual([...result.opened], ['starbucks', 'soup']);
-  assert.equal(result.sameObject, true);
-  assert.equal(result.source, 'visible-map-poi');
-  assert.equal(result.categoryGroupCode, 'CE7');
+    testCategoryCalls=[];testMarkerCount=0;testListeners=0;
+    class TestMarker {constructor(){testMarkerCount++}setMap(){}}
+    kakao={maps:{Marker:TestMarker,event:{addListener(){testListeners++}},services:{Status:{OK:'OK',ZERO_RESULT:'ZERO_RESULT'}}}};
+    state.map={getLevel:()=>4,getBounds:()=>({getSouthWest:()=>({getLng:()=>126.9,getLat:()=>37.4}),getNorthEast:()=>({getLng:()=>127.1,getLat:()=>37.6})})};
+    state.placesService={categorySearch(code,callback,options){testCategoryCalls.push({code,callback,options})}};
+    const place={id:'poi',name:'POI',latitude:37.5,longitude:127};
+    state.screen='map';renderCategoryPlaceMarkers([place],0,'');await refreshVisiblePlaces();
+    const map={markers:state.categoryPlaceMarkers.length,visible:state.visiblePlaces.length};
+    state.screen='navigation';renderCategoryPlaceMarkers([place],0,'');await refreshVisiblePlaces();
+    return {map,navigation:{markers:state.categoryPlaceMarkers.length,visible:state.visiblePlaces.length},categoryCalls:testCategoryCalls.length,created:testMarkerCount,listeners:testListeners};
+  })()`, context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    map:{markers:0,visible:0},navigation:{markers:0,visible:0},categoryCalls:0,created:0,listeners:0
+  });
+  assert.doesNotMatch(appSource,/function categoryMarkerImage|CATEGORY_POI_/);
 });
 
-test('screen-space collisions suppress hidden POIs without grouped labels or hidden click targets', () => {
+test('category candidates create no grouped labels, individual pills, or click targets', () => {
   const context=loadApp();
   const result=vm.runInContext(`
     testListeners=[];
@@ -743,25 +696,14 @@ test('screen-space collisions suppress hidden POIs without grouped labels or hid
     const separate={id:'separate',name:'Separate Cafe',latitude:100,longitude:300};
     testOpened=[];selectRideMatePlace=place=>testOpened.push(place.id);
     renderCategoryPlaceMarkers([first,hidden,separate],4,'viewport');
-    const firstRun=state.categoryPlaceMarkers.map(entry=>({id:entry.place.id,choices:entry.choices.map(place=>place.id),image:decodeURIComponent(entry.marker.image.src)}));
-    state.categoryPlaceMarkers[0].marker.listeners.click();
-    testListeners=[];
-    renderCategoryPlaceMarkers([hidden,first,separate],4,'viewport');
-    ({firstRun,secondRun:state.categoryPlaceMarkers.map(entry=>entry.place.id),listeners:testListeners.length,visible:state.visiblePlaces.map(place=>place.id),opened:testOpened});
+    ({markers:state.categoryPlaceMarkers.length,listeners:testListeners.length,visible:state.visiblePlaces.length,opened:testOpened});
   `,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result.firstRun.map(entry=>({id:entry.id,choices:entry.choices})))),[
-    {id:'first',choices:['first']},{id:'separate',choices:['separate']}
-  ]);
-  assert.equal(result.firstRun.some(entry=>/·\s*2|First Cafe\s+2/.test(entry.image)),false);
-  assert.deepEqual([...result.secondRun],['first','separate']);
-  assert.equal(result.listeners,2);
-  assert.deepEqual([...result.visible],['first','separate']);
-  assert.deepEqual([...result.opened],['first']);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{markers:0,listeners:0,visible:0,opened:[]});
 });
 
-test('navigation POI labels stay below route, GPS and navigation endpoint layers', () => {
+test('navigation creates no RideMate POI overlay layer', () => {
   const context=loadApp();
-  const zIndex=vm.runInContext(`
+  const result=vm.runInContext(`
     class TestLatLng {constructor(latitude,longitude){Object.assign(this,{latitude,longitude})}}
     class TestMarker {constructor(options){Object.assign(this,options);this.listeners={}}setMap(map){this.map=map}}
     class TestMarkerImage {constructor(src,size,options){Object.assign(this,{src,size,options})}}
@@ -771,9 +713,9 @@ test('navigation POI labels stay below route, GPS and navigation endpoint layers
     state.screen='navigation';state.map={getProjection:()=>({pointFromCoords:()=>({x:100,y:100})})};
     visiblePlaceKey=()=> 'viewport';state.visiblePlaceKey='viewport';state.visiblePlaceGeneration=5;
     renderCategoryPlaceMarkers([{id:'poi',name:'POI',latitude:37.5,longitude:127}],5,'viewport');
-    state.categoryPlaceMarkers[0].marker.zIndex;
+    ({markers:state.categoryPlaceMarkers.length,visible:state.visiblePlaces.length});
   `,context);
-  assert.ok(zIndex<8,`navigation POI zIndex ${zIndex} must stay below route zIndex 8`);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{markers:0,visible:0});
 });
 
 test('category marker selection remains reliable for ten closes and opens', () => {
@@ -1470,14 +1412,12 @@ test('navigation menu add-route cancel restores the live navigation session thro
   assert.equal(context.testWatchStarts,0);
 });
 
-test('navigation category marker card adds a selected route through actual marker and button events', async () => {
+test('navigation search place uses the common selection entry point and adds a selected route', async () => {
   const context=loadApp();
   installNavigationFlowEnvironment(context);
   context.testMarkerPlace={id:'marker-stop',name:'Marker Stop',category:'Cafe',address:'Road',latitude:37.015,longitude:127.015};
   vm.runInContext(`
-    state.visiblePlaceGeneration=12;state.visiblePlaceKey=visiblePlaceKey();
-    renderCategoryPlaceMarkers([testMarkerPlace],12,state.visiblePlaceKey);
-    state.categoryPlaceMarkers[0].marker.listeners.click();
+    selectRideMatePlace(testMarkerPlace,{source:'keyword-search',action:'inspect'});
   `,context);
   assert.equal(vm.runInContext('state.screen',context),'navigation-place');
   assert.equal(vm.runInContext('state.selectedPlace===testMarkerPlace',context),true);
@@ -1496,15 +1436,13 @@ test('navigation category marker card adds a selected route through actual marke
   assert.equal(context.testWatchStarts,0);
 });
 
-test('navigation category marker card cancel returns to the unchanged live navigation through UI', async () => {
+test('navigation search place preview cancel returns to the unchanged live navigation through UI', async () => {
   const context=loadApp();
   installNavigationFlowEnvironment(context);
   context.testMarkerPlace={id:'marker-cancel',name:'Marker Cancel',category:'Cafe',address:'Road',latitude:37.016,longitude:127.016};
   vm.runInContext(`
     testOriginalRoutes=state.routes;testOriginalWaypoints=state.waypoints;testOriginalDestination=state.destination;testOriginalSteps=state.nav.steps;
-    state.visiblePlaceGeneration=13;state.visiblePlaceKey=visiblePlaceKey();
-    renderCategoryPlaceMarkers([testMarkerPlace],13,state.visiblePlaceKey);
-    state.categoryPlaceMarkers[0].marker.listeners.click();
+    selectRideMatePlace(testMarkerPlace,{source:'keyword-search',action:'inspect'});
   `,context);
   context.document.querySelector('#addNavWaypoint').onclick();
   await new Promise(resolve=>setImmediate(resolve));
@@ -1601,4 +1539,264 @@ test('expanded place content remains scrollable and safe-area aware', () => {
   assert.match(css,/\.place-extra/);
   assert.match(css,/env\(safe-area-inset-bottom\)/);
   assert.doesNotMatch(appSource,/function handleMapClick\([^\n]+visiblePlaceHitTest/);
+});
+
+function installConfirmedWaypointFixture(context) {
+  vm.runInContext(`
+    class WaypointLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    class WaypointPolyline {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setPath(path){this.path=path}setOptions(options){Object.assign(this,options)}}
+    class WaypointOverlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setPosition(position){this.position=position}}
+    class WaypointPoint {constructor(x,y){this.x=x;this.y=y}}
+    kakao={maps:{LatLng:WaypointLatLng,Polyline:WaypointPolyline,CustomOverlay:WaypointOverlay,Point:WaypointPoint}};
+    lifecycleOrigin={id:'origin',name:'Origin',latitude:37,longitude:127};
+    lifecycleWaypoint1={id:'waypoint-1',name:'Waypoint 1',latitude:37.01,longitude:127};
+    lifecycleWaypoint2={id:'waypoint-2',name:'Waypoint 2',latitude:37.02,longitude:127};
+    lifecycleAdded={id:'waypoint-3',name:'Waypoint 3',latitude:37.025,longitude:127};
+    lifecycleDestination={id:'destination',name:'Destination',latitude:37.03,longitude:127};
+    makeLifecycleRoute=(id='confirmed',waypoints=[lifecycleWaypoint1,lifecycleWaypoint2])=>{
+      const points=[lifecycleOrigin,...waypoints,lifecycleDestination];
+      return{id,routeMode:'BIKE_ONLY',totalDistance:3336,totalTime:5340,_points:points,_steps:[{guidance:'직진',_startAlong:0,_endAlong:3336,points}]};
+    };
+    lifecycleRoute=makeLifecycleRoute();
+    state.screen='route';state.currentLocation=lifecycleOrigin;state.departure=lifecycleOrigin;
+    state.waypoints=[lifecycleWaypoint1,lifecycleWaypoint2];state.destination=lifecycleDestination;
+    state.routes=[lifecycleRoute];state.selectedRoute=0;state.routeLines=[];
+    state.map={setLevel(){},panTo(){},relayout(){},getProjection:()=>null};
+    history={pushState(){},replaceState(){},back(){}};
+    lifecycleRequests=[];lifecycleWatchStarts=0;
+    navigator={geolocation:{getCurrentPosition(){},watchPosition(){lifecycleWatchStarts++;return 77},clearWatch(){}}};
+    renderScreen=screen=>{state.screen=screen};clearSearchMarkers=()=>{};initializeNavigationCamera=()=>{state.nav.follow=true};
+    beginRoutePerformance=()=>({});finishRoutePerformance=()=>{};toast=()=>{};
+  `,context);
+}
+
+function navigationLifecycleSnapshot(context) {
+  return JSON.parse(vm.runInContext(`JSON.stringify({
+    screen:state.screen,
+    waypoints:state.waypoints.map(point=>point.id),
+    remaining:(state.nav.remainingWaypoints||[]).map(point=>point.id),
+    destination:state.destination?.id,
+    route:state.routes[state.selectedRoute]?.id,
+    routePoints:state.routes[state.selectedRoute]?._points?.map(point=>point.id),
+    steps:state.nav.steps.map(step=>step.guidance),
+    linePoints:state.routeLines[state.selectedRoute]?.path?.length||0,
+    markers:state.routeEndpointMarkers.map(marker=>marker.content.className),
+    remain:$('#remainDistance').textContent,
+    requests:lifecycleRequests,
+    watch:state.nav.watchId,
+    follow:state.nav.follow
+  })`,context));
+}
+
+test('multi-waypoint guidance start records both confirmed remaining waypoints', () => {
+  const context=loadApp();installConfirmedWaypointFixture(context);
+  vm.runInContext('startNavigation()',context);
+  const result=navigationLifecycleSnapshot(context);
+  assert.deepEqual(result.waypoints,['waypoint-1','waypoint-2']);
+  assert.deepEqual(result.remaining,['waypoint-1','waypoint-2']);
+  assert.deepEqual(result.routePoints,['origin','waypoint-1','waypoint-2','destination']);
+  assert.equal(result.linePoints,4);
+  assert.equal(result.markers.filter(name=>name.includes('waypoint')).length,2);
+  assert.equal(result.markers.filter(name=>name.includes('destination')).length,1);
+  assert.deepEqual(result.steps,['직진']);
+  assert.notEqual(result.remain,'');
+});
+
+for (const reason of ['manual','off-route']) {
+  test(`${reason} navigation reroute sends and retains every remaining waypoint`, async () => {
+    const context=loadApp();installConfirmedWaypointFixture(context);
+    await vm.runInContext(`(async()=>{
+      startNavigation();
+      fetchRoutes=async(origin,destination,waypoints)=>{lifecycleRequests.push({origin:origin.id,destination:destination.id,waypoints:waypoints.map(point=>point.id)});return[makeLifecycleRoute('rerouted',waypoints)]};
+      prepareRoutes=routes=>routes;
+      await recalculateNavigationRoute('${reason}');
+    })()`,context);
+    const result=navigationLifecycleSnapshot(context);
+    assert.deepEqual(result.requests,[{origin:'origin',destination:'destination',waypoints:['waypoint-1','waypoint-2']}]);
+    assert.deepEqual(result.waypoints,['waypoint-1','waypoint-2']);
+    assert.deepEqual(result.remaining,['waypoint-1','waypoint-2']);
+    assert.equal(result.route,'rerouted');
+    assert.equal(result.linePoints,4);
+    assert.equal(result.markers.filter(name=>name.includes('waypoint')).length,2);
+    assert.deepEqual(result.steps,['직진']);
+    assert.notEqual(result.remain,'');
+  });
+}
+
+test('GPS progress before the first waypoint does not discard confirmed waypoints', () => {
+  const context=loadApp();installConfirmedWaypointFixture(context);
+  vm.runInContext(`startNavigation();updateNavHud({latitude:37.005,longitude:127},5)`,context);
+  const result=navigationLifecycleSnapshot(context);
+  assert.deepEqual(result.waypoints,['waypoint-1','waypoint-2']);
+  assert.deepEqual(result.remaining,['waypoint-1','waypoint-2']);
+  assert.equal(result.linePoints,4);
+  assert.equal(result.markers.filter(name=>name.includes('waypoint')).length,2);
+});
+
+test('current-location camera restoration preserves confirmed navigation route context', () => {
+  const context=loadApp();installConfirmedWaypointFixture(context);
+  vm.runInContext(`startNavigation();$('#navLocateBtn').onclick()`,context);
+  const result=navigationLifecycleSnapshot(context);
+  assert.deepEqual(result.remaining,['waypoint-1','waypoint-2']);
+  assert.equal(result.route,'confirmed');
+  assert.equal(result.linePoints,4);
+  assert.equal(result.follow,true);
+});
+
+test('pause and resume preserve confirmed navigation route context', () => {
+  const context=loadApp();installConfirmedWaypointFixture(context);
+  vm.runInContext(`startNavigation();setNavigationPaused(true,1000);setNavigationPaused(false,2000)`,context);
+  const result=navigationLifecycleSnapshot(context);
+  assert.deepEqual(result.remaining,['waypoint-1','waypoint-2']);
+  assert.equal(result.route,'confirmed');
+  assert.equal(result.linePoints,4);
+});
+
+test('opening and closing the navigation menu preserves confirmed waypoints', () => {
+  const context=loadApp();installConfirmedWaypointFixture(context);
+  vm.runInContext(`startNavigation();$('#navMenuBtn').onclick();handleMapClick({point:{x:1,y:1}})`,context);
+  const result=navigationLifecycleSnapshot(context);
+  assert.deepEqual(result.remaining,['waypoint-1','waypoint-2']);
+  assert.equal(result.route,'confirmed');
+  assert.equal(result.linePoints,4);
+});
+
+for (const outcome of ['cancel','confirm']) {
+  test(`alternate-route preview ${outcome} keeps the confirmed waypoint contract`, async () => {
+    const context=loadApp();installConfirmedWaypointFixture(context);
+    await vm.runInContext(`(async()=>{
+      startNavigation();
+      fetchRoutes=async(origin,destination,waypoints)=>{lifecycleRequests.push({origin:origin.id,destination:destination.id,waypoints:waypoints.map(point=>point.id)});return[makeLifecycleRoute('alternate',waypoints)]};
+      prepareRoutes=routes=>routes;drawRoutes=()=>{};renderRouteCards=()=>{};updateRouteFields=()=>{};
+      await beginNavigationRoutePreview('alternate');
+      ${outcome==='cancel'?"cancelNavigationRoutePreview(false)":"confirmNavigationRoutePreview()"};
+    })()`,context);
+    const result=navigationLifecycleSnapshot(context);
+    assert.deepEqual(result.requests,[{origin:'origin',destination:'destination',waypoints:['waypoint-1','waypoint-2']}]);
+    assert.deepEqual(result.waypoints,['waypoint-1','waypoint-2']);
+    assert.deepEqual(result.remaining,['waypoint-1','waypoint-2']);
+    assert.equal(result.route,outcome==='cancel'?'confirmed':'alternate');
+    assert.equal(result.linePoints,4);
+    assert.equal(result.markers.filter(name=>name.includes('waypoint')).length,2);
+  });
+}
+
+for (const outcome of ['cancel','confirm']) {
+  test(`route-add preview ${outcome} preserves existing waypoints${outcome==='confirm'?' and appends the new waypoint':''}`, async () => {
+    const context=loadApp();installConfirmedWaypointFixture(context);
+    await vm.runInContext(`(async()=>{
+      startNavigation();
+      fetchRoutes=async(origin,destination,waypoints)=>{lifecycleRequests.push({origin:origin.id,destination:destination.id,waypoints:waypoints.map(point=>point.id)});return[makeLifecycleRoute('with-added',waypoints)]};
+      prepareRoutes=routes=>routes;drawRoutes=()=>{};renderRouteCards=()=>{};updateRouteFields=()=>{};
+      await beginNavigationRoutePreview('waypoint',lifecycleAdded);
+      ${outcome==='cancel'?"cancelNavigationRoutePreview(false)":"confirmNavigationRoutePreview()"};
+    })()`,context);
+    const result=navigationLifecycleSnapshot(context);
+    assert.deepEqual(result.requests,[{origin:'origin',destination:'destination',waypoints:['waypoint-1','waypoint-2','waypoint-3']}]);
+    const expected=outcome==='cancel'?['waypoint-1','waypoint-2']:['waypoint-1','waypoint-2','waypoint-3'];
+    assert.deepEqual(result.waypoints,expected);
+    assert.deepEqual(result.remaining,expected);
+    assert.equal(result.route,outcome==='cancel'?'confirmed':'with-added');
+    assert.equal(result.markers.filter(name=>name.includes('waypoint')).length,expected.length);
+  });
+}
+
+test('a stale reroute response cannot overwrite a newly confirmed navigation route or waypoints', async () => {
+  const context=loadApp();installConfirmedWaypointFixture(context);
+  await vm.runInContext(`(async()=>{
+    startNavigation();
+    let resolveOld;fetchRoutes=()=>new Promise(resolve=>{resolveOld=resolve});prepareRoutes=routes=>routes;
+    const old=recalculateNavigationRoute('manual');
+    state.routes=[makeLifecycleRoute('new-confirmed')];state.selectedRoute=0;startNavigation();
+    resolveOld([makeLifecycleRoute('stale-direct',[])]);await old;
+  })()`,context);
+  const result=navigationLifecycleSnapshot(context);
+  assert.equal(result.route,'new-confirmed');
+  assert.deepEqual(result.remaining,['waypoint-1','waypoint-2']);
+  assert.equal(result.linePoints,4);
+});
+
+test('reroute failure and retry preserve waypoints and send them again', async () => {
+  const context=loadApp();installConfirmedWaypointFixture(context);
+  await vm.runInContext(`(async()=>{
+    startNavigation();let attempt=0;
+    fetchRoutes=async(origin,destination,waypoints)=>{lifecycleRequests.push(waypoints.map(point=>point.id));if(!attempt++)throw new Error('offline');return[makeLifecycleRoute('retry',waypoints)]};
+    prepareRoutes=routes=>routes;
+    await recalculateNavigationRoute('manual');await recalculateNavigationRoute('manual');
+  })()`,context);
+  const result=navigationLifecycleSnapshot(context);
+  assert.deepEqual(result.requests,[['waypoint-1','waypoint-2'],['waypoint-1','waypoint-2']]);
+  assert.deepEqual(result.remaining,['waypoint-1','waypoint-2']);
+  assert.equal(result.route,'retry');
+  assert.equal(result.linePoints,4);
+});
+
+test('history restoration preserves confirmed waypoint route, markers, steps and HUD', () => {
+  const context=loadApp();installConfirmedWaypointFixture(context);
+  vm.runInContext(`startNavigation();handlePopState({state:{screen:'navigation'}})`,context);
+  const result=navigationLifecycleSnapshot(context);
+  assert.deepEqual(result.remaining,['waypoint-1','waypoint-2']);
+  assert.equal(result.route,'confirmed');
+  assert.equal(result.linePoints,4);
+  assert.equal(result.markers.filter(name=>name.includes('waypoint')).length,2);
+  assert.deepEqual(result.steps,['직진']);
+  assert.notEqual(result.remain,'');
+});
+
+test('passing waypoint 1 removes only it from the next reroute request', async () => {
+  const context=loadApp();installConfirmedWaypointFixture(context);
+  await vm.runInContext(`(async()=>{
+    startNavigation();
+    updateNavHud({latitude:37.015,longitude:127},5);
+    fetchRoutes=async(origin,destination,waypoints)=>{lifecycleRequests.push({destination:destination.id,waypoints:waypoints.map(point=>point.id)});return[makeLifecycleRoute('after-pass',waypoints)]};
+    prepareRoutes=routes=>routes;await recalculateNavigationRoute('manual');
+  })()`,context);
+  const result=navigationLifecycleSnapshot(context);
+  assert.deepEqual(result.requests,[{destination:'destination',waypoints:['waypoint-2']}]);
+  assert.deepEqual(result.waypoints,['waypoint-2']);
+  assert.deepEqual(result.remaining,['waypoint-2']);
+  assert.equal(result.route,'after-pass');
+  assert.equal(result.markers.filter(name=>name.includes('waypoint')).length,1);
+  assert.equal(result.markers.filter(name=>name.includes('destination')).length,1);
+});
+
+test('reroute resets progress before recalculating remaining waypoint positions on the new geometry', async () => {
+  const context=loadApp();installConfirmedWaypointFixture(context);
+  const result=await vm.runInContext(`(async()=>{
+    startNavigation();
+    state.nav.waypointProgress=[4000,8000];state.nav.progressDistance=5000;
+    syncPassedNavigationWaypoints(state.routes[state.selectedRoute]);
+    const beforeReroute={remaining:state.nav.remainingWaypoints.map(point=>point.id),progress:state.nav.progressDistance};
+    lifecycleCurrent={id:'current',name:'Current',latitude:37.015,longitude:127};state.currentLocation=lifecycleCurrent;
+    makeNewRoute=()=>({id:'new-geometry',routeMode:'BIKE_ONLY',totalDistance:1668,totalTime:1200,
+      _points:[lifecycleCurrent,lifecycleWaypoint2,lifecycleDestination],
+      _steps:[{guidance:'吏곸쭊',_startAlong:0,_endAlong:1668,points:[lifecycleCurrent,lifecycleWaypoint2,lifecycleDestination]}]});
+    fetchRoutes=async(origin,destination,waypoints)=>{lifecycleRequests.push({origin:origin.id,destination:destination.id,waypoints:waypoints.map(point=>point.id)});return[makeNewRoute()]};
+    prepareRoutes=routes=>routes;
+    await recalculateNavigationRoute('manual');
+    const route=state.routes[state.selectedRoute],expected=projectOnRoute(route._points,lifecycleWaypoint2).alongDistance;
+    const afterReroute={
+      progress:state.nav.progressDistance,waypointProgress:state.nav.waypointProgress[0],expected,
+      remaining:state.nav.remainingWaypoints.map(point=>point.id),waypoints:state.waypoints.map(point=>point.id),
+      destination:state.destination.id,routePoints:route._points.map(point=>point.id),linePoints:state.routeLines[state.selectedRoute].path.length,
+      waypointMarkers:state.routeEndpointMarkers.filter(marker=>marker.content.className.includes('waypoint')).length,
+      destinationMarkers:state.routeEndpointMarkers.filter(marker=>marker.content.className.includes('destination')).length,
+      hud:$('#remainDistance').textContent
+    };
+    updateNavHud({latitude:37.025,longitude:127},5);
+    return {beforeReroute,request:lifecycleRequests[0],afterReroute,afterPass:{remaining:state.nav.remainingWaypoints.map(point=>point.id),destination:state.destination.id}};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.beforeReroute)),{remaining:['waypoint-2'],progress:5000});
+  assert.deepEqual(JSON.parse(JSON.stringify(result.request)),{origin:'current',destination:'destination',waypoints:['waypoint-2']});
+  assert.deepEqual([...result.afterReroute.remaining],['waypoint-2']);
+  assert.deepEqual([...result.afterReroute.waypoints],['waypoint-2']);
+  assert.equal(result.afterReroute.progress,0);
+  assert.equal(result.afterReroute.waypointProgress,result.afterReroute.expected);
+  assert.ok(result.afterReroute.waypointProgress>0);
+  assert.deepEqual([...result.afterReroute.routePoints],['current','waypoint-2','destination']);
+  assert.equal(result.afterReroute.linePoints,3);
+  assert.equal(result.afterReroute.waypointMarkers,1);
+  assert.equal(result.afterReroute.destinationMarkers,1);
+  assert.notEqual(result.afterReroute.hud,'');
+  assert.deepEqual(JSON.parse(JSON.stringify(result.afterPass)),{remaining:[],destination:'destination'});
 });
