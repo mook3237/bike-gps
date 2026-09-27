@@ -207,7 +207,7 @@ test('an older viewport response cannot replace newer bounds results', async () 
   assert.equal(vm.runInContext('state.visiblePlaces[0].id', context), 'new');
 });
 
-test('idle refreshes after map movement or zoom and programmatic fitting does not expose search here', () => {
+test('idle does not refresh viewport categories and programmatic fitting does not expose search here', () => {
   const context = loadApp();
   vm.runInContext(`
     kakao={maps:{services:{Status:{OK:'OK',ZERO_RESULT:'ZERO_RESULT'}}}};
@@ -220,8 +220,7 @@ test('idle refreshes after map movement or zoom and programmatic fitting does no
   assert.equal(vm.runInContext('state.visiblePlaces.length', context), 0);
   assert.equal(context.document.querySelector('#searchHereBtn').classList.contains('hidden'), true);
   vm.runInContext('handleMapIdle()', context);
-  assert.equal(context.testCategoryCalls.length, 18);
-  context.testCategoryCalls.forEach(call => call.callback([], 'ZERO_RESULT'));
+  assert.equal(context.testCategoryCalls.length, 0);
   vm.runInContext('handleMapZoomChanged()', context);
   assert.equal(context.document.querySelector('#searchHereBtn').classList.contains('hidden'), false);
 });
@@ -232,9 +231,12 @@ test('a short map tap searches around the touch and opens a business missing fro
     state.screen='map';state.mapClickBlockedUntil=0;
     state.map={getLevel:()=>4};state.visiblePlaceCache.clear();
     testRequests=[];testOpened=null;testPerformanceRows=[];
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    kakao={maps:{LatLng:TestLatLng,services:{Status:{OK:'OK',ZERO_RESULT:'ZERO_RESULT',ERROR:'ERROR'},SortBy:{DISTANCE:'DISTANCE'}}}};
     performance={now:(()=>{let value=0;return()=>++value})()};
     console={...console,table(value){if(value?.['전체 터치 → 업체 카드 호출'])testPerformanceRows.push(value)}};
-    fetch=async url=>{testRequests.push(String(url));return{ok:true,json:async()=>({results:[{id:'cu',name:'CU 방학점',category:'편의점',latitude:37.66543,longitude:127.04234}],timing:{categorySearchMs:321}})}};
+    fetch=async url=>{testRequests.push(String(url));throw new Error('nearby API must not be called')};
+    state.placesService={categorySearch(code,callback){callback(code==='CS2'?[{id:'cu',place_name:'CU 방학점',category_name:'편의점',y:'37.66543',x:'127.04234',distance:'1'}]:[],code==='CS2'?'OK':'ZERO_RESULT')}};
     openPlace=(place,preserveViewport)=>{testOpened={place,preserveViewport}};
     handleMapPointerEvent({type:'pointerdown',pointerType:'touch',pointerId:1,clientX:100,clientY:100});
     handleMapClick({point:{x:100,y:100},latLng:{getLat:()=>37.6654321,getLng:()=>127.0423456}}).then(returned=>({opened:testOpened,returned,requests:testRequests}));
@@ -242,19 +244,14 @@ test('a short map tap searches around the touch and opens a business missing fro
   assert.equal(result.opened.place.id,'cu');
   assert.equal(result.opened.place.name,'CU 방학점');
   assert.equal(result.returned.id,'cu');
-  const params=new URL(result.requests[0],'https://example.test').searchParams;
-  assert.equal(params.get('nearby'),'1');
-  assert.equal(params.get('x'),'127.0423456');
-  assert.equal(params.get('y'),'37.6654321');
-  assert.equal(params.get('radius'),'12');
+  assert.equal(result.requests.length,0);
   const timing=context.testPerformanceRows[0];
-  assert.equal(timing['서버 내부 18개 카테고리 검색'],321);
-  for(const key of ['터치 → API 요청 시작','API 요청 전체','응답 수신 → 업체 결정','업체 결정 → openPlace','전체 터치 → 업체 카드 호출'])assert.equal(Number.isFinite(timing[key]),true,key);
+  for(const key of ['터치 → fresh search 시작','Browser fresh-nearby 18-category','응답 수신 → 업체 결정','업체 결정 → openPlace','전체 터치 → 업체 카드 호출'])assert.equal(Number.isFinite(timing[key]),true,key);
   const perf=vm.runInContext('mapTapPerformanceRecords.at(-1)',context);
   assert.equal(perf['결과'],'SELECTED');
   assert.equal(perf['지도 level'],4);
   assert.equal(perf['검색 반경(m)'],12);
-  assert.equal(perf['API 후보 수'],1);
+  assert.equal(perf['후보 수'],1);
   assert.equal(perf['가장 가까운 후보'],'CU 방학점');
   assert.equal(Number.isFinite(perf['가장 가까운 거리(m)']),true);
 });
@@ -270,20 +267,20 @@ test('the compact PERF panel keeps and copies only the five latest map tap recor
       '결과':index===6?'NO_CANDIDATE':'SELECTED',
       '지도 level':4,
       '검색 반경(m)':12,
-      'API 후보 수':index===6?0:1,
+      '후보 수':index===6?0:1,
       '전체 터치 → 업체 카드 호출':index*10,
-      'API 요청 전체':index*8,
-      '서버 내부 18개 카테고리 검색':index*6,
-      '응답 수신 → 업체 결정':index
+      'Browser fresh-nearby 18-category':index*8,
+      '응답 수신 → 업체 결정':index,
+      '업체 결정 → openPlace':index
     });
   `,context);
   assert.equal(vm.runInContext('mapTapPerformanceRecords.length',context),5);
   const records=context.document.querySelector('#mapTapPerfRecords').innerHTML;
   assert.doesNotMatch(records,/전체 10ms/);
   assert.match(records,/전체 60ms/);
-  assert.match(records,/API 48ms/);
-  assert.match(records,/서버 36ms/);
+  assert.match(records,/Fresh 48ms/);
   assert.match(records,/결정 6ms/);
+  assert.match(records,/열기 6ms/);
   assert.match(records,/NO_CANDIDATE/);
   assert.match(records,/L4 · 12m/);
   assert.match(records,/후보 0/);
@@ -296,7 +293,7 @@ test('the compact PERF panel keeps and copies only the five latest map tap recor
   assert.equal(copied.length,5);
   assert.equal(copied.at(-1)['전체 터치 → 업체 카드 호출'],60);
   assert.equal(copied.at(-1)['결과'],'NO_CANDIDATE');
-  assert.equal(copied.at(-1)['API 후보 수'],0);
+  assert.equal(copied.at(-1)['후보 수'],0);
 });
 
 test('a short map tap with no nearby business does nothing', async () => {
@@ -304,7 +301,9 @@ test('a short map tap with no nearby business does nothing', async () => {
   const result = await vm.runInContext(`
     state.screen='map';state.mapClickBlockedUntil=0;
     state.map={getLevel:()=>4};testOpened=null;testAddressCalls=0;
-    fetch=async()=>({ok:true,json:async()=>({results:[]})});
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    kakao={maps:{LatLng:TestLatLng,services:{Status:{OK:'OK',ZERO_RESULT:'ZERO_RESULT',ERROR:'ERROR'},SortBy:{DISTANCE:'DISTANCE'}}}};
+    state.placesService={categorySearch(code,callback){callback([],kakao.maps.services.Status.ZERO_RESULT)}};
     openMapAddress=()=>{testAddressCalls++};openPlace=place=>{testOpened=place};
     handleMapClick({point:{x:100,y:100},latLng:{getLat:()=>37.6654321,getLng:()=>127.0423456}}).then(returned=>({returned,opened:testOpened,addressCalls:testAddressCalls}));
   `, context);
@@ -315,16 +314,113 @@ test('a short map tap with no nearby business does nothing', async () => {
   assert.equal(perf['결과'],'NO_CANDIDATE');
   assert.equal(perf['지도 level'],4);
   assert.equal(perf['검색 반경(m)'],12);
-  assert.equal(perf['API 후보 수'],0);
+  assert.equal(perf['후보 수'],0);
   assert.equal(perf['가장 가까운 후보'],null);
   assert.match(context.document.querySelector('#mapTapPerfRecords').innerHTML,/NO_CANDIDATE/);
+});
+
+test('browser fresh nearby uses all categories at the touched location without the nearby API', async () => {
+  const context=loadApp();
+  const resultPromise=vm.runInContext(`
+    state.screen='map';state.mapClickBlockedUntil=0;state.map={getLevel:()=>4};
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}getLat(){return this.latitude}getLng(){return this.longitude}}
+    kakao={maps:{LatLng:TestLatLng,services:{Status:{OK:'OK',ZERO_RESULT:'ZERO_RESULT',ERROR:'ERROR'},SortBy:{DISTANCE:'DISTANCE'}}}};
+    testFetches=[];fetch=async url=>{testFetches.push(String(url));throw new Error('nearby API must not be called')};
+    testCategoryCalls=[];testOpened=[];
+    state.placesService={categorySearch(code,callback,options){testCategoryCalls.push({code,callback,options});const place=code==='MT1'||code==='CS2'?[{id:'shared',place_name:'Fresh Place',category_name:'Store',address_name:'Lot',road_address_name:'Road',phone:'02-123',place_url:'https://place.test/shared',x:'127.0423456',y:'37.6654321',distance:'0'}]:[];callback(place,place.length?'OK':'ZERO_RESULT')}};
+    openPlace=place=>testOpened.push(place);
+    handleMapPointerEvent({type:'pointerdown',pointerType:'touch',pointerId:1,clientX:100,clientY:100});
+    handleMapClick({point:{x:100,y:100},latLng:{getLat:()=>37.6654321,getLng:()=>127.0423456}}).then(returned=>({returned,opened:testOpened,fetches:testFetches,calls:testCategoryCalls,perf:mapTapPerformanceRecords.at(-1)}));
+  `,context);
+  const result=await resultPromise;
+  assert.equal(result.fetches.length,0);
+  assert.equal(result.calls.length,18);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.calls.map(call=>call.code))),['MT1','CS2','PS3','SC4','AC5','PK6','OL7','SW8','BK9','CT1','AG2','PO3','AT4','AD5','FD6','CE7','HP8','PM9']);
+  for(const call of result.calls){
+    assert.equal(call.options.location.getLat(),37.6654321);
+    assert.equal(call.options.location.getLng(),127.0423456);
+    assert.equal(call.options.radius,12);
+    assert.equal(call.options.size,3);
+    assert.equal(call.options.page,1);
+    assert.equal(call.options.sort,'DISTANCE');
+  }
+  assert.equal(result.returned.id,'shared');
+  assert.equal(result.opened.length,1);
+  assert.equal(result.opened[0].id,'shared');
+  assert.equal(result.perf['결과'],'SELECTED');
+  assert.equal(result.perf['후보 수'],1);
+  assert.equal(result.perf['가장 가까운 후보'],'Fresh Place');
+  for(const key of ['터치 → fresh search 시작','Browser fresh-nearby 18-category','응답 수신 → 업체 결정','업체 결정 → openPlace','전체 터치 → 업체 카드 호출'])assert.equal(Number.isFinite(result.perf[key]),true,key);
+});
+
+test('browser fresh nearby treats ZERO_RESULT as empty and ERROR as a failed tap', async () => {
+  const zero=loadApp();
+  const zeroResult=await vm.runInContext(`
+    state.screen='map';state.mapClickBlockedUntil=0;state.map={getLevel:()=>2};
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    kakao={maps:{LatLng:TestLatLng,services:{Status:{OK:'OK',ZERO_RESULT:'ZERO_RESULT',ERROR:'ERROR'},SortBy:{DISTANCE:'DISTANCE'}}}};
+    testOpened=[];state.placesService={categorySearch(code,callback){callback([],kakao.maps.services.Status.ZERO_RESULT)}};openPlace=place=>testOpened.push(place);
+    handleMapClick({point:{x:1,y:1},latLng:{getLat:()=>37.5,getLng:()=>127}}).then(returned=>({returned,opened:testOpened,perf:mapTapPerformanceRecords.at(-1)}));
+  `,zero);
+  assert.equal(zeroResult.returned,null);
+  assert.equal(zeroResult.opened.length,0);
+  assert.equal(zeroResult.perf['결과'],'NO_CANDIDATE');
+  assert.equal(zeroResult.perf['후보 수'],0);
+
+  const failed=loadApp();
+  const failedResult=await vm.runInContext(`
+    state.screen='map';state.mapClickBlockedUntil=0;state.map={getLevel:()=>2};
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    kakao={maps:{LatLng:TestLatLng,services:{Status:{OK:'OK',ZERO_RESULT:'ZERO_RESULT',ERROR:'ERROR'},SortBy:{DISTANCE:'DISTANCE'}}}};
+    testOpened=[];testCalls=0;state.placesService={categorySearch(code,callback){testCalls++;callback([],testCalls===1?kakao.maps.services.Status.ERROR:kakao.maps.services.Status.ZERO_RESULT)}};openPlace=place=>testOpened.push(place);
+    handleMapClick({point:{x:1,y:1},latLng:{getLat:()=>37.5,getLng:()=>127}}).then(returned=>({returned,opened:testOpened,calls:testCalls,perf:mapTapPerformanceRecords.at(-1)}));
+  `,failed);
+  assert.equal(failedResult.returned,null);
+  assert.equal(failedResult.opened.length,0);
+  assert.equal(failedResult.calls,18);
+  assert.equal(failedResult.perf['결과'],'ERROR');
+});
+
+test('a stale browser fresh nearby result cannot replace the latest tapped place', async () => {
+  const context=loadApp();
+  vm.runInContext(`
+    state.screen='map';state.mapClickBlockedUntil=0;state.map={getLevel:()=>4};
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    kakao={maps:{LatLng:TestLatLng,services:{Status:{OK:'OK',ZERO_RESULT:'ZERO_RESULT',ERROR:'ERROR'},SortBy:{DISTANCE:'DISTANCE'}}}};
+    testCalls=[];testOpened=[];state.placesService={categorySearch(code,callback){testCalls.push({code,callback})}};openPlace=place=>testOpened.push(place.id);
+    testFirst=handleMapClick({point:{x:1,y:1},latLng:{getLat:()=>37.5,getLng:()=>127}});
+    testSecond=handleMapClick({point:{x:2,y:2},latLng:{getLat:()=>37.6,getLng:()=>127.1}});
+  `,context);
+  assert.equal(context.testCalls.length,36);
+  context.testCalls.slice(18).forEach((call,index)=>call.callback(index===0?[{id:'second',place_name:'Second',x:'127.1',y:'37.6',distance:'0'}]:[],index===0?'OK':'ZERO_RESULT'));
+  const second=await context.testSecond;
+  context.testCalls.slice(0,18).forEach((call,index)=>call.callback(index===0?[{id:'first',place_name:'First',x:'127',y:'37.5',distance:'0'}]:[],index===0?'OK':'ZERO_RESULT'));
+  const first=await context.testFirst;
+  assert.equal(second.id,'second');
+  assert.equal(first,null);
+  assert.deepEqual(JSON.parse(JSON.stringify(context.testOpened)),['second']);
+});
+
+test('map initialization and idle do not start viewport category searches', async () => {
+  const context=loadApp();
+  await vm.runInContext(`
+    testCategoryCalls=[];
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    class TestMap {constructor(){this.listeners={}}setDraggable(){}setZoomable(){}getLevel(){return 4}getBounds(){return{getSouthWest:()=>({getLng:()=>126.9,getLat:()=>37.4}),getNorthEast:()=>({getLng:()=>127.1,getLat:()=>37.6})}}}
+    class TestPlaces {categorySearch(code,callback,options){testCategoryCalls.push({code,callback,options})}}
+    kakao={maps:{LatLng:TestLatLng,Map:TestMap,event:{addListener(target,type,listener){target.listeners[type]=listener}},services:{Places:TestPlaces,Status:{OK:'OK',ZERO_RESULT:'ZERO_RESULT'}}}};
+    loadKakao=async()=>{};locate=async()=>{};renderScreen=()=>{};
+    initMap().then(()=>{handleMapIdle();return testCategoryCalls.length});
+  `,context).then(count=>assert.equal(count,0));
 });
 
 test('a returned nearby candidate outside the existing radius is recorded without selection', async () => {
   const context=loadApp();
   const result=await vm.runInContext(`
     state.screen='map';state.mapClickBlockedUntil=0;state.map={getLevel:()=>1};testOpened=null;
-    fetch=async()=>({ok:true,json:async()=>({results:[{id:'far',name:'반경 밖 업체',category:'음식점',latitude:37.6659,longitude:127.0423456}],timing:{categorySearchMs:20}})});
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    kakao={maps:{LatLng:TestLatLng,services:{Status:{OK:'OK',ZERO_RESULT:'ZERO_RESULT',ERROR:'ERROR'},SortBy:{DISTANCE:'DISTANCE'}}}};
+    state.placesService={categorySearch(code,callback){callback(code==='FD6'?[{id:'far',place_name:'반경 밖 업체',category_name:'음식점',y:'37.6659',x:'127.0423456',distance:'52'}]:[],code==='FD6'?'OK':'ZERO_RESULT')}};
     openPlace=place=>{testOpened=place};
     handleMapClick({point:{x:100,y:100},latLng:{getLat:()=>37.6654321,getLng:()=>127.0423456}}).then(returned=>({returned,opened:testOpened}));
   `,context);
@@ -333,7 +429,7 @@ test('a returned nearby candidate outside the existing radius is recorded withou
   const perf=vm.runInContext('mapTapPerformanceRecords.at(-1)',context);
   assert.equal(perf['결과'],'OUT_OF_RADIUS');
   assert.equal(perf['검색 반경(m)'],6);
-  assert.equal(perf['API 후보 수'],1);
+  assert.equal(perf['후보 수'],1);
   assert.equal(perf['가장 가까운 후보'],'반경 밖 업체');
   assert.equal(perf['가장 가까운 거리(m)']>6,true);
   const rendered=context.document.querySelector('#mapTapPerfRecords').innerHTML;
@@ -341,24 +437,17 @@ test('a returned nearby candidate outside the existing radius is recorded withou
   assert.match(rendered,/반경 밖 업체 52m/);
 });
 
-test('failed and aborted nearby requests are distinguished in PERF records', async () => {
+test('a failed browser fresh-nearby search is recorded as ERROR', async () => {
   const apiError=loadApp();
   await vm.runInContext(`
     state.screen='map';state.mapClickBlockedUntil=0;state.map={getLevel:()=>2};
-    fetch=async()=>({ok:false,json:async()=>({error:'failed'})});
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    kakao={maps:{LatLng:TestLatLng,services:{Status:{OK:'OK',ZERO_RESULT:'ZERO_RESULT',ERROR:'ERROR'},SortBy:{DISTANCE:'DISTANCE'}}}};
+    state.placesService={categorySearch(code,callback){callback([],code==='MT1'?'ERROR':'ZERO_RESULT')}};
     handleMapClick({point:{x:1,y:1},latLng:{getLat:()=>37.5,getLng:()=>127}});
   `,apiError);
-  assert.equal(vm.runInContext("mapTapPerformanceRecords.at(-1)['결과']",apiError),'API_ERROR');
+  assert.equal(vm.runInContext("mapTapPerformanceRecords.at(-1)['결과']",apiError),'ERROR');
   assert.equal(vm.runInContext("mapTapPerformanceRecords.at(-1)['검색 반경(m)']",apiError),8);
-
-  const aborted=loadApp();
-  await vm.runInContext(`
-    state.screen='map';state.mapClickBlockedUntil=0;state.map={getLevel:()=>3};
-    fetch=async()=>{const error=new Error('aborted');error.name='AbortError';throw error};
-    handleMapClick({point:{x:1,y:1},latLng:{getLat:()=>37.5,getLng:()=>127}});
-  `,aborted);
-  assert.equal(vm.runInContext("mapTapPerformanceRecords.at(-1)['결과']",aborted),'ABORTED');
-  assert.equal(vm.runInContext("mapTapPerformanceRecords.at(-1)['검색 반경(m)']",aborted),10);
 });
 
 test('a one-second map long press reverse geocodes the exact pressed coordinate', () => {
