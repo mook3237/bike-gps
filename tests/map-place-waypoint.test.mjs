@@ -250,6 +250,53 @@ test('a short map tap searches around the touch and opens a business missing fro
   const timing=context.testPerformanceRows[0];
   assert.equal(timing['서버 내부 18개 카테고리 검색'],321);
   for(const key of ['터치 → API 요청 시작','API 요청 전체','응답 수신 → 업체 결정','업체 결정 → openPlace','전체 터치 → 업체 카드 호출'])assert.equal(Number.isFinite(timing[key]),true,key);
+  const perf=vm.runInContext('mapTapPerformanceRecords.at(-1)',context);
+  assert.equal(perf['결과'],'SELECTED');
+  assert.equal(perf['지도 level'],4);
+  assert.equal(perf['검색 반경(m)'],12);
+  assert.equal(perf['API 후보 수'],1);
+  assert.equal(perf['가장 가까운 후보'],'CU 방학점');
+  assert.equal(Number.isFinite(perf['가장 가까운 거리(m)']),true);
+});
+
+test('the compact PERF panel keeps and copies only the five latest map tap records', async () => {
+  assert.match(html,/id="mapTapPerfToggle"[^>]*>PERF<\/button>/);
+  assert.match(html,/id="mapTapPerfBody"[^>]*class="hidden"/);
+  const context=loadApp();
+  context.testCopied='';
+  context.navigator.clipboard={writeText:async text=>{context.testCopied=text}};
+  vm.runInContext(`
+    for(let index=1;index<=6;index++)recordMapTapPerformance({
+      '결과':index===6?'NO_CANDIDATE':'SELECTED',
+      '지도 level':4,
+      '검색 반경(m)':12,
+      'API 후보 수':index===6?0:1,
+      '전체 터치 → 업체 카드 호출':index*10,
+      'API 요청 전체':index*8,
+      '서버 내부 18개 카테고리 검색':index*6,
+      '응답 수신 → 업체 결정':index
+    });
+  `,context);
+  assert.equal(vm.runInContext('mapTapPerformanceRecords.length',context),5);
+  const records=context.document.querySelector('#mapTapPerfRecords').innerHTML;
+  assert.doesNotMatch(records,/전체 10ms/);
+  assert.match(records,/전체 60ms/);
+  assert.match(records,/API 48ms/);
+  assert.match(records,/서버 36ms/);
+  assert.match(records,/결정 6ms/);
+  assert.match(records,/NO_CANDIDATE/);
+  assert.match(records,/L4 · 12m/);
+  assert.match(records,/후보 0/);
+  const body=context.document.querySelector('#mapTapPerfBody');
+  assert.equal(body.classList.contains('hidden'),true);
+  context.document.querySelector('#mapTapPerfToggle').onclick({stopPropagation(){}});
+  assert.equal(body.classList.contains('hidden'),false);
+  await context.document.querySelector('#mapTapPerfCopy').onclick({stopPropagation(){}});
+  const copied=JSON.parse(context.testCopied);
+  assert.equal(copied.length,5);
+  assert.equal(copied.at(-1)['전체 터치 → 업체 카드 호출'],60);
+  assert.equal(copied.at(-1)['결과'],'NO_CANDIDATE');
+  assert.equal(copied.at(-1)['API 후보 수'],0);
 });
 
 test('a short map tap with no nearby business does nothing', async () => {
@@ -264,6 +311,54 @@ test('a short map tap with no nearby business does nothing', async () => {
   assert.equal(result.returned,null);
   assert.equal(result.opened,null);
   assert.equal(result.addressCalls,0);
+  const perf=vm.runInContext('mapTapPerformanceRecords.at(-1)',context);
+  assert.equal(perf['결과'],'NO_CANDIDATE');
+  assert.equal(perf['지도 level'],4);
+  assert.equal(perf['검색 반경(m)'],12);
+  assert.equal(perf['API 후보 수'],0);
+  assert.equal(perf['가장 가까운 후보'],null);
+  assert.match(context.document.querySelector('#mapTapPerfRecords').innerHTML,/NO_CANDIDATE/);
+});
+
+test('a returned nearby candidate outside the existing radius is recorded without selection', async () => {
+  const context=loadApp();
+  const result=await vm.runInContext(`
+    state.screen='map';state.mapClickBlockedUntil=0;state.map={getLevel:()=>1};testOpened=null;
+    fetch=async()=>({ok:true,json:async()=>({results:[{id:'far',name:'반경 밖 업체',category:'음식점',latitude:37.6659,longitude:127.0423456}],timing:{categorySearchMs:20}})});
+    openPlace=place=>{testOpened=place};
+    handleMapClick({point:{x:100,y:100},latLng:{getLat:()=>37.6654321,getLng:()=>127.0423456}}).then(returned=>({returned,opened:testOpened}));
+  `,context);
+  assert.equal(result.returned,null);
+  assert.equal(result.opened,null);
+  const perf=vm.runInContext('mapTapPerformanceRecords.at(-1)',context);
+  assert.equal(perf['결과'],'OUT_OF_RADIUS');
+  assert.equal(perf['검색 반경(m)'],6);
+  assert.equal(perf['API 후보 수'],1);
+  assert.equal(perf['가장 가까운 후보'],'반경 밖 업체');
+  assert.equal(perf['가장 가까운 거리(m)']>6,true);
+  const rendered=context.document.querySelector('#mapTapPerfRecords').innerHTML;
+  assert.match(rendered,/OUT_OF_RADIUS/);
+  assert.match(rendered,/반경 밖 업체 52m/);
+});
+
+test('failed and aborted nearby requests are distinguished in PERF records', async () => {
+  const apiError=loadApp();
+  await vm.runInContext(`
+    state.screen='map';state.mapClickBlockedUntil=0;state.map={getLevel:()=>2};
+    fetch=async()=>({ok:false,json:async()=>({error:'failed'})});
+    handleMapClick({point:{x:1,y:1},latLng:{getLat:()=>37.5,getLng:()=>127}});
+  `,apiError);
+  assert.equal(vm.runInContext("mapTapPerformanceRecords.at(-1)['결과']",apiError),'API_ERROR');
+  assert.equal(vm.runInContext("mapTapPerformanceRecords.at(-1)['검색 반경(m)']",apiError),8);
+
+  const aborted=loadApp();
+  await vm.runInContext(`
+    state.screen='map';state.mapClickBlockedUntil=0;state.map={getLevel:()=>3};
+    fetch=async()=>{const error=new Error('aborted');error.name='AbortError';throw error};
+    handleMapClick({point:{x:1,y:1},latLng:{getLat:()=>37.5,getLng:()=>127}});
+  `,aborted);
+  assert.equal(vm.runInContext("mapTapPerformanceRecords.at(-1)['결과']",aborted),'ABORTED');
+  assert.equal(vm.runInContext("mapTapPerformanceRecords.at(-1)['검색 반경(m)']",aborted),10);
 });
 
 test('a one-second map long press reverse geocodes the exact pressed coordinate', () => {
