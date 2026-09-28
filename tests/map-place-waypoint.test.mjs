@@ -482,6 +482,40 @@ test('a one-second map long press reverse geocodes the exact pressed coordinate'
   assert.equal(result.opened[0].place.longitude,127.0423456);
 });
 
+test('an initial calculated route overview long press renders navigation actions without changing the route', () => {
+  const context=loadApp('',true);
+  const result=vm.runInContext(`
+    state.screen='route';state.navigationRouteDraft=null;
+    testDestination={id:'destination',name:'Destination',latitude:37.7,longitude:127.2};
+    testWaypoint={id:'waypoint',name:'Waypoint',latitude:37.6,longitude:127.1};
+    testRoute={id:'calculated',_points:[testWaypoint,testDestination]};
+    state.destination=testDestination;state.waypoints=[testWaypoint];state.routes=[testRoute];state.selectedRoute=0;
+    testPreviewCalls=[];
+    class TestPoint {constructor(x,y){this.x=x;this.y=y}}
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    class TestOverlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}}
+    class TestGeocoder {coord2Address(x,y,callback){callback([{road_address:{address_name:'Initial route address'},address:{address_name:'Initial route lot'}}],'OK')}}
+    kakao={maps:{Point:TestPoint,LatLng:TestLatLng,CustomOverlay:TestOverlay,services:{Geocoder:TestGeocoder,Status:{OK:'OK'}}}};
+    state.map={getProjection:()=>({coordsFromContainerPoint:()=>({getLat:()=>37.6123,getLng:()=>127.0456})}),relayout(){}};
+    $('#map').getBoundingClientRect=()=>({left:0,top:0,width:320,height:500});history={pushState(){},replaceState(){}};
+    beginNavigationRoutePreview=(kind,place)=>testPreviewCalls.push({kind,place});
+    handleMapPointerEvent({type:'pointerdown',pointerType:'touch',pointerId:20,clientX:100,clientY:180});
+    runPendingTimers();
+    ({screen:state.screen,sameDestination:state.destination===testDestination,sameRoute:state.routes[0]===testRoute,waypoints:state.waypoints.map(place=>place.id),draft:state.navigationRouteDraft,previewCalls:testPreviewCalls.length,html:$('#sheetContent').innerHTML,changeHandler:typeof $('#changeNavDestination').onclick,addHandler:typeof $('#addNavWaypoint').onclick});
+  `,context);
+  assert.equal(result.screen,'navigation-place');
+  assert.equal(result.sameDestination,true);
+  assert.equal(result.sameRoute,true);
+  assert.deepEqual([...result.waypoints],['waypoint']);
+  assert.equal(result.draft,null);
+  assert.equal(result.previewCalls,0);
+  assert.match(result.html,/id="changeNavDestination"/);
+  assert.match(result.html,/id="addNavWaypoint"/);
+  assert.doesNotMatch(result.html,/id="setStart"|id="setEnd"/);
+  assert.equal(result.changeHandler,'function');
+  assert.equal(result.addHandler,'function');
+});
+
 test('a route preview long press opens the existing navigation address card without committing route state', () => {
   const context=loadApp('',true);
   const result=vm.runInContext(`
