@@ -266,6 +266,51 @@ test('a short map tap searches around the touch and opens a business missing fro
   assert.equal(Number.isFinite(perf['가장 가까운 거리(m)']),true);
 });
 
+test('short tap uses the same place pipeline and state-based actions in every interactive map context', async () => {
+  const scenarios=[
+    {name:'initial map',screen:'map',postInitial:false,expected:['setStart','setEnd']},
+    {name:'initial route overview',screen:'route',postInitial:true,expected:['changeNavDestination','addNavWaypoint']},
+    {name:'live navigation',screen:'navigation',postInitial:true,expected:['changeNavDestination','addNavWaypoint']},
+    {name:'navigation route preview',screen:'route',postInitial:true,draft:true,expected:['changeNavDestination','addNavWaypoint']},
+  ];
+  for(const scenario of scenarios){
+    const context=loadApp();
+    const result=await vm.runInContext(`
+      state.screen=${JSON.stringify(scenario.screen)};state.mapClickBlockedUntil=0;
+      state.departure=${scenario.postInitial?"{id:'departure',name:'Departure',latitude:37.5,longitude:127}":'null'};
+      state.destination=${scenario.postInitial?"{id:'destination',name:'Destination',latitude:37.7,longitude:127.2}":'null'};
+      state.waypoints=${scenario.postInitial?"[{id:'waypoint',name:'Waypoint',latitude:37.6,longitude:127.1}]":'[]'};
+      state.routes=${scenario.postInitial?"[{id:'route',_points:[state.departure,...state.waypoints,state.destination]}]":'[]'};state.selectedRoute=0;
+      state.navigationRouteDraft=${scenario.draft?"{kind:'destination',destination:state.destination,origin:state.departure,waypoints:state.waypoints,routes:state.routes,selectedRoute:0}":'null'};
+      state.nav.progressDistance=321;state.nav.currentStep=2;
+      testBefore=JSON.stringify({destination:state.destination,routes:state.routes,waypoints:state.waypoints,progress:state.nav.progressDistance,currentStep:state.nav.currentStep,draft:state.navigationRouteDraft});
+      testCategoryCalls=[];
+      class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+      kakao={maps:{LatLng:TestLatLng,services:{Status:{OK:'OK',ZERO_RESULT:'ZERO_RESULT',ERROR:'ERROR'},SortBy:{DISTANCE:'DISTANCE'}}}};
+      state.map={getLevel:()=>4,relayout(){},panTo(){}};
+      history={pushState(){},replaceState(){},back(){}};
+      state.placesService={categorySearch(code,callback,options){testCategoryCalls.push({code,options});callback(code==='CS2'?[{id:'business',place_name:'Selected business',category_name:'Convenience store',road_address_name:'Business road',y:'37.50001',x:'127.00001',distance:'1'}]:[],code==='CS2'?'OK':'ZERO_RESULT')}};
+      handleMapPointerEvent({type:'pointerdown',pointerType:'touch',pointerId:1,clientX:100,clientY:100});
+      handleMapClick({point:{x:100,y:100},latLng:{getLat:()=>37.5,getLng:()=>127}}).then(place=>({
+        placeId:place?.id,screen:state.screen,html:$('#sheetContent').innerHTML,
+        handlers:{setStart:typeof $('#setStart').onclick,setEnd:typeof $('#setEnd').onclick,changeNavDestination:typeof $('#changeNavDestination').onclick,addNavWaypoint:typeof $('#addNavWaypoint').onclick},
+        calls:testCategoryCalls.map(call=>({code:call.code,radius:call.options.radius,size:call.options.size,page:call.options.page,sort:call.options.sort})),
+        unchanged:testBefore===JSON.stringify({destination:state.destination,routes:state.routes,waypoints:state.waypoints,progress:state.nav.progressDistance,currentStep:state.nav.currentStep,draft:state.navigationRouteDraft})
+      }));
+    `,context);
+    assert.equal(result.placeId,'business',scenario.name);
+    assert.equal(result.calls.length,18,scenario.name);
+    assert.equal(new Set(result.calls.map(call=>call.code)).size,18,scenario.name);
+    assert.equal(result.calls.every(call=>call.radius===12&&call.size===3&&call.page===1&&call.sort==='DISTANCE'),true,scenario.name);
+    assert.equal(result.unchanged,true,scenario.name);
+    for(const action of scenario.expected){
+      assert.match(result.html,new RegExp(`id="${action}"`),scenario.name);
+      assert.equal(result.handlers[action],'function',scenario.name);
+    }
+    if(!scenario.postInitial)assert.match(result.html,/>목적지<\/button>/,scenario.name);
+  }
+});
+
 test('the compact PERF panel keeps and copies only the five latest map tap records', async () => {
   assert.match(html,/id="mapTapPerfToggle"[^>]*>PERF<\/button>/);
   assert.match(html,/id="mapTapPerfBody"[^>]*class="hidden"/);
@@ -466,8 +511,10 @@ test('a one-second map long press reverse geocodes the exact pressed coordinate'
     state.screen='map';state.mapClickBlockedUntil=0;
     testGeocodeRequests=[];testOpened=[];
     class TestPoint {constructor(x,y){this.x=x;this.y=y}}
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    class TestOverlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}}
     class TestGeocoder {coord2Address(x,y,callback){testGeocodeRequests.push({x,y});callback([{road_address:{address_name:'서울 도봉구 도봉로 123'},address:{address_name:'서울 도봉구 방학동 456'}}],'OK')}}
-    kakao={maps:{Point:TestPoint,services:{Geocoder:TestGeocoder,Status:{OK:'OK'}}}};
+    kakao={maps:{Point:TestPoint,LatLng:TestLatLng,CustomOverlay:TestOverlay,services:{Geocoder:TestGeocoder,Status:{OK:'OK'}}}};
     state.map={getProjection:()=>({coordsFromContainerPoint:point=>({getLat:()=>37.6654321+point.y*0,getLng:()=>127.0423456+point.x*0})})};
     $('#map').getBoundingClientRect=()=>({left:20,top:40,width:320,height:500});
     openPlace=(place,preserveViewport)=>testOpened.push({place,preserveViewport});
@@ -482,10 +529,60 @@ test('a one-second map long press reverse geocodes the exact pressed coordinate'
   assert.equal(result.opened[0].place.longitude,127.0423456);
 });
 
+test('long press pins the exact address and uses state-based actions in every interactive map context', () => {
+  const scenarios=[
+    {name:'initial map',screen:'map',postInitial:false,expected:['setStart','setEnd']},
+    {name:'initial route overview',screen:'route',postInitial:true,expected:['changeNavDestination','addNavWaypoint']},
+    {name:'live navigation',screen:'navigation',postInitial:true,expected:['changeNavDestination','addNavWaypoint']},
+    {name:'navigation route preview',screen:'route',postInitial:true,draft:true,expected:['changeNavDestination','addNavWaypoint']},
+  ];
+  for(const scenario of scenarios){
+    const context=loadApp('',true);
+    const result=vm.runInContext(`
+      state.screen=${JSON.stringify(scenario.screen)};
+      state.departure=${scenario.postInitial?"{id:'departure',name:'Departure',latitude:37.5,longitude:127}":'null'};
+      state.destination=${scenario.postInitial?"{id:'destination',name:'Destination',latitude:37.7,longitude:127.2}":'null'};
+      state.waypoints=${scenario.postInitial?"[{id:'waypoint',name:'Waypoint',latitude:37.6,longitude:127.1}]":'[]'};
+      state.routes=${scenario.postInitial?"[{id:'route',_points:[state.departure,...state.waypoints,state.destination]}]":'[]'};state.selectedRoute=0;
+      state.navigationRouteDraft=${scenario.draft?"{kind:'waypoint',destination:state.destination,origin:state.departure,waypoints:state.waypoints,routes:state.routes,selectedRoute:0}":'null'};
+      state.nav.progressDistance=654;state.nav.currentStep=3;
+      testBefore=JSON.stringify({destination:state.destination,routes:state.routes,waypoints:state.waypoints,progress:state.nav.progressDistance,currentStep:state.nav.currentStep,draft:state.navigationRouteDraft});
+      testGeocodeRequests=[];testPreviewCalls=[];
+      class TestPoint {constructor(x,y){this.x=x;this.y=y}}
+      class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+      class TestOverlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}}
+      class TestGeocoder {coord2Address(x,y,callback){testGeocodeRequests.push({x,y});callback([{road_address:{address_name:'Selected road address'},address:{address_name:'Selected lot address'}}],'OK')}}
+      kakao={maps:{Point:TestPoint,LatLng:TestLatLng,CustomOverlay:TestOverlay,services:{Geocoder:TestGeocoder,Status:{OK:'OK'}}}};
+      state.map={getProjection:()=>({coordsFromContainerPoint:()=>({getLat:()=>37.6123456,getLng:()=>127.0456789})}),relayout(){},panTo(){}};
+      $('#map').getBoundingClientRect=()=>({left:0,top:0,width:320,height:500});
+      history={pushState(){},replaceState(){},back(){}};
+      beginNavigationRoutePreview=(kind,place)=>testPreviewCalls.push({kind,place});
+      handleMapPointerEvent({type:'pointerdown',pointerType:'touch',pointerId:7,clientX:100,clientY:180});
+      runPendingTimers();
+      ({screen:state.screen,html:$('#sheetContent').innerHTML,requests:testGeocodeRequests,
+        handlers:{setStart:typeof $('#setStart').onclick,setEnd:typeof $('#setEnd').onclick,changeNavDestination:typeof $('#changeNavDestination').onclick,addNavWaypoint:typeof $('#addNavWaypoint').onclick},
+        markers:state.routeEndpointMarkers.map(marker=>[marker.position.latitude,marker.position.longitude,marker.content.className]),
+        previewCalls:testPreviewCalls.length,
+        unchanged:testBefore===JSON.stringify({destination:state.destination,routes:state.routes,waypoints:state.waypoints,progress:state.nav.progressDistance,currentStep:state.nav.currentStep,draft:state.navigationRouteDraft})});
+    `,context);
+    assert.deepEqual(JSON.parse(JSON.stringify(result.requests)),[{x:127.0456789,y:37.6123456}],scenario.name);
+    const selectedPins=JSON.parse(JSON.stringify(result.markers)).filter(marker=>marker[2]==='route-endpoint-marker destination');
+    assert.deepEqual(selectedPins,[[37.6123456,127.0456789,'route-endpoint-marker destination']],scenario.name);
+    assert.equal(result.previewCalls,0,scenario.name);
+    assert.equal(result.unchanged,true,scenario.name);
+    for(const action of scenario.expected){
+      assert.match(result.html,new RegExp(`id="${action}"`),scenario.name);
+      assert.equal(result.handlers[action],'function',scenario.name);
+    }
+    if(!scenario.postInitial)assert.match(result.html,/>목적지<\/button>/,scenario.name);
+  }
+});
+
 test('an initial calculated route overview long press renders navigation actions without changing the route', () => {
   const context=loadApp('',true);
   const result=vm.runInContext(`
     state.screen='route';state.navigationRouteDraft=null;
+    state.departure={id:'departure',name:'Departure',latitude:37.5,longitude:127};
     testDestination={id:'destination',name:'Destination',latitude:37.7,longitude:127.2};
     testWaypoint={id:'waypoint',name:'Waypoint',latitude:37.6,longitude:127.1};
     testRoute={id:'calculated',_points:[testWaypoint,testDestination]};
@@ -558,6 +655,7 @@ test('a navigation long press opens a destination-action card without changing t
   const context=loadApp('',true);
   const result=vm.runInContext(`
     state.screen='navigation';state.navigationSearch=false;
+    state.departure={id:'departure',name:'Departure',latitude:37.5,longitude:127};
     testOriginalDestination={id:'active-destination',name:'Active',latitude:37.7,longitude:127.2};state.destination=testOriginalDestination;
     testNavigationActions=[];
     class TestPoint {constructor(x,y){this.x=x;this.y=y}}
@@ -638,8 +736,9 @@ test('a main-map address long press keeps the existing departure and destination
     state.screen='map';
     class TestPoint {constructor(x,y){this.x=x;this.y=y}}
     class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    class TestOverlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}}
     class TestGeocoder {coord2Address(x,y,callback){callback([{road_address:{address_name:'Main map address'},address:{address_name:'Main lot'}}],'OK')}}
-    kakao={maps:{Point:TestPoint,LatLng:TestLatLng,services:{Geocoder:TestGeocoder,Status:{OK:'OK'}}}};
+    kakao={maps:{Point:TestPoint,LatLng:TestLatLng,CustomOverlay:TestOverlay,services:{Geocoder:TestGeocoder,Status:{OK:'OK'}}}};
     state.map={getProjection:()=>({coordsFromContainerPoint:()=>({getLat:()=>37.5,getLng:()=>127})}),relayout(){}};
     $('#map').getBoundingClientRect=()=>({left:0,top:0,width:320,height:500});history={pushState(){},replaceState(){}};
     handleMapPointerEvent({type:'pointerdown',pointerType:'touch',pointerId:23,clientX:100,clientY:150});
@@ -650,7 +749,7 @@ test('a main-map address long press keeps the existing departure and destination
   assert.match(result.html,/id="setStart"/);
   assert.match(result.html,/id="setEnd"/);
   assert.doesNotMatch(result.html,/id="changeNavDestination"|id="addNavWaypoint"/);
-  assert.equal(result.routeMarkers,0);
+  assert.equal(result.routeMarkers,1);
   assert.equal(context.document.querySelector('#setStart').classList.contains('hidden'),false);
   assert.equal(context.document.querySelector('#setEnd').classList.contains('hidden'),false);
 });
@@ -1630,7 +1729,7 @@ test('navigation place exposes only destination replacement and route addition',
 test('navigation category markers open and replace exact place cards with one tap', () => {
   const context=loadApp();
   const result=vm.runInContext(`
-    state.screen='navigation';state.visiblePlaceGeneration=9;state.visiblePlaceKey='viewport';visiblePlaceKey=()=> 'viewport';
+    state.screen='navigation';state.departure={id:'departure'};state.destination={id:'destination'};state.visiblePlaceGeneration=9;state.visiblePlaceKey='viewport';visiblePlaceKey=()=> 'viewport';
     state.map={relayout(){}};testPushes=[];testReplaces=[];testCards=[];
     history={pushState(entry){testPushes.push(entry)},replaceState(entry){testReplaces.push(entry)}};
     renderNavigationPlaceContent=place=>testCards.push(place.id);
@@ -1645,17 +1744,16 @@ test('navigation category markers open and replace exact place cards with one ta
   assert.equal(result.screen,'navigation-place');
 });
 
-test('navigation menu has route addition, no close button, and map tap dismisses it once', () => {
+test('navigation menu has route addition, no close button, and map tap dismisses it once', async () => {
   assert.match(html,/data-nav-action="add-route"/);
   assert.match(html,/data-nav-action="alternate-route"[^>]*>[\s\S]*?다른 경로 보기/);
   assert.doesNotMatch(html,/id="closeNavMenu"/);
   const context=loadApp();
   const menu=context.document.querySelector('#navMenu');
   menu.classList.remove('hidden');
-  const result=vm.runInContext(`
+  const result=await vm.runInContext(`
     state.screen='navigation';testOpened=[];openPlace=place=>testOpened.push(place);
-    const returned=handleMapClick({point:{x:10,y:10}});
-    ({returned,hidden:document.querySelector('#navMenu').classList.contains('hidden'),opened:testOpened.length});
+    handleMapClick({point:{x:10,y:10}}).then(returned=>({returned,hidden:document.querySelector('#navMenu').classList.contains('hidden'),opened:testOpened.length}));
   `,context);
   assert.equal(result.returned,null);
   assert.equal(result.hidden,true);
