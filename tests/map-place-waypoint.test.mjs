@@ -472,6 +472,93 @@ test('a one-second map long press reverse geocodes the exact pressed coordinate'
   assert.equal(result.opened[0].place.longitude,127.0423456);
 });
 
+test('a route preview long press opens the existing navigation address card without committing route state', () => {
+  const context=loadApp('',true);
+  const result=vm.runInContext(`
+    state.screen='route';
+    testOriginalDestination={id:'original-destination',name:'Original',latitude:37.7,longitude:127.2};
+    testDraft={kind:'destination',destination:testOriginalDestination,origin:{id:'origin',latitude:37.4,longitude:126.9},waypoints:[],routes:[],selectedRoute:0,original:{routes:[],selectedRoute:0}};
+    state.destination=testOriginalDestination;state.navigationRouteDraft=testDraft;
+    testGeocodeRequests=[];testHistory=[];
+    class TestPoint {constructor(x,y){this.x=x;this.y=y}}
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    class TestOverlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}}
+    class TestGeocoder {coord2Address(x,y,callback){testGeocodeRequests.push({x,y});callback([{road_address:{address_name:'Preview address'},address:{address_name:'Preview lot'}}],'OK')}}
+    kakao={maps:{Point:TestPoint,LatLng:TestLatLng,CustomOverlay:TestOverlay,services:{Geocoder:TestGeocoder,Status:{OK:'OK'}}}};
+    state.map={getProjection:()=>({coordsFromContainerPoint:()=>({getLat:()=>37.6123,getLng:()=>127.0456})}),relayout(){}};
+    $('#map').getBoundingClientRect=()=>({left:0,top:0,width:320,height:500});
+    history={pushState(entry){testHistory.push(entry)},replaceState(entry){testHistory.push(entry)}};
+    handleMapPointerEvent({type:'pointerdown',pointerType:'touch',pointerId:21,clientX:100,clientY:180});
+    runPendingTimers();
+    ({requests:testGeocodeRequests,screen:state.screen,sameDraft:state.navigationRouteDraft===testDraft,sameDestination:state.destination===testOriginalDestination,markers:state.routeEndpointMarkers.map(marker=>({latitude:marker.position.latitude,longitude:marker.position.longitude,className:marker.content.className})),html:$('#sheetContent').innerHTML});
+  `,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.requests)),[{x:127.0456,y:37.6123}]);
+  assert.equal(result.screen,'navigation-place');
+  assert.equal(result.sameDraft,true);
+  assert.equal(result.sameDestination,true);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.markers)),[{latitude:37.6123,longitude:127.0456,className:'route-endpoint-marker destination'}]);
+  assert.match(result.html,/id="changeNavDestination"/);
+  assert.match(result.html,/id="addNavWaypoint"/);
+  assert.doesNotMatch(result.html,/id="setStart"|id="setEnd"/);
+});
+
+test('a navigation long press opens a destination-action card without changing the active destination', () => {
+  const context=loadApp('',true);
+  const result=vm.runInContext(`
+    state.screen='navigation';state.navigationSearch=false;
+    testOriginalDestination={id:'active-destination',name:'Active',latitude:37.7,longitude:127.2};state.destination=testOriginalDestination;
+    class TestPoint {constructor(x,y){this.x=x;this.y=y}}
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    class TestOverlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}}
+    class TestGeocoder {coord2Address(x,y,callback){callback([{road_address:{address_name:'Navigation address'},address:{address_name:'Navigation lot'}}],'OK')}}
+    kakao={maps:{Point:TestPoint,LatLng:TestLatLng,CustomOverlay:TestOverlay,services:{Geocoder:TestGeocoder,Status:{OK:'OK'}}}};
+    state.map={getProjection:()=>({coordsFromContainerPoint:()=>({getLat:()=>37.6234,getLng:()=>127.0567})}),relayout(){}};
+    $('#map').getBoundingClientRect=()=>({left:0,top:0,width:320,height:500});history={pushState(){},replaceState(){}};
+    handleMapPointerEvent({type:'pointerdown',pointerType:'touch',pointerId:22,clientX:120,clientY:200});
+    runPendingTimers();
+    ({screen:state.screen,sameDestination:state.destination===testOriginalDestination,selected:state.selectedPlace,html:$('#sheetContent').innerHTML});
+  `,context);
+  assert.equal(result.screen,'navigation-place');
+  assert.equal(result.sameDestination,true);
+  assert.equal(result.selected.latitude,37.6234);
+  assert.equal(result.selected.longitude,127.0567);
+  assert.match(result.html,/id="changeNavDestination"/);
+  assert.match(result.html,/id="addNavWaypoint"/);
+});
+
+test('the search landing map-selection button returns to the navigation map for long press', () => {
+  assert.match(html,/class="recent-head"[\s\S]*최근 검색[\s\S]*id="selectOnMapBtn"[^>]*>지도에서 선택<\/button>/);
+  const context=loadApp();
+  installNavigationFlowEnvironment(context);
+  vm.runInContext("openNavigationSearch('browse')",context);
+  const button=context.document.querySelector('#selectOnMapBtn');
+  assert.equal(typeof button.onclick,'function');
+  button.onclick();
+  assert.equal(vm.runInContext('state.screen',context),'navigation');
+  assert.equal(vm.runInContext('state.navigationSearch',context),false);
+});
+
+test('a main-map address long press keeps the existing departure and destination actions', () => {
+  const context=loadApp('',true);
+  const result=vm.runInContext(`
+    state.screen='map';
+    class TestPoint {constructor(x,y){this.x=x;this.y=y}}
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    class TestGeocoder {coord2Address(x,y,callback){callback([{road_address:{address_name:'Main map address'},address:{address_name:'Main lot'}}],'OK')}}
+    kakao={maps:{Point:TestPoint,LatLng:TestLatLng,services:{Geocoder:TestGeocoder,Status:{OK:'OK'}}}};
+    state.map={getProjection:()=>({coordsFromContainerPoint:()=>({getLat:()=>37.5,getLng:()=>127})}),relayout(){}};
+    $('#map').getBoundingClientRect=()=>({left:0,top:0,width:320,height:500});history={pushState(){},replaceState(){}};
+    handleMapPointerEvent({type:'pointerdown',pointerType:'touch',pointerId:23,clientX:100,clientY:150});
+    runPendingTimers();
+    ({screen:state.screen,html:$('#sheetContent').innerHTML,routeMarkers:state.routeEndpointMarkers.length});
+  `,context);
+  assert.equal(result.screen,'place');
+  assert.match(result.html,/id="setStart"/);
+  assert.match(result.html,/id="setEnd"/);
+  assert.doesNotMatch(result.html,/id="changeNavDestination"|id="addNavWaypoint"/);
+  assert.equal(result.routeMarkers,0);
+});
+
 test('a map drag cancels a pending long press address selection', () => {
   const context = loadApp('',true);
   const opened = vm.runInContext(`
