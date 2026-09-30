@@ -64,7 +64,7 @@ await check('three route modes are unchanged', () => assert.match(bikeSource, /\
 await check('SPA history still uses pushState and popstate', () => { assert.match(app, /history\.pushState/); assert.match(app, /addEventListener\('popstate'/); });
 await check('initial current-location acquisition remains', () => assert.match(app, /geolocation\.getCurrentPosition/));
 await check('navigation GPS watch remains', () => assert.match(app, /geolocation\.watchPosition/));
-await check('ride storage key remains unchanged', () => assert.match(app, /localStorage\.setItem\('ridemate_rides'/));
+await check('ride storage is routed through the active profile repository', () => assert.match(app, /profileRepository\.prependRide\(activeProfileId/));
 
 await check('HTML escaping still covers unsafe characters', () => {
   const { esc } = functions(['esc']);

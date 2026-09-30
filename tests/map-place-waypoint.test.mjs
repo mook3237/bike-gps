@@ -1802,6 +1802,58 @@ test('navigation add-route search selection calculates a pending route and opens
   assert.equal(result.cancelHidden,false);
 });
 
+test('route-add keeps the selected existing route as route 1 and appends one matching candidate as route 2', async () => {
+  const context=loadApp();
+  const result=await vm.runInContext(`(async()=>{
+    const origin={id:'origin',name:'Current',latitude:37,longitude:127},existing={id:'existing',name:'Existing'},added={id:'added',name:'Added'},destination={id:'destination',name:'Destination'};
+    const ignoredExisting={id:'ignored-existing',routeMode:'SHORTEST',_steps:[{guidance:'ignored'}]},selectedExisting={id:'route-1',routeMode:'BIKE_ONLY',_steps:[{guidance:'existing'}]};
+    const shortest={id:'new-shortest',routeMode:'SHORTEST',route:{},totalDistance:90},matching={id:'route-2',routeMode:'BIKE_ONLY',route:{},totalDistance:100},accessible={id:'new-accessible',routeMode:'ACCESSIBLE',route:{},totalDistance:110};
+    state.screen='navigation';state.currentLocation=origin;state.destination=destination;state.waypoints=[existing];state.routes=[ignoredExisting,selectedExisting];state.selectedRoute=1;
+    state.map={getLevel:()=>4,getCenter:()=>origin,relayout(){}};state.nav.watchId=77;state.nav.progressDistance=321;
+    testRequestedWaypoints=[];fetchRoutes=async(a,b,waypoints)=>{testRequestedWaypoints=waypoints;return[shortest,matching,accessible]};
+    prepareRoutes=routes=>routes.map(route=>({...route,_points:[origin,added,destination],_steps:[{guidance:route.id}]}));
+    drawRoutes=()=>{};drawRouteEndpointMarkers=()=>{};updateRouteFields=()=>{};finishRoutePerformance=()=>{};setGpsMarker=()=>{};
+    drawNavigationRoute=()=>{};initializeNavigationCamera=()=>{};updateNavHud=()=>{};history={pushState(){},replaceState(){}};
+    await beginNavigationRoutePreview('waypoint',added);
+    const preview={
+      ids:state.routes.map(route=>route.id),
+      route1Same:state.routes[0]===selectedExisting,
+      selected:state.selectedRoute,
+      draftSelected:state.navigationRouteDraft.selectedRoute,
+      requested:testRequestedWaypoints.map(place=>place.id),
+      draftWaypoints:state.navigationRouteDraft.waypoints.map(place=>place.id),
+      cards:document.querySelector('#routeCards').querySelectorAll('[data-i]').length
+    };
+    document.querySelector('#routeCards').querySelectorAll('[data-i]')[0].onclick();
+    const selectedRoute1={selected:state.selectedRoute,draftSelected:state.navigationRouteDraft.selectedRoute};
+    document.querySelector('#routeCards').querySelectorAll('[data-i]')[1].onclick();
+    const selectedRoute2={selected:state.selectedRoute,draftSelected:state.navigationRouteDraft.selectedRoute};
+    confirmNavigationRoutePreview();
+    return {preview,selectedRoute1,selectedRoute2,committed:{ids:state.routes.map(route=>route.id),route1Same:state.routes[0]===selectedExisting,waypoints:state.waypoints.map(place=>place.id),selected:state.selectedRoute}};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    preview:{ids:['route-1','route-2'],route1Same:true,selected:1,draftSelected:1,requested:['existing','added'],draftWaypoints:['existing','added'],cards:2},
+    selectedRoute1:{selected:0,draftSelected:0},
+    selectedRoute2:{selected:1,draftSelected:1},
+    committed:{ids:['route-1','route-2'],route1Same:true,waypoints:['existing','added'],selected:1}
+  });
+});
+
+test('destination-change preview keeps its existing calculated-candidate behavior', async () => {
+  const context=loadApp();
+  const result=await vm.runInContext(`(async()=>{
+    const origin={id:'origin',latitude:37,longitude:127},oldDestination={id:'old-destination'},newDestination={id:'new-destination'},existing={id:'existing'};
+    const original={id:'original',routeMode:'BIKE_ONLY'},shortest={id:'new-shortest',routeMode:'SHORTEST',route:{},totalDistance:90},matching={id:'new-bike',routeMode:'BIKE_ONLY',route:{},totalDistance:100};
+    state.screen='navigation';state.currentLocation=origin;state.destination=oldDestination;state.waypoints=[existing];state.routes=[original];state.selectedRoute=0;
+    state.map={getLevel:()=>4,getCenter:()=>origin,relayout(){}};fetchRoutes=async()=>[shortest,matching];
+    prepareRoutes=routes=>routes.map(route=>({...route,_points:[origin,newDestination],_steps:[]}));
+    drawRoutes=()=>{};renderRouteCards=()=>{};updateRouteFields=()=>{};finishRoutePerformance=()=>{};setGpsMarker=()=>{};history={replaceState(){}};
+    await beginNavigationRoutePreview('destination',newDestination);
+    return {ids:state.routes.map(route=>route.id),selected:state.selectedRoute,destination:state.navigationRouteDraft.destination.id,waypoints:state.navigationRouteDraft.waypoints.map(place=>place.id)};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{ids:['new-shortest','new-bike'],selected:1,destination:'new-destination',waypoints:[]});
+});
+
 test('navigation menu add-route flows through recent place, rendered route selection, and start guidance', async () => {
   const context=loadApp();
   const {recentPlace}=installNavigationFlowEnvironment(context);
@@ -1827,7 +1879,7 @@ test('navigation menu add-route flows through recent place, rendered route selec
   context.document.querySelector('#startNavBtn').onclick();
 
   const result=vm.runInContext(`({screen:state.screen,waypoints:state.waypoints.map(place=>place.id),selectedRoute:state.selectedRoute,route:state.routes[state.selectedRoute].id,draft:state.navigationRouteDraft,watch:state.nav.watchId,follow:state.nav.follow,level:testCameraLevels.at(-1),cameraTargets:testCameraTargets.length})`,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'navigation',waypoints:['existing','added'],selectedRoute:1,route:'preview-b',draft:null,watch:88,follow:true,level:2,cameraTargets:1});
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'navigation',waypoints:['existing','added'],selectedRoute:1,route:'preview-a',draft:null,watch:88,follow:true,level:2,cameraTargets:1});
   assert.equal(context.testWatchStarts,0);
   assert.equal(context.testRouteRequests.length,1);
 });
@@ -1922,7 +1974,7 @@ test('navigation search place uses the common selection entry point and adds a s
   context.document.querySelector('#startNavBtn').onclick();
 
   const result=vm.runInContext(`({screen:state.screen,waypoints:state.waypoints.map(place=>place.id),route:state.routes[state.selectedRoute].id,draft:state.navigationRouteDraft})`,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'navigation',waypoints:['existing','marker-stop'],route:'preview-b',draft:null});
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'navigation',waypoints:['existing','marker-stop'],route:'preview-a',draft:null});
   assert.equal(context.testWatchStarts,0);
 });
 

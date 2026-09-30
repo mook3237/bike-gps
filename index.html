@@ -10,7 +10,64 @@
   <link rel="stylesheet" href="/styles.css?v=20260928-real-device-fix">
 </head>
 <body>
-  <main id="app">
+  <section id="profileScreen" aria-label="RideMate 프로필 선택">
+    <main class="profile-shell">
+      <section class="profile-hero" aria-label="환영 화면">
+        <img src="/reference/profile-confirmed/assets/hero-reference.jpg" alt="">
+      </section>
+
+      <section class="profile-panel">
+        <div class="profile-panel-head">
+          <h1>프로필 선택</h1>
+          <button class="profile-add-top" type="button" id="profileAddTop">
+            <span>프로필 추가</span><b aria-hidden="true">＋</b>
+          </button>
+        </div>
+
+        <p id="profileEmptyState" class="profile-empty hidden">등록된 프로필이 없습니다.</p>
+        <div class="profile-grid" id="profileGrid"></div>
+
+        <button class="profile-select-button" id="profileSelectButton" type="button" disabled>
+          <span>선택하기</span>
+          <span class="profile-select-arrow" aria-hidden="true">→</span>
+        </button>
+
+        <div class="profile-home-indicator" aria-hidden="true"></div>
+      </section>
+    </main>
+
+    <section id="profileEditor" class="profile-dialog-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="profileEditorTitle">
+      <form id="profileEditorForm" class="profile-dialog">
+        <h2 id="profileEditorTitle">프로필 추가</h2>
+        <label class="profile-name-field">프로필 이름
+          <input id="profileNameInput" type="text" maxlength="30" autocomplete="off" required>
+        </label>
+        <fieldset class="profile-avatar-field">
+          <legend>Avatar</legend>
+          <div id="profileAvatarChoices" class="profile-avatar-choices"></div>
+        </fieldset>
+        <p id="profileEditorError" class="profile-editor-error" role="alert"></p>
+        <div class="profile-dialog-actions">
+          <button id="profileEditorCancel" type="button" class="profile-dialog-secondary">취소</button>
+          <button type="submit" class="profile-dialog-primary">저장</button>
+        </div>
+        <button id="profileDeleteButton" type="button" class="profile-delete-button hidden">프로필 삭제</button>
+      </form>
+    </section>
+
+    <section id="profileDeleteConfirm" class="profile-dialog-backdrop hidden" role="alertdialog" aria-modal="true" aria-labelledby="profileDeleteTitle">
+      <div class="profile-dialog">
+        <h2 id="profileDeleteTitle">프로필을 삭제할까요?</h2>
+        <p>이 프로필을 삭제하면 이 프로필에 연결된 설정, 장소, 저장 경로, 라이딩 기록, 레이싱 기록도 함께 삭제됩니다.</p>
+        <div class="profile-dialog-actions">
+          <button id="profileDeleteCancel" type="button" class="profile-dialog-secondary">취소</button>
+          <button id="profileDeleteConfirmButton" type="button" class="profile-delete-confirm-button">삭제</button>
+        </div>
+      </div>
+    </section>
+  </section>
+
+  <main id="app" class="hidden">
     <div id="map" aria-label="RideMate 지도"></div>
 
     <div id="overlayRoot">
@@ -129,6 +186,7 @@
       </nav>
     </div>
   </main>
-  <script src="/app.js?v=20260928-real-device-fix"></script>
+  <script src="/profile-system.js?v=20260930-profile"></script>
+  <script src="/app.js?v=20260930-profile"></script>
 </body>
 </html>

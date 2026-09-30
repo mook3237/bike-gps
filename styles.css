@@ -14,3 +14,75 @@
 .map-tap-perf{position:absolute;z-index:30;right:8px;bottom:calc(env(safe-area-inset-bottom) + 82px);pointer-events:auto;font:10px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace;color:#fff}.map-tap-perf button{border:0;border-radius:7px;background:#182536e8;color:#fff;font:inherit;font-weight:800}.map-tap-perf>button{min-width:38px;height:26px;padding:0 7px}.map-tap-perf>div{width:190px;max-height:180px;overflow:auto;margin-top:4px;padding:6px;border-radius:8px;background:#182536ed;box-shadow:0 2px 10px #0004}.map-tap-perf>div>div>div{padding:4px 0;border-bottom:1px solid #ffffff2b}.map-tap-perf>div>button{width:100%;height:26px;margin-top:5px;background:#ffffff24}
 .toast{position:absolute;left:50%;bottom:120px;transform:translateX(-50%);background:#182536e8;color:#fff;padding:10px 15px;border-radius:20px;font-size:13px;white-space:nowrap}
 @media(min-width:700px){#app{max-width:430px;margin:auto;position:relative;box-shadow:0 0 40px #1e293b20}#map,#overlayRoot{left:50%;right:auto;width:430px;transform:translateX(-50%)}}
+
+#profileScreen{--profile-bg:#081522;--profile-panel:#091724;--profile-card:#0b1b29;--profile-border:#1c344a;--profile-active:#43e0ad;--profile-text:#f7fafc;--profile-muted:#9ca9b8;position:fixed;inset:0;z-index:1000;overflow-x:hidden;overflow-y:auto;background:#050e16;color:var(--profile-text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Apple SD Gothic Neo","Noto Sans KR","Segoe UI",sans-serif}
+#profileScreen button,#profileScreen input{font:inherit}
+#profileScreen .profile-shell{width:min(100vw,1024px);min-height:100vh;margin:0 auto;background:var(--profile-bg);overflow:hidden}
+#profileScreen .profile-hero{width:100%;aspect-ratio:1024/505;overflow:hidden;background:#19344a}
+#profileScreen .profile-hero img{display:block;width:100%;height:100%;object-fit:cover}
+#profileScreen .profile-panel{position:relative;margin-top:-1px;min-height:1031px;padding:38px 148px 28px;background:radial-gradient(circle at 50% -5%,rgba(42,83,111,.15),transparent 42%),linear-gradient(180deg,#091724 0%,#07131f 100%);border-radius:44px 44px 0 0}
+#profileScreen .profile-panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px}
+#profileScreen .profile-panel-head h1{margin:0;font-size:32px;line-height:1;letter-spacing:-.04em;font-weight:750}
+#profileScreen .profile-add-top{display:inline-flex;align-items:center;gap:15px;border:0;background:transparent;color:#a9b4c0;padding:6px 0;font-size:20px}
+#profileScreen .profile-add-top b{color:#aeb9c5;font-size:37px;line-height:.7;font-weight:300}
+#profileScreen .profile-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+#profileScreen .profile-card-wrapper{position:relative;height:270px}
+#profileScreen .profile-select-control,#profileScreen .profile-add-card{position:relative;width:100%;height:270px;border-radius:22px;border:3px solid var(--profile-border);background:radial-gradient(circle at 50% 10%,rgba(52,91,119,.09),transparent 48%),var(--profile-card);color:var(--profile-text);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:20px;transition:border-color .15s ease,transform .15s ease}
+#profileScreen .profile-select-control:hover,#profileScreen .profile-add-card:hover{transform:translateY(-1px)}
+#profileScreen .profile-select-control.selected{border-color:var(--profile-active);box-shadow:inset 0 0 0 1px rgba(67,224,173,.08)}
+#profileScreen .profile-avatar{width:150px;height:150px;border-radius:50%;border:2px solid #eef7f5;background:#3b556a;display:grid;place-items:center;font-size:72px;line-height:1}
+#profileScreen .profile-select-control.selected .profile-avatar{border:6px solid var(--profile-active)}
+#profileScreen .profile-select-control strong{font-size:25px;line-height:1.05;letter-spacing:-.04em}
+#profileScreen .profile-card-caption{color:#a6b1bd;font-size:18px;line-height:1.25;letter-spacing:-.03em;text-align:center}
+#profileScreen .profile-selected-mark{position:absolute;top:28px;right:28px;width:39px;height:39px;display:grid;place-items:center;border-radius:50%;background:var(--profile-active);color:#072018;font-size:24px;font-weight:900}
+#profileScreen .profile-manage-control{position:absolute;top:18px;left:18px;z-index:2;width:42px;height:42px;border:1px solid #294257;border-radius:50%;background:#07131fd9;color:#c8d1da;font-size:25px;line-height:1}
+#profileScreen .profile-add-card{gap:18px}
+#profileScreen .profile-plus-circle{width:68px;height:68px;display:grid;place-items:center;border:3px dashed #536678;border-radius:50%;color:#f4f7fa;font-size:42px;font-weight:250;line-height:1}
+#profileScreen .profile-add-card strong{color:#c0c8d1;font-size:19px;font-weight:500}
+#profileScreen .profile-empty{grid-column:1/-1;margin:0 0 18px;padding:28px;border:1px solid var(--profile-border);border-radius:18px;color:var(--profile-muted);text-align:center}
+#profileScreen .profile-select-button{width:100%;height:88px;margin-top:24px;border:0;border-radius:50px;background:linear-gradient(180deg,#50e2b3 0%,#40dca9 100%);color:#071d18;display:flex;align-items:center;justify-content:center;gap:24px;font-size:29px;font-weight:800;letter-spacing:-.04em;box-shadow:0 10px 30px rgba(24,199,145,.08)}
+#profileScreen .profile-select-button:disabled{cursor:not-allowed;filter:saturate(.25);opacity:.45}
+#profileScreen .profile-select-arrow{font-size:41px;line-height:.7;font-weight:500}
+#profileScreen .profile-home-indicator{width:255px;height:9px;margin:65px auto 0;border-radius:99px;background:#f4f5f6}
+#profileScreen .profile-dialog-backdrop{position:fixed;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;padding:22px;background:#02070dbf}
+#profileScreen .profile-dialog{width:min(100%,420px);max-height:calc(100dvh - 44px);overflow:auto;padding:24px;border:1px solid #20384c;border-radius:24px;background:#0b1b29;box-shadow:0 24px 80px #0008;color:var(--profile-text)}
+#profileScreen .profile-dialog h2{margin:0 0 20px;font-size:24px}
+#profileScreen .profile-dialog p{color:#b5c0cb;line-height:1.55}
+#profileScreen .profile-name-field{display:grid;gap:8px;color:#c7d0d9;font-weight:700}
+#profileScreen .profile-name-field input{height:48px;padding:0 14px;border:1px solid #355069;border-radius:12px;outline:0;background:#07131f;color:#fff}
+#profileScreen .profile-name-field input:focus{border-color:var(--profile-active)}
+#profileScreen .profile-avatar-field{margin:18px 0 0;padding:0;border:0}
+#profileScreen .profile-avatar-field legend{margin-bottom:10px;color:#c7d0d9;font-weight:700}
+#profileScreen .profile-avatar-choices{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+#profileScreen .profile-avatar-option{position:relative;display:grid;place-items:center;height:64px;border:2px solid #294257;border-radius:14px;background:#07131f;font-size:31px}
+#profileScreen .profile-avatar-option:has(input:checked){border-color:var(--profile-active);background:#0d2c2a}
+#profileScreen .profile-avatar-option input{position:absolute;opacity:0;pointer-events:none}
+#profileScreen .profile-editor-error{min-height:20px;margin:10px 0 0;color:#ff9a9a;font-size:13px}
+#profileScreen .profile-dialog-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px}
+#profileScreen .profile-dialog-actions button,#profileScreen .profile-delete-button{height:48px;border-radius:14px;font-weight:800}
+#profileScreen .profile-dialog-secondary{border:1px solid #355069;background:#0b1b29;color:#e6edf3}
+#profileScreen .profile-dialog-primary{border:0;background:var(--profile-active);color:#062019}
+#profileScreen .profile-delete-button{width:100%;margin-top:12px;border:1px solid #713944;background:#24141b;color:#ff9a9a}
+#profileScreen .profile-delete-confirm-button{border:0;background:#e04455;color:#fff}
+
+@media(max-width:700px){
+  #profileScreen .profile-panel{min-height:auto;padding:26px 24px calc(22px + env(safe-area-inset-bottom));border-radius:30px 30px 0 0}
+  #profileScreen .profile-panel-head{margin-bottom:18px}
+  #profileScreen .profile-panel-head h1{font-size:25px}
+  #profileScreen .profile-add-top{font-size:16px;gap:8px}
+  #profileScreen .profile-add-top b{font-size:30px}
+  #profileScreen .profile-grid{gap:12px}
+  #profileScreen .profile-card-wrapper,#profileScreen .profile-select-control,#profileScreen .profile-add-card{height:190px}
+  #profileScreen .profile-select-control,#profileScreen .profile-add-card{border-radius:16px;border-width:2px;padding:10px;gap:6px}
+  #profileScreen .profile-avatar{width:92px;height:92px;font-size:44px}
+  #profileScreen .profile-select-control.selected .profile-avatar{border-width:4px}
+  #profileScreen .profile-select-control strong{font-size:19px}
+  #profileScreen .profile-card-caption{font-size:13px}
+  #profileScreen .profile-selected-mark{top:14px;right:14px;width:27px;height:27px;font-size:16px}
+  #profileScreen .profile-manage-control{top:10px;left:10px;width:34px;height:34px;font-size:21px}
+  #profileScreen .profile-plus-circle{width:54px;height:54px;font-size:32px}
+  #profileScreen .profile-add-card strong{font-size:15px}
+  #profileScreen .profile-select-button{height:62px;margin-top:16px;font-size:21px;gap:16px}
+  #profileScreen .profile-select-arrow{font-size:31px}
+  #profileScreen .profile-home-indicator{width:145px;height:5px;margin-top:25px}
+}
