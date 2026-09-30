@@ -561,13 +561,13 @@ test('long press pins the exact address and uses state-based actions in every in
       runPendingTimers();
       ({screen:state.screen,html:$('#sheetContent').innerHTML,requests:testGeocodeRequests,
         handlers:{setStart:typeof $('#setStart').onclick,setEnd:typeof $('#setEnd').onclick,changeNavDestination:typeof $('#changeNavDestination').onclick,addNavWaypoint:typeof $('#addNavWaypoint').onclick},
-        markers:state.routeEndpointMarkers.map(marker=>[marker.position.latitude,marker.position.longitude,marker.content.className]),
+        markers:state.routeEndpointMarkers.map(marker=>[marker.position.latitude,marker.position.longitude,marker.content.className,marker.content.innerHTML]),
         previewCalls:testPreviewCalls.length,
         unchanged:testBefore===JSON.stringify({destination:state.destination,routes:state.routes,waypoints:state.waypoints,progress:state.nav.progressDistance,currentStep:state.nav.currentStep,draft:state.navigationRouteDraft})});
     `,context);
     assert.deepEqual(JSON.parse(JSON.stringify(result.requests)),[{x:127.0456789,y:37.6123456}],scenario.name);
     const selectedPins=JSON.parse(JSON.stringify(result.markers)).filter(marker=>marker[2]==='route-endpoint-marker destination');
-    assert.deepEqual(selectedPins,[[37.6123456,127.0456789,'route-endpoint-marker destination']],scenario.name);
+    assert.deepEqual(selectedPins,[[37.6123456,127.0456789,'route-endpoint-marker destination','']],scenario.name);
     assert.equal(result.previewCalls,0,scenario.name);
     assert.equal(result.unchanged,true,scenario.name);
     for(const action of scenario.expected){
@@ -1837,6 +1837,42 @@ test('route-add keeps the selected existing route as route 1 and appends one mat
     selectedRoute2:{selected:1,draftSelected:1},
     committed:{ids:['route-1','route-2'],route1Same:true,waypoints:['existing','added'],selected:1}
   });
+});
+
+test('route-add cards switch distinct geometries and selected map layers', async () => {
+  const context=loadApp();
+  const result=await vm.runInContext(`(async()=>{
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    class TestBounds {constructor(){this.points=[]}extend(point){this.points.push(point)}isEmpty(){return this.points.length===0}}
+    class TestPolyline {
+      constructor(options){Object.assign(this,options)}
+      setMap(map){this.map=map}
+      setOptions(options){for(const key of ['strokeWeight','strokeColor','strokeOpacity','strokeStyle'])if(key in options)this[key]=options[key]}
+      setZIndex(zIndex){this.zIndex=zIndex}
+    }
+    kakao={maps:{LatLng:TestLatLng,LatLngBounds:TestBounds,Polyline:TestPolyline}};
+    const origin={id:'origin',latitude:37,longitude:127},bend1={id:'bend-1',latitude:37.01,longitude:127.005},added={id:'added',latitude:37.02,longitude:127.02},bend2={id:'bend-2',latitude:37.02,longitude:127.04},destination={id:'destination',latitude:37.04,longitude:127.05};
+    const route1={id:'route-1',label:'자전거도로 우선',routeMode:'BIKE_ONLY',totalDistance:1500,totalTime:700,_points:[origin,bend1,destination],_steps:[]};
+    const route2={id:'route-2',label:'자전거도로 우선',routeMode:'BIKE_ONLY',totalDistance:1700,totalTime:760,_points:[origin,added,bend2,destination],_steps:[]};
+    state.screen='navigation';state.currentLocation=origin;state.destination=destination;state.waypoints=[];state.routes=[route1];state.selectedRoute=0;
+    state.nav.watchId=77;testFittedRoute=null;
+    state.map={getLevel:()=>4,getCenter:()=>origin,relayout(){},setBounds(){testFittedRoute=state.routes[state.selectedRoute]?.id}};
+    fetchRoutes=async()=>[route2];prepareRoutes=routes=>routes;drawRouteEndpointMarkers=()=>{};updateRouteFields=()=>{};finishRoutePerformance=()=>{};setGpsMarker=()=>{};history={replaceState(){}};
+    await beginNavigationRoutePreview('waypoint',added);
+    const preview={ids:state.routes.map(route=>route.id),paths:state.routeLines.map(line=>line.path.map(point=>[point.latitude,point.longitude])),cards:ui.routeCards.innerHTML};
+    ui.routeCards.querySelectorAll('[data-i]')[0].onclick();
+    const selected1={index:state.selectedRoute,fitted:testFittedRoute,z:state.routeLines.map(line=>line.zIndex),path:state.routeLines[state.selectedRoute].path.map(point=>[point.latitude,point.longitude])};
+    ui.routeCards.querySelectorAll('[data-i]')[1].onclick();
+    const selected2={index:state.selectedRoute,fitted:testFittedRoute,z:state.routeLines.map(line=>line.zIndex),path:state.routeLines[state.selectedRoute].path.map(point=>[point.latitude,point.longitude])};
+    return{preview,selected1,selected2};
+  })()`,context);
+  const output=JSON.parse(JSON.stringify(result));
+  assert.deepEqual(output.preview.ids,['route-1','route-2']);
+  assert.notDeepEqual(output.preview.paths[0],output.preview.paths[1]);
+  assert.match(output.preview.cards,/<b>경로 1<\/b>/);
+  assert.match(output.preview.cards,/<b>경로 2<\/b>/);
+  assert.deepEqual(output.selected1,{index:0,fitted:'route-1',z:[8,3],path:[[37,127],[37.01,127.005],[37.04,127.05]]});
+  assert.deepEqual(output.selected2,{index:1,fitted:'route-2',z:[3,8],path:[[37,127],[37.02,127.02],[37.02,127.04],[37.04,127.05]]});
 });
 
 test('destination-change preview keeps its existing calculated-candidate behavior', async () => {
