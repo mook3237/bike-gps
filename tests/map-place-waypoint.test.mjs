@@ -561,13 +561,13 @@ test('long press pins the exact address and uses state-based actions in every in
       runPendingTimers();
       ({screen:state.screen,html:$('#sheetContent').innerHTML,requests:testGeocodeRequests,
         handlers:{setStart:typeof $('#setStart').onclick,setEnd:typeof $('#setEnd').onclick,changeNavDestination:typeof $('#changeNavDestination').onclick,addNavWaypoint:typeof $('#addNavWaypoint').onclick},
-        markers:state.routeEndpointMarkers.map(marker=>[marker.position.latitude,marker.position.longitude,marker.content.className,marker.content.innerHTML]),
+        markers:state.routeEndpointMarkers.map(marker=>[marker.position.latitude,marker.position.longitude,marker.content.className,marker.content.innerHTML,marker.content.style.width,marker.content.style.height]),
         previewCalls:testPreviewCalls.length,
         unchanged:testBefore===JSON.stringify({destination:state.destination,routes:state.routes,waypoints:state.waypoints,progress:state.nav.progressDistance,currentStep:state.nav.currentStep,draft:state.navigationRouteDraft})});
     `,context);
     assert.deepEqual(JSON.parse(JSON.stringify(result.requests)),[{x:127.0456789,y:37.6123456}],scenario.name);
     const selectedPins=JSON.parse(JSON.stringify(result.markers)).filter(marker=>marker[2]==='route-endpoint-marker destination');
-    assert.deepEqual(selectedPins,[[37.6123456,127.0456789,'route-endpoint-marker destination','']],scenario.name);
+    assert.deepEqual(selectedPins,[[37.6123456,127.0456789,'route-endpoint-marker destination','','27px','40px']],scenario.name);
     assert.equal(result.previewCalls,0,scenario.name);
     assert.equal(result.unchanged,true,scenario.name);
     for(const action of scenario.expected){
@@ -1812,7 +1812,7 @@ test('route-add keeps the selected existing route as route 1 and appends one mat
     state.map={getLevel:()=>4,getCenter:()=>origin,relayout(){}};state.nav.watchId=77;state.nav.progressDistance=321;
     testRequestedWaypoints=[];fetchRoutes=async(a,b,waypoints)=>{testRequestedWaypoints=waypoints;return[shortest,matching,accessible]};
     prepareRoutes=routes=>routes.map(route=>({...route,_points:[origin,added,destination],_steps:[{guidance:route.id}]}));
-    drawRoutes=()=>{};drawRouteEndpointMarkers=()=>{};updateRouteFields=()=>{};finishRoutePerformance=()=>{};setGpsMarker=()=>{};
+    drawRoutes=()=>{};drawRouteEndpointMarkers=()=>{};fitSelectedRoute=()=>{};updateRouteFields=()=>{};finishRoutePerformance=()=>{};setGpsMarker=()=>{};
     drawNavigationRoute=()=>{};initializeNavigationCamera=()=>{};updateNavHud=()=>{};history={pushState(){},replaceState(){}};
     await beginNavigationRoutePreview('waypoint',added);
     const preview={
@@ -1873,6 +1873,53 @@ test('route-add cards switch distinct geometries and selected map layers', async
   assert.match(output.preview.cards,/<b>경로 2<\/b>/);
   assert.deepEqual(output.selected1,{index:0,fitted:'route-1',z:[8,3],path:[[37,127],[37.01,127.005],[37.04,127.05]]});
   assert.deepEqual(output.selected2,{index:1,fitted:'route-2',z:[3,8],path:[[37,127],[37.02,127.02],[37.02,127.04],[37.04,127.05]]});
+});
+
+test('route-add supersedes an in-flight reroute without losing its distinct route 2', async () => {
+  const context=loadApp();
+  const result=await vm.runInContext(`(async()=>{
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    class TestBounds {constructor(){this.points=[]}extend(point){this.points.push(point)}isEmpty(){return this.points.length===0}}
+    class TestPolyline {
+      constructor(options){Object.assign(this,options)}
+      setMap(map){this.map=map}
+      setOptions(options){Object.assign(this,options)}
+      setZIndex(zIndex){this.zIndex=zIndex}
+    }
+    kakao={maps:{LatLng:TestLatLng,LatLngBounds:TestBounds,Polyline:TestPolyline}};
+    const origin={id:'origin',latitude:37,longitude:127},bend1={id:'bend-1',latitude:37.01,longitude:127.005},added={id:'added',latitude:37.02,longitude:127.02},bend2={id:'bend-2',latitude:37.025,longitude:127.04},destination={id:'destination',latitude:37.04,longitude:127.05};
+    const route1={id:'route-1',routeMode:'BIKE_ONLY',totalDistance:1500,totalTime:700,_points:[origin,bend1,destination],_steps:[]};
+    const staleRoute={id:'stale-reroute',routeMode:'BIKE_ONLY',totalDistance:1400,totalTime:680,_points:[origin,destination],_steps:[]};
+    const route2={id:'route-2',routeMode:'BIKE_ONLY',totalDistance:1700,totalTime:760,_points:[origin,added,bend2,destination],_steps:[]};
+    state.screen='navigation';state.currentLocation=origin;state.destination=destination;state.waypoints=[];state.routes=[route1];state.selectedRoute=0;
+    state.nav.watchId=77;state.map={getLevel:()=>4,getCenter:()=>origin,relayout(){},setBounds(){}};
+    testRequests=[];let resolveReroute,resolvePreview;
+    fetchRoutes=async(a,b,waypoints)=>{testRequests.push(waypoints.map(point=>point.id));return await new Promise(resolve=>{if(testRequests.length===1)resolveReroute=resolve;else resolvePreview=resolve})};
+    prepareRoutes=routes=>routes;drawRouteEndpointMarkers=()=>{};updateRouteFields=()=>{};finishRoutePerformance=()=>{};setGpsMarker=()=>{};updateNavHud=()=>{};history={replaceState(){}};
+    const reroutePromise=recalculateNavigationRoute('manual');
+    const previewPromise=beginNavigationRoutePreview('waypoint',added);
+    resolveReroute([staleRoute]);
+    await reroutePromise;
+    const stillPreviewing=state.nav.recalculating;
+    if(resolvePreview)resolvePreview([route2]);
+    const preview=await previewPromise;
+    return {
+      preview:!!preview,requests:testRequests,stillPreviewing,
+      ids:state.routes.map(route=>route.id),
+      paths:state.routes.map(route=>route._points.map(point=>point.id)),
+      cards:ui.routeCards.querySelectorAll('[data-i]').length,
+      selected:state.selectedRoute,
+      linePaths:state.routeLines.map(line=>line.path.map(point=>[point.latitude,point.longitude]))
+    };
+  })()`,context);
+  const output=JSON.parse(JSON.stringify(result));
+  assert.deepEqual(output,{
+    preview:true,requests:[[],['added']],stillPreviewing:true,
+    ids:['route-1','route-2'],
+    paths:[['origin','bend-1','destination'],['origin','added','bend-2','destination']],
+    cards:2,selected:1,
+    linePaths:[[[37,127],[37.01,127.005],[37.04,127.05]],[[37,127],[37.02,127.02],[37.025,127.04],[37.04,127.05]]]
+  });
 });
 
 test('destination-change preview keeps its existing calculated-candidate behavior', async () => {
