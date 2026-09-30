@@ -124,6 +124,14 @@ async function run() {
     const client = await connectPage(browserWebSocketUrl);
     await client.send('Page.enable');
     await client.send('Runtime.enable');
+    await client.send('Emulation.setDeviceMetricsOverride', {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 3,
+      mobile: true,
+      screenWidth: 390,
+      screenHeight: 844,
+    });
     await client.send('Page.addScriptToEvaluateOnNewDocument', { source: kakaoStub });
 
     async function evaluate(expression) {
@@ -148,21 +156,53 @@ async function run() {
     await evaluate('localStorage.clear()');
     await reload();
 
-    const firstBoot = await evaluate(`({
-      names: [...document.querySelectorAll('[data-profile-select] strong')].map(node => node.textContent),
-      selected: document.querySelectorAll('.profile-select-control.selected').length,
-      disabled: document.querySelector('#profileSelectButton').disabled,
-      appHidden: document.querySelector('#app').classList.contains('hidden'),
-      position: getComputedStyle(document.querySelector('#profileScreen')).position,
-      radius: getComputedStyle(document.querySelector('.profile-panel')).borderTopLeftRadius
-    })`);
+    const firstBoot = await evaluate(`(async () => {
+      const screen = document.querySelector('#profileScreen');
+      const hero = document.querySelector('.profile-hero');
+      const heroImage = hero.querySelector('img');
+      const panel = document.querySelector('.profile-panel');
+      const grid = document.querySelector('#profileGrid');
+      const selectButton = document.querySelector('#profileSelectButton');
+      await heroImage.decode().catch(() => {});
+      const heroRect = hero.getBoundingClientRect();
+      const panelRect = panel.getBoundingClientRect();
+      const gridRect = grid.getBoundingClientRect();
+      const buttonRect = selectButton.getBoundingClientRect();
+      return {
+        names: [...document.querySelectorAll('[data-profile-select] strong')].map(node => node.textContent),
+        selected: document.querySelectorAll('.profile-select-control.selected').length,
+        disabled: selectButton.disabled,
+        appHidden: document.querySelector('#app').classList.contains('hidden'),
+        position: getComputedStyle(screen).position,
+        radius: getComputedStyle(panel).borderTopLeftRadius,
+        viewport: [innerWidth, innerHeight],
+        heroPath: new URL(heroImage.currentSrc).pathname,
+        heroStatus: await fetch(heroImage.currentSrc, { cache: 'no-store' }).then(response => response.status),
+        heroLoaded: heroImage.complete && heroImage.naturalWidth > 0,
+        heroAspectRatio: heroRect.width / heroRect.height,
+        heroPanelGap: Math.abs(panelRect.top - heroRect.bottom),
+        panelBottom: panelRect.bottom,
+        buttonBottom: buttonRect.bottom,
+        buttonGridGap: buttonRect.top - gridRect.bottom,
+        horizontalOverflow: screen.scrollWidth > screen.clientWidth || document.documentElement.scrollWidth > innerWidth,
+      };
+    })()`);
     assert.deepEqual(firstBoot.names, ['아빠']);
     assert.equal(firstBoot.selected, 0);
     assert.equal(firstBoot.disabled, true);
     assert.equal(firstBoot.appHidden, true);
     assert.equal(firstBoot.position, 'fixed');
     assert.notEqual(firstBoot.radius, '0px');
-
+    assert.deepEqual(firstBoot.viewport, [390, 844]);
+    assert.equal(firstBoot.heroPath, '/assets/profile-hero.jpg');
+    assert.equal(firstBoot.heroStatus, 200);
+    assert.equal(firstBoot.heroLoaded, true);
+    assert.ok(firstBoot.heroAspectRatio > 2.35, `hero must crop the fake status bar: ${firstBoot.heroAspectRatio}`);
+    assert.ok(firstBoot.heroPanelGap <= 2, `hero and panel must meet without a blank gap: ${firstBoot.heroPanelGap}`);
+    assert.ok(firstBoot.panelBottom >= 843, `profile panel must use the full viewport height: ${firstBoot.panelBottom}`);
+    assert.ok(firstBoot.buttonGridGap >= 24, `select button needs breathing room below cards: ${firstBoot.buttonGridGap}`);
+    assert.ok(firstBoot.buttonBottom >= 760 && firstBoot.buttonBottom <= 810, `select button must sit naturally above the bottom safe area: ${firstBoot.buttonBottom}`);
+    assert.equal(firstBoot.horizontalOverflow, false);
     await evaluate(`document.querySelector('[data-profile-select]').click()`);
     assert.equal(await evaluate(`document.querySelector('#profileSelectButton').disabled`), false);
     await evaluate(`document.querySelector('#profileSelectButton').click()`);

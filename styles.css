@@ -15,11 +15,11 @@
 .toast{position:absolute;left:50%;bottom:120px;transform:translateX(-50%);background:#182536e8;color:#fff;padding:10px 15px;border-radius:20px;font-size:13px;white-space:nowrap}
 @media(min-width:700px){#app{max-width:430px;margin:auto;position:relative;box-shadow:0 0 40px #1e293b20}#map,#overlayRoot{left:50%;right:auto;width:430px;transform:translateX(-50%)}}
 
-#profileScreen{--profile-bg:#081522;--profile-panel:#091724;--profile-card:#0b1b29;--profile-border:#1c344a;--profile-active:#43e0ad;--profile-text:#f7fafc;--profile-muted:#9ca9b8;position:fixed;inset:0;z-index:1000;overflow-x:hidden;overflow-y:auto;background:#050e16;color:var(--profile-text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Apple SD Gothic Neo","Noto Sans KR","Segoe UI",sans-serif}
+#profileScreen{--profile-bg:#081522;--profile-panel:#091724;--profile-card:#0b1b29;--profile-border:#1c344a;--profile-active:#43e0ad;--profile-text:#f7fafc;--profile-muted:#9ca9b8;position:fixed;inset:0;z-index:1000;overflow-x:hidden;overflow-y:auto;padding-top:env(safe-area-inset-top);background:#050e16;color:var(--profile-text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Apple SD Gothic Neo","Noto Sans KR","Segoe UI",sans-serif}
 #profileScreen button,#profileScreen input{font:inherit}
-#profileScreen .profile-shell{width:min(100vw,1024px);min-height:100vh;margin:0 auto;background:var(--profile-bg);overflow:hidden}
-#profileScreen .profile-hero{width:100%;aspect-ratio:1024/505;overflow:hidden;background:#19344a}
-#profileScreen .profile-hero img{display:block;width:100%;height:100%;object-fit:cover}
+#profileScreen .profile-shell{width:min(100vw,1024px);min-height:calc(100vh - env(safe-area-inset-top));min-height:calc(100dvh - env(safe-area-inset-top));margin:0 auto;background:var(--profile-bg);overflow:hidden}
+#profileScreen .profile-hero{width:100%;aspect-ratio:1024/425;overflow:hidden;background:#19344a}
+#profileScreen .profile-hero img{display:block;width:100%;height:100%;object-fit:cover;object-position:center bottom}
 #profileScreen .profile-panel{position:relative;margin-top:-1px;min-height:1031px;padding:38px 148px 28px;background:radial-gradient(circle at 50% -5%,rgba(42,83,111,.15),transparent 42%),linear-gradient(180deg,#091724 0%,#07131f 100%);border-radius:44px 44px 0 0}
 #profileScreen .profile-panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px}
 #profileScreen .profile-panel-head h1{margin:0;font-size:32px;line-height:1;letter-spacing:-.04em;font-weight:750}
@@ -66,12 +66,13 @@
 #profileScreen .profile-delete-confirm-button{border:0;background:#e04455;color:#fff}
 
 @media(max-width:700px){
-  #profileScreen .profile-panel{min-height:auto;padding:26px 24px calc(22px + env(safe-area-inset-bottom));border-radius:30px 30px 0 0}
+  #profileScreen .profile-shell{display:flex;flex-direction:column}
+  #profileScreen .profile-panel{display:flex;flex:1 0 auto;flex-direction:column;min-height:auto;padding:26px 24px calc(22px + env(safe-area-inset-bottom));border-radius:30px 30px 0 0}
   #profileScreen .profile-panel-head{margin-bottom:18px}
   #profileScreen .profile-panel-head h1{font-size:25px}
   #profileScreen .profile-add-top{font-size:16px;gap:8px}
   #profileScreen .profile-add-top b{font-size:30px}
-  #profileScreen .profile-grid{gap:12px}
+  #profileScreen .profile-grid{gap:12px;margin-bottom:24px}
   #profileScreen .profile-card-wrapper,#profileScreen .profile-select-control,#profileScreen .profile-add-card{height:190px}
   #profileScreen .profile-select-control,#profileScreen .profile-add-card{border-radius:16px;border-width:2px;padding:10px;gap:6px}
   #profileScreen .profile-avatar{width:92px;height:92px;font-size:44px}
@@ -82,7 +83,7 @@
   #profileScreen .profile-manage-control{top:10px;left:10px;width:34px;height:34px;font-size:21px}
   #profileScreen .profile-plus-circle{width:54px;height:54px;font-size:32px}
   #profileScreen .profile-add-card strong{font-size:15px}
-  #profileScreen .profile-select-button{height:62px;margin-top:16px;font-size:21px;gap:16px}
+  #profileScreen .profile-select-button{height:62px;margin-top:auto;font-size:21px;gap:16px}
   #profileScreen .profile-select-arrow{font-size:31px}
   #profileScreen .profile-home-indicator{width:145px;height:5px;margin-top:25px}
 }
