@@ -561,13 +561,13 @@ test('long press pins the exact address and uses state-based actions in every in
       runPendingTimers();
       ({screen:state.screen,html:$('#sheetContent').innerHTML,requests:testGeocodeRequests,
         handlers:{setStart:typeof $('#setStart').onclick,setEnd:typeof $('#setEnd').onclick,changeNavDestination:typeof $('#changeNavDestination').onclick,addNavWaypoint:typeof $('#addNavWaypoint').onclick},
-        markers:state.routeEndpointMarkers.map(marker=>[marker.position.latitude,marker.position.longitude,marker.content.className,marker.content.innerHTML,marker.content.style.width,marker.content.style.height]),
+        markers:state.routeEndpointMarkers.map(marker=>[marker.position.latitude,marker.position.longitude,marker.content.className,marker.content.innerHTML,marker.content.style.width,marker.content.style.height,marker.xAnchor,marker.yAnchor]),
         previewCalls:testPreviewCalls.length,
         unchanged:testBefore===JSON.stringify({destination:state.destination,routes:state.routes,waypoints:state.waypoints,progress:state.nav.progressDistance,currentStep:state.nav.currentStep,draft:state.navigationRouteDraft})});
     `,context);
     assert.deepEqual(JSON.parse(JSON.stringify(result.requests)),[{x:127.0456789,y:37.6123456}],scenario.name);
     const selectedPins=JSON.parse(JSON.stringify(result.markers)).filter(marker=>marker[2]==='route-endpoint-marker destination');
-    assert.deepEqual(selectedPins,[[37.6123456,127.0456789,'route-endpoint-marker destination','','27px','40px']],scenario.name);
+    assert.deepEqual(selectedPins,[[37.6123456,127.0456789,'route-endpoint-marker destination','','20px','28px',.5,1]],scenario.name);
     assert.equal(result.previewCalls,0,scenario.name);
     assert.equal(result.unchanged,true,scenario.name);
     for(const action of scenario.expected){
@@ -576,6 +576,10 @@ test('long press pins the exact address and uses state-based actions in every in
     }
     if(!scenario.postInitial)assert.match(result.html,/>목적지<\/button>/,scenario.name);
   }
+  const css=fs.readFileSync(new URL('../styles.css',import.meta.url),'utf8');
+  const destinationRule=css.match(/\.route-endpoint-marker\.destination\{([^}]*)\}/)?.[1]||'';
+  assert.match(destinationRule,/transform:none/);
+  assert.match(destinationRule,/clip-path:polygon/);
 });
 
 test('an initial calculated route overview long press renders navigation actions without changing the route', () => {
@@ -1836,6 +1840,42 @@ test('route-add keeps the selected existing route as route 1 and appends one mat
     selectedRoute1:{selected:0,draftSelected:0},
     selectedRoute2:{selected:1,draftSelected:1},
     committed:{ids:['route-1','route-2'],route1Same:true,waypoints:['existing','added'],selected:1}
+  });
+});
+
+test('route-add snapshots the selected original route when the add-route action opens', async () => {
+  const context=loadApp();
+  const result=await vm.runInContext(`(async()=>{
+    const origin={id:'origin',latitude:37,longitude:127},departure={id:'departure',latitude:36.99,longitude:126.99},waypoint={id:'existing',latitude:37.01,longitude:127.01},added={id:'added',latitude:37.02,longitude:127.02},destination={id:'destination',latitude:37.04,longitude:127.04};
+    const originalRoute={id:'original-A',routeMode:'BIKE_ONLY',totalDistance:1500,totalTime:700,_points:[origin,waypoint,destination],_steps:[]};
+    const unselectedRoute={id:'unselected',routeMode:'SHORTEST',totalDistance:1400,totalTime:680,_points:[origin,destination],_steps:[]};
+    const interveningRoute={id:'intervening',routeMode:'BIKE_ONLY',totalDistance:1300,totalTime:650,_points:[origin,destination],_steps:[]};
+    const newRoute={id:'new-B',routeMode:'BIKE_ONLY',totalDistance:1700,totalTime:760,_points:[origin,waypoint,added,destination],_steps:[]};
+    state.screen='navigation';state.currentLocation=origin;state.departure=departure;state.destination=destination;state.waypoints=[waypoint];state.nav.remainingWaypoints=[waypoint];state.routes=[unselectedRoute,originalRoute];state.selectedRoute=1;
+    state.map={getLevel:()=>4,getCenter:()=>origin,relayout(){},setBounds(){}};history={pushState(){},replaceState(){}};
+    const addRouteButton=document.querySelectorAll('[data-nav-action]').find(button=>button.dataset.navAction==='add-route');
+    await addRouteButton.onclick();
+    const snapshottedAtOpen=state.navigationRouteOriginal?.route===originalRoute;
+    state.routes=[interveningRoute];state.selectedRoute=0;
+    testRequest=null;fetchRoutes=async(a,b,waypoints)=>{testRequest={destination:b.id,waypoints:waypoints.map(point=>point.id)};return[newRoute]};
+    prepareRoutes=routes=>routes;drawRouteEndpointMarkers=()=>{};updateRouteFields=()=>{};finishRoutePerformance=()=>{};setGpsMarker=()=>{};
+    await choosePlace(added);
+    return {
+      snapshottedAtOpen,
+      route1Same:state.routes[0]===originalRoute,
+      route2Same:state.routes[1]===newRoute,
+      ids:state.routes.map(route=>route.id),
+      paths:state.routes.map(route=>route._points.map(point=>point.id)),
+      request:testRequest,
+      original:{departure:state.navigationRouteDraft.original.departure?.id||null,waypoints:(state.navigationRouteDraft.original.waypoints||[]).map(point=>point.id),destination:state.navigationRouteDraft.original.destination?.id||null},
+      cards:ui.routeCards.querySelectorAll('[data-i]').length
+    };
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    snapshottedAtOpen:true,route1Same:true,route2Same:true,ids:['original-A','new-B'],
+    paths:[['origin','existing','destination'],['origin','existing','added','destination']],
+    request:{destination:'destination',waypoints:['existing','added']},
+    original:{departure:'departure',waypoints:['existing'],destination:'destination'},cards:2
   });
 });
 
