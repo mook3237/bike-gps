@@ -1780,66 +1780,53 @@ test('navigation place sheet supports the same continuous expansion as a normal 
   assert.equal(backs,0);
 });
 
-test('navigation add-route search selection calculates a pending route and opens reusable overview', async () => {
+test('navigation add-route search selection previews A through the old destination B to new destination C', async () => {
   const context=loadApp();
   const result=await vm.runInContext(`(async()=>{
-    const origin={id:'origin',name:'Current',latitude:37,longitude:127},existing={id:'existing',name:'Existing'},added={id:'added',name:'Added'},destination={id:'destination',name:'Destination'};
+    const origin={id:'origin',name:'Current',latitude:37,longitude:127},existing={id:'existing',name:'Existing',latitude:37.01,longitude:127.01},added={id:'added',name:'Added',latitude:37.03,longitude:127.03},destination={id:'destination',name:'Destination',latitude:37.02,longitude:127.02};
     const originalRoute={id:'original',routeMode:'BIKE_ONLY',_steps:[{guidance:'old'}]},previewRoute={id:'preview',routeMode:'BIKE_ONLY',route:{},totalDistance:100};
     state.screen='navigation';state.currentLocation=origin;state.destination=destination;state.waypoints=[existing];state.routes=[originalRoute];state.selectedRoute=0;
     state.map={getLevel:()=>4,getCenter:()=>origin,relayout(){}};state.nav.watchId=77;state.nav.progressDistance=321;
     testFetch=null;testDraws=0;testCards=0;
     fetchRoutes=async(a,b,waypoints)=>{testFetch={a,b,waypoints};return[previewRoute]};
-    prepareRoutes=routes=>routes.map(route=>({...route,_points:[origin,added,destination],_steps:[{guidance:'new'}]}));
+    prepareRoutes=routes=>routes.map(route=>({...route,_points:[origin,existing,destination,added],_steps:[{guidance:'new'}]}));
     drawRoutes=()=>{testDraws++};renderRouteCards=()=>{testCards++};updateRouteFields=()=>{};finishRoutePerformance=()=>{};setGpsMarker=()=>{};
     history={pushState(){},replaceState(){}};
     openNavigationSearch('add-waypoint');
     await choosePlace(added);
-    return {mode:state.navigationSearchMode,screen:state.screen,pending:state.navigationRouteDraft?.place.id,confirmed:state.waypoints.map(x=>x.id),requested:testFetch.waypoints.map(x=>x.id),draws:testDraws,cards:testCards,startHidden:document.querySelector('#startNavBtn').classList.contains('hidden'),cancelHidden:document.querySelector('#cancelRoutePreviewBtn').classList.contains('hidden')};
+    return {mode:state.navigationSearchMode,screen:state.screen,pending:state.navigationRouteDraft?.place.id,confirmed:state.waypoints.map(x=>x.id),requested:{destination:testFetch.b.id,waypoints:testFetch.waypoints.map(x=>x.id)},draft:{destination:state.navigationRouteDraft.destination.id,waypoints:state.navigationRouteDraft.waypoints.map(x=>x.id),routes:state.routes.map(route=>route.id),selected:state.selectedRoute},draws:testDraws,cards:testCards,startHidden:document.querySelector('#startNavBtn').classList.contains('hidden'),cancelHidden:document.querySelector('#cancelRoutePreviewBtn').classList.contains('hidden')};
   })()`,context);
   assert.equal(result.screen,'route');
   assert.equal(result.pending,'added');
   assert.deepEqual([...result.confirmed],['existing']);
-  assert.deepEqual([...result.requested],['existing','added']);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.requested)),{destination:'added',waypoints:['existing','destination']});
+  assert.deepEqual(JSON.parse(JSON.stringify(result.draft)),{destination:'added',waypoints:['existing','destination'],routes:['preview'],selected:0});
   assert.equal(result.draws,1);
   assert.equal(result.cards,1);
   assert.equal(result.startHidden,false);
   assert.equal(result.cancelHidden,false);
 });
 
-test('route-add keeps the selected existing route as route 1 and appends one matching candidate as route 2', async () => {
+test('route-add confirms one continuous A-W1-B-C route and ordered navigation waypoints', async () => {
   const context=loadApp();
   const result=await vm.runInContext(`(async()=>{
-    const origin={id:'origin',name:'Current',latitude:37,longitude:127},existing={id:'existing',name:'Existing'},added={id:'added',name:'Added'},destination={id:'destination',name:'Destination'};
-    const ignoredExisting={id:'ignored-existing',routeMode:'SHORTEST',_steps:[{guidance:'ignored'}]},selectedExisting={id:'route-1',routeMode:'BIKE_ONLY',_steps:[{guidance:'existing'}]};
+    const origin={id:'origin',name:'Current',latitude:37,longitude:127},existing={id:'existing',name:'Existing',latitude:37.01,longitude:127.01},destination={id:'destination',name:'Destination',latitude:37.02,longitude:127.02},added={id:'added',name:'Added',latitude:37.03,longitude:127.03};
+    const ignoredExisting={id:'ignored-existing',routeMode:'SHORTEST',_steps:[{guidance:'ignored'}]},selectedExisting={id:'route-1',routeMode:'BIKE_ONLY',_points:[origin,existing,destination],_steps:[{guidance:'existing'}]};
     const shortest={id:'new-shortest',routeMode:'SHORTEST',route:{},totalDistance:90},matching={id:'route-2',routeMode:'BIKE_ONLY',route:{},totalDistance:100},accessible={id:'new-accessible',routeMode:'ACCESSIBLE',route:{},totalDistance:110};
     state.screen='navigation';state.currentLocation=origin;state.destination=destination;state.waypoints=[existing];state.routes=[ignoredExisting,selectedExisting];state.selectedRoute=1;
     state.map={getLevel:()=>4,getCenter:()=>origin,relayout(){}};state.nav.watchId=77;state.nav.progressDistance=321;
     testRequestedWaypoints=[];fetchRoutes=async(a,b,waypoints)=>{testRequestedWaypoints=waypoints;return[shortest,matching,accessible]};
-    prepareRoutes=routes=>routes.map(route=>({...route,_points:[origin,added,destination],_steps:[{guidance:route.id}]}));
+    prepareRoutes=routes=>routes.map(route=>({...route,_points:[origin,existing,destination,added],_steps:[{guidance:route.id}]}));
     drawRoutes=()=>{};drawRouteEndpointMarkers=()=>{};fitSelectedRoute=()=>{};updateRouteFields=()=>{};finishRoutePerformance=()=>{};setGpsMarker=()=>{};
     drawNavigationRoute=()=>{};initializeNavigationCamera=()=>{};updateNavHud=()=>{};history={pushState(){},replaceState(){}};
     await beginNavigationRoutePreview('waypoint',added);
-    const preview={
-      ids:state.routes.map(route=>route.id),
-      route1Same:state.routes[0]===selectedExisting,
-      selected:state.selectedRoute,
-      draftSelected:state.navigationRouteDraft.selectedRoute,
-      requested:testRequestedWaypoints.map(place=>place.id),
-      draftWaypoints:state.navigationRouteDraft.waypoints.map(place=>place.id),
-      cards:document.querySelector('#routeCards').querySelectorAll('[data-i]').length
-    };
-    document.querySelector('#routeCards').querySelectorAll('[data-i]')[0].onclick();
-    const selectedRoute1={selected:state.selectedRoute,draftSelected:state.navigationRouteDraft.selectedRoute};
-    document.querySelector('#routeCards').querySelectorAll('[data-i]')[1].onclick();
-    const selectedRoute2={selected:state.selectedRoute,draftSelected:state.navigationRouteDraft.selectedRoute};
+    const preview={ids:state.routes.map(route=>route.id),selected:state.selectedRoute,draftSelected:state.navigationRouteDraft.selectedRoute,requested:testRequestedWaypoints.map(place=>place.id),requestDestination:state.navigationRouteDraft.destination.id,draftWaypoints:state.navigationRouteDraft.waypoints.map(place=>place.id),points:state.routes[0]._points.map(place=>place.id),cards:document.querySelector('#routeCards').querySelectorAll('[data-i]').length};
     confirmNavigationRoutePreview();
-    return {preview,selectedRoute1,selectedRoute2,committed:{ids:state.routes.map(route=>route.id),route1Same:state.routes[0]===selectedExisting,waypoints:state.waypoints.map(place=>place.id),selected:state.selectedRoute}};
+    return {preview,committed:{ids:state.routes.map(route=>route.id),waypoints:state.waypoints.map(place=>place.id),remaining:state.nav.remainingWaypoints.map(place=>place.id),destination:state.destination.id,selected:state.selectedRoute}};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    preview:{ids:['route-1','route-2'],route1Same:true,selected:1,draftSelected:1,requested:['existing','added'],draftWaypoints:['existing','added'],cards:2},
-    selectedRoute1:{selected:0,draftSelected:0},
-    selectedRoute2:{selected:1,draftSelected:1},
-    committed:{ids:['route-1','route-2'],route1Same:true,waypoints:['existing','added'],selected:1}
+    preview:{ids:['route-2'],selected:0,draftSelected:0,requested:['existing','destination'],requestDestination:'added',draftWaypoints:['existing','destination'],points:['origin','existing','destination','added'],cards:1},
+    committed:{ids:['route-2'],waypoints:['existing','destination'],remaining:['existing','destination'],destination:'added',selected:0}
   });
 });
 
@@ -1850,7 +1837,7 @@ test('route-add snapshots the selected original route when the add-route action 
     const originalRoute={id:'original-A',routeMode:'BIKE_ONLY',totalDistance:1500,totalTime:700,_points:[origin,waypoint,destination],_steps:[]};
     const unselectedRoute={id:'unselected',routeMode:'SHORTEST',totalDistance:1400,totalTime:680,_points:[origin,destination],_steps:[]};
     const interveningRoute={id:'intervening',routeMode:'BIKE_ONLY',totalDistance:1300,totalTime:650,_points:[origin,destination],_steps:[]};
-    const newRoute={id:'new-B',routeMode:'BIKE_ONLY',totalDistance:1700,totalTime:760,_points:[origin,waypoint,added,destination],_steps:[]};
+    const newRoute={id:'new-C',routeMode:'BIKE_ONLY',totalDistance:1700,totalTime:760,_points:[origin,waypoint,destination,added],_steps:[]};
     state.screen='navigation';state.currentLocation=origin;state.departure=departure;state.destination=destination;state.waypoints=[waypoint];state.nav.remainingWaypoints=[waypoint];state.routes=[unselectedRoute,originalRoute];state.selectedRoute=1;
     state.map={getLevel:()=>4,getCenter:()=>origin,relayout(){},setBounds(){}};history={pushState(){},replaceState(){}};
     const addRouteButton=document.querySelectorAll('[data-nav-action]').find(button=>button.dataset.navAction==='add-route');
@@ -1862,8 +1849,7 @@ test('route-add snapshots the selected original route when the add-route action 
     await choosePlace(added);
     return {
       snapshottedAtOpen,
-      route1Same:state.routes[0]===originalRoute,
-      route2Same:state.routes[1]===newRoute,
+      newRouteSame:state.routes[0]===newRoute,
       ids:state.routes.map(route=>route.id),
       paths:state.routes.map(route=>route._points.map(point=>point.id)),
       request:testRequest,
@@ -1872,14 +1858,14 @@ test('route-add snapshots the selected original route when the add-route action 
     };
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    snapshottedAtOpen:true,route1Same:true,route2Same:true,ids:['original-A','new-B'],
-    paths:[['origin','existing','destination'],['origin','existing','added','destination']],
-    request:{destination:'destination',waypoints:['existing','added']},
-    original:{departure:'departure',waypoints:['existing'],destination:'destination'},cards:2
+    snapshottedAtOpen:true,newRouteSame:true,ids:['new-C'],
+    paths:[['origin','existing','destination','added']],
+    request:{destination:'added',waypoints:['existing','destination']},
+    original:{departure:'departure',waypoints:['existing'],destination:'destination'},cards:1
   });
 });
 
-test('route-add cards switch distinct geometries and selected map layers', async () => {
+test('route-add preview renders one continuous A-B-C geometry without OR cards', async () => {
   const context=loadApp();
   const result=await vm.runInContext(`(async()=>{
     class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
@@ -1894,28 +1880,19 @@ test('route-add cards switch distinct geometries and selected map layers', async
     const origin={id:'origin',latitude:37,longitude:127},bend1={id:'bend-1',latitude:37.01,longitude:127.005},added={id:'added',latitude:37.02,longitude:127.02},bend2={id:'bend-2',latitude:37.02,longitude:127.04},destination={id:'destination',latitude:37.04,longitude:127.05};
     const route1={id:'route-1',label:'자전거도로 우선',routeMode:'BIKE_ONLY',totalDistance:1500,totalTime:700,_points:[origin,bend1,destination],_steps:[]};
     const route2={id:'route-2',label:'자전거도로 우선',routeMode:'BIKE_ONLY',totalDistance:1700,totalTime:760,_points:[origin,added,bend2,destination],_steps:[]};
+    route2._points=[origin,bend1,destination,bend2,added];
     state.screen='navigation';state.currentLocation=origin;state.destination=destination;state.waypoints=[];state.routes=[route1];state.selectedRoute=0;
     state.nav.watchId=77;testFittedRoute=null;
     state.map={getLevel:()=>4,getCenter:()=>origin,relayout(){},setBounds(){testFittedRoute=state.routes[state.selectedRoute]?.id}};
     fetchRoutes=async()=>[route2];prepareRoutes=routes=>routes;drawRouteEndpointMarkers=()=>{};updateRouteFields=()=>{};finishRoutePerformance=()=>{};setGpsMarker=()=>{};history={replaceState(){}};
     await beginNavigationRoutePreview('waypoint',added);
-    const preview={ids:state.routes.map(route=>route.id),paths:state.routeLines.map(line=>line.path.map(point=>[point.latitude,point.longitude])),cards:ui.routeCards.innerHTML};
-    ui.routeCards.querySelectorAll('[data-i]')[0].onclick();
-    const selected1={index:state.selectedRoute,fitted:testFittedRoute,z:state.routeLines.map(line=>line.zIndex),path:state.routeLines[state.selectedRoute].path.map(point=>[point.latitude,point.longitude])};
-    ui.routeCards.querySelectorAll('[data-i]')[1].onclick();
-    const selected2={index:state.selectedRoute,fitted:testFittedRoute,z:state.routeLines.map(line=>line.zIndex),path:state.routeLines[state.selectedRoute].path.map(point=>[point.latitude,point.longitude])};
-    return{preview,selected1,selected2};
+    return{ids:state.routes.map(route=>route.id),paths:state.routeLines.map(line=>line.path.map(point=>[point.latitude,point.longitude])),cards:ui.routeCards.querySelectorAll('[data-i]').length,selected:state.selectedRoute,fitted:testFittedRoute,request:{destination:state.navigationRouteDraft.destination.id,waypoints:state.navigationRouteDraft.waypoints.map(point=>point.id)}};
   })()`,context);
   const output=JSON.parse(JSON.stringify(result));
-  assert.deepEqual(output.preview.ids,['route-1','route-2']);
-  assert.notDeepEqual(output.preview.paths[0],output.preview.paths[1]);
-  assert.match(output.preview.cards,/<b>경로 1<\/b>/);
-  assert.match(output.preview.cards,/<b>경로 2<\/b>/);
-  assert.deepEqual(output.selected1,{index:0,fitted:'route-1',z:[8,3],path:[[37,127],[37.01,127.005],[37.04,127.05]]});
-  assert.deepEqual(output.selected2,{index:1,fitted:'route-2',z:[3,8],path:[[37,127],[37.02,127.02],[37.02,127.04],[37.04,127.05]]});
+  assert.deepEqual(output,{ids:['route-2'],paths:[[[37,127],[37.01,127.005],[37.04,127.05],[37.02,127.04],[37.02,127.02]]],cards:1,selected:0,fitted:'route-2',request:{destination:'added',waypoints:['destination']}});
 });
 
-test('route-add supersedes an in-flight reroute without losing its distinct route 2', async () => {
+test('route-add supersedes an in-flight reroute with one continuous appended route', async () => {
   const context=loadApp();
   const result=await vm.runInContext(`(async()=>{
     class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
@@ -1930,11 +1907,11 @@ test('route-add supersedes an in-flight reroute without losing its distinct rout
     const origin={id:'origin',latitude:37,longitude:127},bend1={id:'bend-1',latitude:37.01,longitude:127.005},added={id:'added',latitude:37.02,longitude:127.02},bend2={id:'bend-2',latitude:37.025,longitude:127.04},destination={id:'destination',latitude:37.04,longitude:127.05};
     const route1={id:'route-1',routeMode:'BIKE_ONLY',totalDistance:1500,totalTime:700,_points:[origin,bend1,destination],_steps:[]};
     const staleRoute={id:'stale-reroute',routeMode:'BIKE_ONLY',totalDistance:1400,totalTime:680,_points:[origin,destination],_steps:[]};
-    const route2={id:'route-2',routeMode:'BIKE_ONLY',totalDistance:1700,totalTime:760,_points:[origin,added,bend2,destination],_steps:[]};
+    const route2={id:'route-2',routeMode:'BIKE_ONLY',totalDistance:1700,totalTime:760,_points:[origin,destination,bend2,added],_steps:[]};
     state.screen='navigation';state.currentLocation=origin;state.destination=destination;state.waypoints=[];state.routes=[route1];state.selectedRoute=0;
     state.nav.watchId=77;state.map={getLevel:()=>4,getCenter:()=>origin,relayout(){},setBounds(){}};
     testRequests=[];let resolveReroute,resolvePreview;
-    fetchRoutes=async(a,b,waypoints)=>{testRequests.push(waypoints.map(point=>point.id));return await new Promise(resolve=>{if(testRequests.length===1)resolveReroute=resolve;else resolvePreview=resolve})};
+    fetchRoutes=async(a,b,waypoints)=>{testRequests.push({destination:b.id,waypoints:waypoints.map(point=>point.id)});return await new Promise(resolve=>{if(testRequests.length===1)resolveReroute=resolve;else resolvePreview=resolve})};
     prepareRoutes=routes=>routes;drawRouteEndpointMarkers=()=>{};updateRouteFields=()=>{};finishRoutePerformance=()=>{};setGpsMarker=()=>{};updateNavHud=()=>{};history={replaceState(){}};
     const reroutePromise=recalculateNavigationRoute('manual');
     const previewPromise=beginNavigationRoutePreview('waypoint',added);
@@ -1954,11 +1931,11 @@ test('route-add supersedes an in-flight reroute without losing its distinct rout
   })()`,context);
   const output=JSON.parse(JSON.stringify(result));
   assert.deepEqual(output,{
-    preview:true,requests:[[],['added']],stillPreviewing:true,
-    ids:['route-1','route-2'],
-    paths:[['origin','bend-1','destination'],['origin','added','bend-2','destination']],
-    cards:2,selected:1,
-    linePaths:[[[37,127],[37.01,127.005],[37.04,127.05]],[[37,127],[37.02,127.02],[37.025,127.04],[37.04,127.05]]]
+    preview:true,requests:[{destination:'destination',waypoints:[]},{destination:'added',waypoints:['destination']}],stillPreviewing:true,
+    ids:['route-2'],
+    paths:[['origin','destination','bend-2','added']],
+    cards:1,selected:0,
+    linePaths:[[[37,127],[37.04,127.05],[37.025,127.04],[37.02,127.02]]]
   });
 });
 
@@ -1977,7 +1954,22 @@ test('destination-change preview keeps its existing calculated-candidate behavio
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{ids:['new-shortest','new-bike'],selected:1,destination:'new-destination',waypoints:[]});
 });
 
-test('navigation menu add-route flows through recent place, rendered route selection, and start guidance', async () => {
+test('initial route search still renders and selects every API alternative card', async () => {
+  const context=loadApp();
+  const result=await vm.runInContext(`(async()=>{
+    const origin={id:'origin'},destination={id:'destination'},first={id:'first',label:'First',totalDistance:100,totalTime:60,_points:[{latitude:37,longitude:127},{latitude:37.01,longitude:127.01}],_steps:[]},second={id:'second',label:'Second',totalDistance:120,totalTime:70,_points:[{latitude:37,longitude:127},{latitude:37.02,longitude:127.02}],_steps:[]};
+    state.departure=origin;state.destination=destination;state.waypoints=[];state.map={relayout(){}};history={pushState(){}};
+    fetchRoutes=async()=>[first,second];prepareRoutes=routes=>routes;finishRoutePerformance=()=>{};setGpsMarker=()=>{};drawRouteEndpointMarkers=()=>{};fitSelectedRoute=()=>{};
+    drawRoutes=()=>{state.routeLines=state.routes.map(()=>({setOptions(){},setZIndex(){}}))};
+    await loadRoutes();
+    const buttons=ui.routeCards.querySelectorAll('[data-i]');
+    buttons[1].onclick();
+    return{cards:buttons.length,selected:state.selectedRoute,route:state.routes[state.selectedRoute].id};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{cards:2,selected:1,route:'second'});
+});
+
+test('navigation menu add-route appends the old destination before starting guidance to the new destination', async () => {
   const context=loadApp();
   const {recentPlace}=installNavigationFlowEnvironment(context);
   const navMenuButton=context.document.querySelector('#navMenuBtn');
@@ -1997,12 +1989,12 @@ test('navigation menu add-route flows through recent place, rendered route selec
   assert.equal(vm.runInContext('state.screen',context),'route');
   assert.equal(context.document.querySelector('#routeCards').classList.contains('hidden'),false);
   const routeButtons=context.document.querySelector('#routeCards').querySelectorAll('[data-i]');
-  assert.equal(routeButtons.length,2);
-  routeButtons[1].onclick();
+  assert.equal(routeButtons.length,1);
+  routeButtons[0].onclick();
   context.document.querySelector('#startNavBtn').onclick();
 
-  const result=vm.runInContext(`({screen:state.screen,waypoints:state.waypoints.map(place=>place.id),selectedRoute:state.selectedRoute,route:state.routes[state.selectedRoute].id,draft:state.navigationRouteDraft,watch:state.nav.watchId,follow:state.nav.follow,level:testCameraLevels.at(-1),cameraTargets:testCameraTargets.length})`,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'navigation',waypoints:['existing','added'],selectedRoute:1,route:'preview-a',draft:null,watch:88,follow:true,level:2,cameraTargets:1});
+  const result=vm.runInContext(`({screen:state.screen,waypoints:state.waypoints.map(place=>place.id),remaining:state.nav.remainingWaypoints.map(place=>place.id),destination:state.destination.id,selectedRoute:state.selectedRoute,route:state.routes[state.selectedRoute].id,draft:state.navigationRouteDraft,watch:state.nav.watchId,follow:state.nav.follow,level:testCameraLevels.at(-1),cameraTargets:testCameraTargets.length})`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'navigation',waypoints:['existing','destination'],remaining:['existing','destination'],destination:'added',selectedRoute:0,route:'preview-a',draft:null,watch:88,follow:true,level:2,cameraTargets:1});
   assert.equal(context.testWatchStarts,0);
   assert.equal(context.testRouteRequests.length,1);
 });
@@ -2093,11 +2085,12 @@ test('navigation search place uses the common selection entry point and adds a s
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(vm.runInContext('state.navigationRouteDraft.place===testMarkerPlace',context),true);
   const routeButtons=context.document.querySelector('#routeCards').querySelectorAll('[data-i]');
-  routeButtons[1].onclick();
+  assert.equal(routeButtons.length,1);
+  routeButtons[0].onclick();
   context.document.querySelector('#startNavBtn').onclick();
 
-  const result=vm.runInContext(`({screen:state.screen,waypoints:state.waypoints.map(place=>place.id),route:state.routes[state.selectedRoute].id,draft:state.navigationRouteDraft})`,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'navigation',waypoints:['existing','marker-stop'],route:'preview-a',draft:null});
+  const result=vm.runInContext(`({screen:state.screen,waypoints:state.waypoints.map(place=>place.id),destination:state.destination.id,route:state.routes[state.selectedRoute].id,draft:state.navigationRouteDraft})`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'navigation',waypoints:['existing','destination'],destination:'marker-stop',route:'preview-a',draft:null});
   assert.equal(context.testWatchStarts,0);
 });
 
@@ -2148,12 +2141,13 @@ test('confirming a navigation route preview is the only point that commits waypo
   const result=vm.runInContext(`
     const existing={id:'existing'},added={id:'added'},destination={id:'destination'},original={id:'original'},preview={id:'preview',_steps:[{guidance:'new'}]};
     state.screen='route';state.waypoints=[existing];state.destination=destination;state.routes=[preview];state.selectedRoute=0;state.nav.watchId=71;state.nav.progressDistance=450;
-    state.navigationRouteDraft={kind:'waypoint',place:added,waypoints:[existing,added],destination,routes:[preview],selectedRoute:0,original:{routes:[original],selectedRoute:0}};
+    state.navigationRouteDraft={kind:'waypoint',place:added,waypoints:[existing,destination],destination:added,routes:[preview],selectedRoute:0,original:{routes:[original],selectedRoute:0}};
     testWatchStarts=0;startWatch=()=>{testWatchStarts++};drawNavigationRoute=()=>{};updateNavHud=()=>{};renderScreen=screen=>{state.screen=screen};history={replaceState(){}};
     confirmNavigationRoutePreview();
-    ({waypoints:state.waypoints.map(x=>x.id),route:state.routes[0].id,steps:state.nav.steps[0].guidance,progress:state.nav.progressDistance,watch:state.nav.watchId,watchStarts:testWatchStarts,draft:state.navigationRouteDraft,screen:state.screen});
+    ({waypoints:state.waypoints.map(x=>x.id),destination:state.destination.id,route:state.routes[0].id,steps:state.nav.steps[0].guidance,progress:state.nav.progressDistance,watch:state.nav.watchId,watchStarts:testWatchStarts,draft:state.navigationRouteDraft,screen:state.screen});
   `,context);
-  assert.deepEqual([...result.waypoints],['existing','added']);
+  assert.deepEqual([...result.waypoints],['existing','destination']);
+  assert.equal(result.destination,'added');
   assert.equal(result.route,'preview');
   assert.equal(result.steps,'new');
   assert.equal(result.progress,0);
@@ -2163,14 +2157,14 @@ test('confirming a navigation route preview is the only point that commits waypo
   assert.equal(result.screen,'navigation');
 });
 
-test('confirming a preview commits the route candidate selected in the overview', () => {
+test('confirming an alternate preview still commits the candidate selected in the overview', () => {
   const context=loadApp();
   const result=vm.runInContext(`
     const existing={id:'existing'},added={id:'added'},destination={id:'destination'},original={id:'original'};
     const first={id:'preview-first',_steps:[]},second={id:'preview-second',_steps:[{guidance:'selected'}]};
     state.screen='route';state.waypoints=[existing];state.destination=destination;state.routes=[first,second];state.selectedRoute=0;
     state.routeLines=[{setOptions(){}},{setOptions(){}}];
-    state.navigationRouteDraft={kind:'waypoint',place:added,waypoints:[existing,added],destination,routes:[first,second],selectedRoute:0,original:{routes:[original],selectedRoute:0,follow:true}};
+    state.navigationRouteDraft={kind:'alternate',place:null,waypoints:[existing],destination,routes:[first,second],selectedRoute:0,original:{routes:[original],selectedRoute:0,follow:true}};
     drawRouteEndpointMarkers=()=>{};fitSelectedRoute=()=>{};renderRouteCards=()=>{};
     selectRoute(1);
     const selectedInDraft=state.navigationRouteDraft.selectedRoute;
@@ -2347,24 +2341,41 @@ for (const outcome of ['cancel','confirm']) {
 }
 
 for (const outcome of ['cancel','confirm']) {
-  test(`route-add preview ${outcome} preserves existing waypoints${outcome==='confirm'?' and appends the new waypoint':''}`, async () => {
+  test(`route-add preview ${outcome} ${outcome==='confirm'?'moves the old destination behind existing waypoints':'restores the original route transaction'}`, async () => {
     const context=loadApp();installConfirmedWaypointFixture(context);
     await vm.runInContext(`(async()=>{
       startNavigation();
-      fetchRoutes=async(origin,destination,waypoints)=>{lifecycleRequests.push({origin:origin.id,destination:destination.id,waypoints:waypoints.map(point=>point.id)});return[makeLifecycleRoute('with-added',waypoints)]};
+      fetchRoutes=async(origin,destination,waypoints)=>{lifecycleRequests.push({origin:origin.id,destination:destination.id,waypoints:waypoints.map(point=>point.id)});return[{id:'with-added',routeMode:'BIKE_ONLY',totalDistance:4448,totalTime:6500,_points:[origin,...waypoints,destination],_steps:[{guidance:'직진',_startAlong:0,_endAlong:4448,points:[origin,...waypoints,destination]}]}]};
       prepareRoutes=routes=>routes;drawRoutes=()=>{};renderRouteCards=()=>{};updateRouteFields=()=>{};
       await beginNavigationRoutePreview('waypoint',lifecycleAdded);
       ${outcome==='cancel'?"cancelNavigationRoutePreview(false)":"confirmNavigationRoutePreview()"};
     })()`,context);
     const result=navigationLifecycleSnapshot(context);
-    assert.deepEqual(result.requests,[{origin:'origin',destination:'destination',waypoints:['waypoint-1','waypoint-2','waypoint-3']}]);
-    const expected=outcome==='cancel'?['waypoint-1','waypoint-2']:['waypoint-1','waypoint-2','waypoint-3'];
+    assert.deepEqual(result.requests,[{origin:'origin',destination:'waypoint-3',waypoints:['waypoint-1','waypoint-2','destination']}]);
+    const expected=outcome==='cancel'?['waypoint-1','waypoint-2']:['waypoint-1','waypoint-2','destination'];
     assert.deepEqual(result.waypoints,expected);
     assert.deepEqual(result.remaining,expected);
+    assert.equal(result.destination,outcome==='cancel'?'destination':'waypoint-3');
     assert.equal(result.route,outcome==='cancel'?'confirmed':'with-added');
     assert.equal(result.markers.filter(name=>name.includes('waypoint')).length,expected.length);
   });
 }
+
+test('route-add navigation continues to destination C after passing the former destination B', async () => {
+  const context=loadApp();installConfirmedWaypointFixture(context);
+  const result=await vm.runInContext(`(async()=>{
+    startNavigation();
+    fetchRoutes=async(origin,destination,waypoints)=>[{id:'with-added',routeMode:'BIKE_ONLY',totalDistance:4448,totalTime:6500,_points:[origin,...waypoints,destination],_steps:[]}];
+    prepareRoutes=routes=>routes;drawRoutes=()=>{};renderRouteCards=()=>{};updateRouteFields=()=>{};
+    await beginNavigationRoutePreview('waypoint',lifecycleAdded);
+    confirmNavigationRoutePreview();
+    const route=state.routes[state.selectedRoute],formerDestination=state.waypoints.at(-1);
+    state.nav.progressDistance=projectOnRoute(route._points,formerDestination).alongDistance+1;
+    syncPassedNavigationWaypoints(route);
+    return {remaining:state.nav.remainingWaypoints.map(point=>point.id),destination:state.destination.id,routeEnd:route._points.at(-1).id};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{remaining:[],destination:'waypoint-3',routeEnd:'waypoint-3'});
+});
 
 test('a stale reroute response cannot overwrite a newly confirmed navigation route or waypoints', async () => {
   const context=loadApp();installConfirmedWaypointFixture(context);
