@@ -1362,6 +1362,32 @@ test('route editor places one compact waypoint add button in the destination row
   assert.doesNotMatch(editor, /id="addWaypointBtn"[^>]*>[\s\S]*?<small>경유<\/small>/);
 });
 
+test('route edit controls stay visible through destination, waypoints, deletion, and preview', async () => {
+  const context=loadApp();
+  const result=await vm.runInContext(`(async()=>{
+    const A={id:'A',name:'A'},B={id:'B',name:'B'},C={id:'C',name:'C'},D={id:'D',name:'D'},E={id:'E',name:'E'};
+    const controls=()=>({addVisible:!$('#addWaypointBtn').classList.contains('hidden'),removes:$('#waypointFields').querySelectorAll('[data-waypoint-remove]').length});
+    state.screen='route';state.departure=A;state.destination=B;state.navigationRouteDraft=null;
+    state.waypoints=[];updateRouteFields();const destinationOnly=controls();
+    state.waypoints=[C];updateRouteFields();const one=controls();
+    state.waypoints=[C,D];updateRouteFields();const two=controls();
+    state.waypoints=[C,D,E];updateRouteFields();const three=controls();
+    state.departure=null;await $('#waypointFields').querySelectorAll('[data-waypoint-remove]')[1].onclick({stopPropagation(){}});const afterDelete={...controls(),waypoints:state.waypoints.map(place=>place.id)};
+    state.navigationRouteDraft={origin:A,waypoints:[C,D,E],destination:B};updateRouteFields();const preview={...controls(),removeWired:[...$('#waypointFields').querySelectorAll('[data-waypoint-remove]')].every(button=>typeof button.onclick==='function')};
+    renderScreen('navigation',false);const navigation={editorHidden:$('#routeEditor').classList.contains('hidden')};
+    return{destinationOnly,one,two,three,afterDelete,preview,navigation};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    destinationOnly:{addVisible:true,removes:0},
+    one:{addVisible:true,removes:1},
+    two:{addVisible:true,removes:2},
+    three:{addVisible:true,removes:3},
+    afterDelete:{addVisible:true,removes:2,waypoints:['C','E']},
+    preview:{addVisible:true,removes:3,removeWired:true},
+    navigation:{editorHidden:true},
+  });
+});
+
 test('waypoint rows stay empty until a waypoint is actually selected', async () => {
   const context = loadApp();
   vm.runInContext('state.waypoints=[];updateRouteFields()', context);
