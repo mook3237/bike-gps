@@ -1373,6 +1373,26 @@ test('waypoint rows stay empty until a waypoint is actually selected', async () 
   assert.match(context.document.querySelector('#waypointFields').innerHTML, /선택 경유지/);
 });
 
+test('editing a route row replaces only its waypoint index', async () => {
+  const context=loadApp();
+  const result=await vm.runInContext(`(async()=>{
+    const C={id:'C',name:'C'},D={id:'D',name:'D'},X={id:'X',name:'X'};
+    state.waypoints=[C,D];state.destination={id:'B'};history={pushState(){}};
+    updateRouteFields();
+    const before=$('#waypointFields').innerHTML;
+    $('#waypointFields').querySelectorAll('[data-waypoint]')[0].onclick();
+    await choosePlace(X);
+    return {before,waypoints:state.waypoints.map(point=>point.id),identities:[state.waypoints[0]===X,state.waypoints[1]===D],editingEndpoint:state.editingEndpoint,editingWaypointIndex:state.editingWaypointIndex};
+  })()`,context);
+  assert.match(result.before,/경로 1/);
+  assert.match(result.before,/경로 2/);
+  assert.match(result.before,/aria-label="경로 1 삭제"/);
+  assert.deepEqual([...result.waypoints],['X','D']);
+  assert.deepEqual([...result.identities],[true,true]);
+  assert.equal(result.editingEndpoint,null);
+  assert.equal(result.editingWaypointIndex,null);
+});
+
 test('deleting the first waypoint renumbers the remainder and recalculates to the same destination', async () => {
   const context=loadApp();
   const result=await vm.runInContext(`(async()=>{
@@ -1389,11 +1409,11 @@ test('deleting the first waypoint renumbers the remainder and recalculates to th
     return{before,removerCount:removers.length,waypoints:state.waypoints.map(place=>place.id),after:$('#waypointFields').innerHTML,requests:testRequests,destination:state.destination.id};
   })()`,context);
   assert.equal(result.removerCount,2);
-  assert.match(result.before,/경유 1/);
-  assert.match(result.before,/경유 2/);
+  assert.match(result.before,/경로 1/);
+  assert.match(result.before,/경로 2/);
   assert.deepEqual([...result.waypoints],['waypoint-2']);
-  assert.match(result.after,/경유 1/);
-  assert.doesNotMatch(result.after,/경유 2/);
+  assert.match(result.after,/경로 1/);
+  assert.doesNotMatch(result.after,/경로 2/);
   assert.deepEqual(JSON.parse(JSON.stringify(result.requests)),[{waypoints:['waypoint-2'],destination:'destination'}]);
   assert.equal(result.destination,'destination');
 });
@@ -1841,7 +1861,8 @@ test('route-add appends C D E in order, keeps destination B, and cancel restores
     fetchRoutes=async(origin,destination,waypoints)=>{testRequests.push({destination,waypoints:waypoints.slice()});return[{id:'route-'+waypoints.map(point=>point.id).join(''),routeMode:'BIKE_ONLY',_points:[origin,...waypoints,destination],_steps:[]}]};
     prepareRoutes=routes=>routes;drawRoutes=()=>{};renderRouteCards=()=>{};updateRouteFields=()=>{};finishRoutePerformance=()=>{};setGpsMarker=()=>{};drawRouteEndpointMarkers=()=>{};drawNavigationRoute=()=>{};initializeNavigationCamera=()=>{};updateNavHud=()=>{};
     const snapshot=()=>({points:state.routes[0]._points.map(point=>point.id),waypoints:state.waypoints.map(point=>point.id),remaining:state.nav.remainingWaypoints.map(point=>point.id),destination:state.destination.id});
-    const add=async place=>{prepareNavigationRouteAdd();await beginNavigationRoutePreview('waypoint',place);confirmNavigationRoutePreview();return snapshot()};
+    testPrepareClears=[];
+    const add=async place=>{state.editingEndpoint='waypoint';state.editingWaypointIndex=0;prepareNavigationRouteAdd();testPrepareClears.push(state.editingEndpoint===null&&state.editingWaypointIndex===null);await beginNavigationRoutePreview('waypoint',place);confirmNavigationRoutePreview();return snapshot()};
     const afterC=await add(C);
     const afterCIdentity=state.waypoints.length===1&&state.waypoints[0]===C&&state.destination===B;
     const beforeCancel={waypoints:state.waypoints,remainingWaypoints:state.nav.remainingWaypoints,route:state.routes[0],destination:state.destination};
@@ -1857,7 +1878,7 @@ test('route-add appends C D E in order, keeps destination B, and cancel restores
     syncPassedNavigationWaypoints(routeAfterD);
     const afterPassingC=snapshot();
     const afterE=await add(E);
-    return {afterC,afterCIdentity,dSnapshot,dPreview,afterCancel,afterD,afterDIdentity,afterPassingC,afterE,identity:{C:state.waypoints[0]===C,D:state.waypoints[1]===D,E:state.waypoints[2]===E},requests:testRequests.map(request=>({destination:request.destination.id,waypoints:request.waypoints.map(point=>point.id)}))};
+    return {afterC,afterCIdentity,dSnapshot,dPreview,afterCancel,afterD,afterDIdentity,afterPassingC,afterE,prepareClears:testPrepareClears,identity:{C:state.waypoints[0]===C,D:state.waypoints[1]===D,E:state.waypoints[2]===E},requests:testRequests.map(request=>({destination:request.destination.id,waypoints:request.waypoints.map(point=>point.id)}))};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
     afterC:{points:['A','C','B'],waypoints:['C'],remaining:['C'],destination:'B'},
@@ -1869,6 +1890,7 @@ test('route-add appends C D E in order, keeps destination B, and cancel restores
     afterDIdentity:true,
     afterPassingC:{points:['A','C','D','B'],waypoints:['C','D'],remaining:['D'],destination:'B'},
     afterE:{points:['A','C','D','E','B'],waypoints:['C','D','E'],remaining:['C','D','E'],destination:'B'},
+    prepareClears:[true,true,true],
     identity:{C:true,D:true,E:true},
     requests:[
       {destination:'B',waypoints:['C']},
