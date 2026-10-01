@@ -1882,12 +1882,14 @@ test('route-add snapshots the selected original route when the add-route action 
     const addRouteButton=document.querySelectorAll('[data-nav-action]').find(button=>button.dataset.navAction==='add-route');
     await addRouteButton.onclick();
     const snapshottedAtOpen=state.navigationRouteOriginal?.route===originalRoute;
+    const snapshotWaypoints=state.navigationRouteOriginal?.waypoints.map(point=>point.id);
     state.routes=[interveningRoute];state.selectedRoute=0;
     testRequest=null;fetchRoutes=async(a,b,waypoints)=>{testRequest={destination:b.id,waypoints:waypoints.map(point=>point.id)};return[newRoute]};
     prepareRoutes=routes=>routes;drawRouteEndpointMarkers=()=>{};updateRouteFields=()=>{};finishRoutePerformance=()=>{};setGpsMarker=()=>{};
     await choosePlace(added);
     return {
       snapshottedAtOpen,
+      snapshotWaypoints,
       newRouteSame:state.routes[0]===newRoute,
       ids:state.routes.map(route=>route.id),
       paths:state.routes.map(route=>route._points.map(point=>point.id)),
@@ -1897,7 +1899,7 @@ test('route-add snapshots the selected original route when the add-route action 
     };
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    snapshottedAtOpen:true,newRouteSame:true,ids:['new-C'],
+    snapshottedAtOpen:true,snapshotWaypoints:['existing'],newRouteSame:true,ids:['new-C'],
     paths:[['origin','existing','added','destination']],
     request:{destination:'destination',waypoints:['existing','added']},
     original:{departure:'departure',waypoints:['existing'],destination:'destination'},cards:1
@@ -2121,15 +2123,19 @@ test('navigation search place uses the common selection entry point and adds a s
   const addButton=context.document.querySelector('#addNavWaypoint');
   assert.ok(addButton?.onclick,'navigation place add button must be rendered and wired');
   addButton.onclick();
+  assert.deepEqual([...vm.runInContext('state.navigationRouteOriginal.waypoints.map(place=>place.id)',context)],['existing']);
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(vm.runInContext('state.navigationRouteDraft.place===testMarkerPlace',context),true);
+  assert.deepEqual([...vm.runInContext('state.navigationRouteDraft.original.waypoints.map(place=>place.id)',context)],['existing']);
+  assert.deepEqual([...vm.runInContext('state.navigationRouteDraft.waypoints.map(place=>place.id)',context)],['existing','marker-stop']);
+  assert.equal(vm.runInContext('state.navigationRouteDraft.destination.id',context),'destination');
   const routeButtons=context.document.querySelector('#routeCards').querySelectorAll('[data-i]');
   assert.equal(routeButtons.length,1);
   routeButtons[0].onclick();
   context.document.querySelector('#startNavBtn').onclick();
 
   const result=vm.runInContext(`({screen:state.screen,waypoints:state.waypoints.map(place=>place.id),destination:state.destination.id,route:state.routes[state.selectedRoute].id,draft:state.navigationRouteDraft})`,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'navigation',waypoints:['existing','destination'],destination:'marker-stop',route:'preview-a',draft:null});
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'navigation',waypoints:['existing','marker-stop'],destination:'destination',route:'preview-a',draft:null});
   assert.equal(context.testWatchStarts,0);
 });
 
