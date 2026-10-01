@@ -1839,22 +1839,26 @@ test('route-add appends C D E in order, keeps destination B, and cancel restores
     state.map={getLevel:()=>4,getCenter:()=>A,setLevel(){},setCenter(){},relayout(){}};history={replaceState(){},back(){}};
     testRequests=[];
     fetchRoutes=async(origin,destination,waypoints)=>{testRequests.push({destination,waypoints:waypoints.slice()});return[{id:'route-'+waypoints.map(point=>point.id).join(''),routeMode:'BIKE_ONLY',_points:[origin,...waypoints,destination],_steps:[]}]};
-    prepareRoutes=routes=>routes;drawRoutes=()=>{};renderRouteCards=()=>{};updateRouteFields=()=>{};finishRoutePerformance=()=>{};setGpsMarker=()=>{};drawNavigationRoute=()=>{};initializeNavigationCamera=()=>{};updateNavHud=()=>{};
-    const snapshot=()=>({points:state.routes[0]._points.map(point=>point.id),waypoints:state.waypoints.map(point=>point.id),destination:state.destination.id});
+    prepareRoutes=routes=>routes;drawRoutes=()=>{};renderRouteCards=()=>{};updateRouteFields=()=>{};finishRoutePerformance=()=>{};setGpsMarker=()=>{};drawRouteEndpointMarkers=()=>{};drawNavigationRoute=()=>{};initializeNavigationCamera=()=>{};updateNavHud=()=>{};
+    const snapshot=()=>({points:state.routes[0]._points.map(point=>point.id),waypoints:state.waypoints.map(point=>point.id),remaining:state.nav.remainingWaypoints.map(point=>point.id),destination:state.destination.id});
     const add=async place=>{await beginNavigationRoutePreview('waypoint',place);confirmNavigationRoutePreview();return snapshot()};
-    const afterC=await add(C),afterD=await add(D);
-    const beforeCancel={waypoints:state.waypoints,route:state.routes[0],destination:state.destination};
+    const afterC=await add(C),routeAfterC=state.routes[0];
+    state.nav.progressDistance=projectOnRoute(routeAfterC._points,C).alongDistance+1;
+    syncPassedNavigationWaypoints(routeAfterC);
+    const afterPassingC=snapshot(),afterD=await add(D);
+    const beforeCancel={waypoints:state.waypoints,remainingWaypoints:state.nav.remainingWaypoints,route:state.routes[0],destination:state.destination};
     await beginNavigationRoutePreview('waypoint',E);
     cancelNavigationRoutePreview(false);
-    const afterCancel={snapshot:snapshot(),sameWaypoints:state.waypoints===beforeCancel.waypoints,sameRoute:state.routes[0]===beforeCancel.route,sameDestination:state.destination===beforeCancel.destination};
+    const afterCancel={snapshot:snapshot(),sameWaypoints:state.waypoints===beforeCancel.waypoints,sameRemainingWaypoints:state.nav.remainingWaypoints===beforeCancel.remainingWaypoints,sameRoute:state.routes[0]===beforeCancel.route,sameDestination:state.destination===beforeCancel.destination};
     const afterE=await add(E);
-    return {afterC,afterD,afterE,afterCancel,identity:{C:state.waypoints[0]===C,D:state.waypoints[1]===D,E:state.waypoints[2]===E},requests:testRequests.map(request=>({destination:request.destination.id,waypoints:request.waypoints.map(point=>point.id)}))};
+    return {afterC,afterPassingC,afterD,afterE,afterCancel,identity:{C:state.waypoints[0]===C,D:state.waypoints[1]===D,E:state.waypoints[2]===E},requests:testRequests.map(request=>({destination:request.destination.id,waypoints:request.waypoints.map(point=>point.id)}))};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    afterC:{points:['A','C','B'],waypoints:['C'],destination:'B'},
-    afterD:{points:['A','C','D','B'],waypoints:['C','D'],destination:'B'},
-    afterE:{points:['A','C','D','E','B'],waypoints:['C','D','E'],destination:'B'},
-    afterCancel:{snapshot:{points:['A','C','D','B'],waypoints:['C','D'],destination:'B'},sameWaypoints:true,sameRoute:true,sameDestination:true},
+    afterC:{points:['A','C','B'],waypoints:['C'],remaining:['C'],destination:'B'},
+    afterPassingC:{points:['A','C','B'],waypoints:['C'],remaining:[],destination:'B'},
+    afterD:{points:['A','C','D','B'],waypoints:['C','D'],remaining:['D'],destination:'B'},
+    afterE:{points:['A','C','D','E','B'],waypoints:['C','D','E'],remaining:['D','E'],destination:'B'},
+    afterCancel:{snapshot:{points:['A','C','D','B'],waypoints:['C','D'],remaining:['D'],destination:'B'},sameWaypoints:true,sameRemainingWaypoints:true,sameRoute:true,sameDestination:true},
     identity:{C:true,D:true,E:true},
     requests:[
       {destination:'B',waypoints:['C']},
