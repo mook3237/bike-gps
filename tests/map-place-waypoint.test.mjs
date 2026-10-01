@@ -2118,6 +2118,32 @@ test('navigation menu alternate-route reuses destination and waypoints then init
   assert.equal(context.testWatchStarts,0);
 });
 
+test('route exits reset route state for cancel, back, popstate, and the next place selection', () => {
+  const context=loadApp();
+  const result=vm.runInContext(`(()=>{
+    const A={id:'A',name:'A',latitude:37,longitude:127},B={id:'B',name:'B',latitude:37.03,longitude:127.03},C={id:'C',name:'C',latitude:37.01,longitude:127.01},D={id:'D',name:'D',latitude:37.02,longitude:127.02},X={id:'X',name:'X',latitude:37.04,longitude:127.04};
+    let historyCalls,removedLines,removedMarkers;
+    const seed=()=>{
+      historyCalls={back:0,push:0,replace:0};removedLines=0;removedMarkers=0;
+      history={back(){historyCalls.back++},pushState(){historyCalls.push++},replaceState(){historyCalls.replace++}};
+      state.screen='route';state.departure=A;state.waypoints=[C,D];state.destination=B;state.routes=[{id:'old-route'}];state.selectedRoute=0;state.selectedPlace=B;
+      state.editingEndpoint='waypoint';state.editingWaypointIndex=1;state.navigationRouteDraft={id:'draft'};state.navigationRouteOriginal={id:'original'};state.navigationSearch=true;state.navigationSearchMode='add-waypoint';state.navSearchViewport={level:4};
+      state.routeLines=[{setMap(map){if(map===null)removedLines++}}];state.routeEndpointMarkers=[{setMap(map){if(map===null)removedMarkers++}}];
+    };
+    const snapshot=()=>({screen:state.screen,destination:state.destination,waypoints:state.waypoints.map(place=>place.id),routes:state.routes.length,selectedRoute:state.selectedRoute,draft:state.navigationRouteDraft,original:state.navigationRouteOriginal,selectedPlace:state.selectedPlace,editingEndpoint:state.editingEndpoint,editingWaypointIndex:state.editingWaypointIndex,navigationSearch:state.navigationSearch,navigationSearchMode:state.navigationSearchMode,navSearchViewport:state.navSearchViewport,routeLines:state.routeLines.length,markers:state.routeEndpointMarkers.length,removedLines,removedMarkers,history:{...historyCalls}});
+    seed();$('#cancelRoutePreviewBtn').onclick();const cancel=snapshot();
+    seed();$('#routeBack').onclick();const back=snapshot();
+    seed();handlePopState({state:{screen:'map'}});const popstate=snapshot();
+    seed();$('#routeBack').onclick();selectRideMatePlace(X,{source:'visible-map-poi',action:'inspect'});const nextPlace={screen:state.screen,selectedPlace:state.selectedPlace?.id,destination:state.destination,waypoints:state.waypoints.map(place=>place.id),routes:state.routes.length,selectedRoute:state.selectedRoute};
+    return{cancel,back,popstate,nextPlace};
+  })()`,context);
+  const clean={screen:'map',destination:null,waypoints:[],routes:0,selectedRoute:null,draft:null,original:null,selectedPlace:null,editingEndpoint:null,editingWaypointIndex:null,navigationSearch:false,navigationSearchMode:null,navSearchViewport:null,routeLines:0,markers:0,removedLines:1,removedMarkers:1};
+  assert.deepEqual(JSON.parse(JSON.stringify(result.cancel)),{...clean,history:{back:0,push:0,replace:1}});
+  assert.deepEqual(JSON.parse(JSON.stringify(result.back)),{...clean,history:{back:0,push:0,replace:1}});
+  assert.deepEqual(JSON.parse(JSON.stringify(result.popstate)),{...clean,history:{back:0,push:0,replace:0}});
+  assert.deepEqual(JSON.parse(JSON.stringify(result.nextPlace)),{screen:'place',selectedPlace:'X',destination:null,waypoints:[],routes:0,selectedRoute:null});
+});
+
 test('alternate-route preview cancel returns to the clean main map', async () => {
   const context=loadApp();
   installNavigationFlowEnvironment(context);
@@ -2126,8 +2152,8 @@ test('alternate-route preview cancel returns to the clean main map', async () =>
   await alternate.onclick();
   vm.runInContext(`testLatest={id:'latest',name:'Latest',latitude:37.0004,longitude:127.0003};state.currentLocation=testLatest`,context);
   context.document.querySelector('#cancelRoutePreviewBtn').onclick();
-  const result=vm.runInContext(`({screen:state.screen,routes:state.routes.length,routeLines:state.routeLines.length,markers:state.routeEndpointMarkers.length,waypoints:state.waypoints.length,destination:state.destination,selectedRoute:state.selectedRoute,watch:state.nav.watchId,sameLive:state.currentLocation===testLatest,draft:state.navigationRouteDraft})`,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'map',routes:0,routeLines:0,markers:0,waypoints:0,destination:null,selectedRoute:null,watch:null,sameLive:true,draft:null});
+  const result=vm.runInContext(`({screen:state.screen,routes:state.routes.length,routeLines:state.routeLines.length,markers:state.routeEndpointMarkers.length,waypoints:state.waypoints.length,destination:state.destination,selectedRoute:state.selectedRoute,sameLive:state.currentLocation===testLatest,draft:state.navigationRouteDraft})`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'map',routes:0,routeLines:0,markers:0,waypoints:0,destination:null,selectedRoute:null,sameLive:true,draft:null});
   assert.equal(context.testWatchStarts,0);
 });
 
@@ -2150,9 +2176,9 @@ test('navigation menu add-route preview cancel returns to the clean main map', a
   vm.runInContext(`testLiveLocation={id:'live-after-preview',name:'Live',latitude:37.0001,longitude:127.0001};state.currentLocation=testLiveLocation`,context);
   context.document.querySelector('#cancelRoutePreviewBtn').onclick();
 
-  const result=vm.runInContext(`({screen:state.screen,routes:state.routes.length,routeLines:state.routeLines.length,markers:state.routeEndpointMarkers.length,waypoints:state.waypoints.length,destination:state.destination,selectedRoute:state.selectedRoute,watch:state.nav.watchId,sameLiveLocation:state.currentLocation===testLiveLocation,draft:state.navigationRouteDraft})`,context);
+  const result=vm.runInContext(`({screen:state.screen,routes:state.routes.length,routeLines:state.routeLines.length,markers:state.routeEndpointMarkers.length,waypoints:state.waypoints.length,destination:state.destination,selectedRoute:state.selectedRoute,sameLiveLocation:state.currentLocation===testLiveLocation,draft:state.navigationRouteDraft})`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    screen:'map',routes:0,routeLines:0,markers:0,waypoints:0,destination:null,selectedRoute:null,watch:null,sameLiveLocation:true,draft:null
+    screen:'map',routes:0,routeLines:0,markers:0,waypoints:0,destination:null,selectedRoute:null,sameLiveLocation:true,draft:null
   });
   assert.equal(context.testWatchStarts,0);
 });
@@ -2200,9 +2226,9 @@ test('navigation search place preview cancel returns to the clean main map', asy
   vm.runInContext(`testMarkerLive={id:'marker-live',latitude:37.0002,longitude:127.0002};state.currentLocation=testMarkerLive`,context);
   context.document.querySelector('#cancelRoutePreviewBtn').onclick();
 
-  const result=vm.runInContext(`({screen:state.screen,routes:state.routes.length,routeLines:state.routeLines.length,markers:state.routeEndpointMarkers.length,waypoints:state.waypoints.length,destination:state.destination,selectedRoute:state.selectedRoute,watch:state.nav.watchId,sameLive:state.currentLocation===testMarkerLive,draft:state.navigationRouteDraft})`,context);
+  const result=vm.runInContext(`({screen:state.screen,routes:state.routes.length,routeLines:state.routeLines.length,markers:state.routeEndpointMarkers.length,waypoints:state.waypoints.length,destination:state.destination,selectedRoute:state.selectedRoute,sameLive:state.currentLocation===testMarkerLive,draft:state.navigationRouteDraft})`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    screen:'map',routes:0,routeLines:0,markers:0,waypoints:0,destination:null,selectedRoute:null,watch:null,sameLive:true,draft:null
+    screen:'map',routes:0,routeLines:0,markers:0,waypoints:0,destination:null,selectedRoute:null,sameLive:true,draft:null
   });
   assert.equal(context.testWatchStarts,0);
 });
