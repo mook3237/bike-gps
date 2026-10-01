@@ -1354,9 +1354,11 @@ test('category marker recent search stores the exact opened place', () => {
   assert.equal(recent[0].place.name, '스타벅스 동광주DT점');
 });
 
-test('route editor has one compact waypoint add button in the departure row', () => {
+test('route editor places one compact waypoint add button in the destination row', () => {
   const editor = html.match(/<section id="routeEditor"[\s\S]*?<\/section>/)?.[0] || '';
-  assert.match(editor, /class="route-departure-row"[\s\S]*?id="departureField"[\s\S]*?id="addWaypointBtn"[^>]*>\s*\+\s*<\/button>/);
+  const departureRow = editor.match(/<div class="route-departure-row">[\s\S]*?<\/div>/)?.[0] || '';
+  assert.doesNotMatch(departureRow, /id="addWaypointBtn"/);
+  assert.match(editor, /class="route-destination-row"[\s\S]*?id="destinationField"[\s\S]*?id="addWaypointBtn"[^>]*aria-label="경로 추가"[^>]*>\s*\+\s*<\/button>/);
   assert.doesNotMatch(editor, /id="addWaypointBtn"[^>]*>[\s\S]*?<small>경유<\/small>/);
 });
 
@@ -1393,28 +1395,31 @@ test('editing a route row replaces only its waypoint index', async () => {
   assert.equal(result.editingWaypointIndex,null);
 });
 
-test('deleting the first waypoint renumbers the remainder and recalculates to the same destination', async () => {
+test('deleting the second waypoint keeps its neighbors and renumbers the remainder', async () => {
   const context=loadApp();
   const result=await vm.runInContext(`(async()=>{
     const departure={id:'origin',name:'Origin',latitude:37,longitude:127};
     const first={id:'waypoint-1',name:'First',latitude:37.01,longitude:127.01};
     const second={id:'waypoint-2',name:'Second',latitude:37.02,longitude:127.02};
+    const third={id:'waypoint-3',name:'Third',latitude:37.025,longitude:127.025};
     const destination={id:'destination',name:'Destination',latitude:37.03,longitude:127.03};
-    state.departure=departure;state.waypoints=[first,second];state.destination=destination;
+    state.departure=departure;state.waypoints=[first,second,third];state.destination=destination;
     testRequests=[];loadRoutes=async()=>{testRequests.push({waypoints:state.waypoints.map(place=>place.id),destination:state.destination.id})};
     updateRouteFields();
     const before=$('#waypointFields').innerHTML;
     const removers=$('#waypointFields').querySelectorAll('[data-waypoint-remove]');
-    if(removers[0])await removers[0].onclick({stopPropagation(){}});
+    if(removers[1])await removers[1].onclick({stopPropagation(){}});
     return{before,removerCount:removers.length,waypoints:state.waypoints.map(place=>place.id),after:$('#waypointFields').innerHTML,requests:testRequests,destination:state.destination.id};
   })()`,context);
-  assert.equal(result.removerCount,2);
+  assert.equal(result.removerCount,3);
   assert.match(result.before,/경로 1/);
   assert.match(result.before,/경로 2/);
-  assert.deepEqual([...result.waypoints],['waypoint-2']);
+  assert.match(result.before,/경로 3/);
+  assert.deepEqual([...result.waypoints],['waypoint-1','waypoint-3']);
   assert.match(result.after,/경로 1/);
-  assert.doesNotMatch(result.after,/경로 2/);
-  assert.deepEqual(JSON.parse(JSON.stringify(result.requests)),[{waypoints:['waypoint-2'],destination:'destination'}]);
+  assert.match(result.after,/경로 2/);
+  assert.doesNotMatch(result.after,/경로 3/);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.requests)),[{waypoints:['waypoint-1','waypoint-3'],destination:'destination'}]);
   assert.equal(result.destination,'destination');
 });
 
@@ -2113,7 +2118,7 @@ test('navigation menu alternate-route reuses destination and waypoints then init
   assert.equal(context.testWatchStarts,0);
 });
 
-test('alternate-route cancel restores the live navigation transaction without restarting GPS', async () => {
+test('alternate-route preview cancel returns to the clean main map', async () => {
   const context=loadApp();
   installNavigationFlowEnvironment(context);
   vm.runInContext(`testOriginalRoutes=state.routes;testOriginalWaypoints=state.waypoints;testOriginalDestination=state.destination;testOriginalSteps=state.nav.steps;testOriginalRoute=state.routes[0]` ,context);
@@ -2121,12 +2126,12 @@ test('alternate-route cancel restores the live navigation transaction without re
   await alternate.onclick();
   vm.runInContext(`testLatest={id:'latest',name:'Latest',latitude:37.0004,longitude:127.0003};state.currentLocation=testLatest`,context);
   context.document.querySelector('#cancelRoutePreviewBtn').onclick();
-  const result=vm.runInContext(`({screen:state.screen,sameRoutes:state.routes===testOriginalRoutes,sameRoute:state.routes[0]===testOriginalRoute,sameWaypoints:state.waypoints===testOriginalWaypoints,sameDestination:state.destination===testOriginalDestination,sameSteps:state.nav.steps===testOriginalSteps,progress:state.nav.progressDistance,currentStep:state.nav.currentStep,follow:state.nav.follow,watch:state.nav.watchId,sameLive:state.currentLocation===testLatest,draft:state.navigationRouteDraft})`,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'navigation',sameRoutes:true,sameRoute:true,sameWaypoints:true,sameDestination:true,sameSteps:true,progress:300,currentStep:0,follow:true,watch:88,sameLive:true,draft:null});
+  const result=vm.runInContext(`({screen:state.screen,routes:state.routes.length,routeLines:state.routeLines.length,markers:state.routeEndpointMarkers.length,waypoints:state.waypoints.length,destination:state.destination,selectedRoute:state.selectedRoute,watch:state.nav.watchId,sameLive:state.currentLocation===testLatest,draft:state.navigationRouteDraft})`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'map',routes:0,routeLines:0,markers:0,waypoints:0,destination:null,selectedRoute:null,watch:null,sameLive:true,draft:null});
   assert.equal(context.testWatchStarts,0);
 });
 
-test('navigation menu add-route cancel restores the live navigation session through rendered UI', async () => {
+test('navigation menu add-route preview cancel returns to the clean main map', async () => {
   const context=loadApp();
   installNavigationFlowEnvironment(context);
   vm.runInContext(`
@@ -2145,16 +2150,9 @@ test('navigation menu add-route cancel restores the live navigation session thro
   vm.runInContext(`testLiveLocation={id:'live-after-preview',name:'Live',latitude:37.0001,longitude:127.0001};state.currentLocation=testLiveLocation`,context);
   context.document.querySelector('#cancelRoutePreviewBtn').onclick();
 
-  const result=vm.runInContext(`({
-    screen:state.screen,sameRoutes:state.routes===testOriginalRoutes,sameRoute:state.routes[0]===testOriginalRoute,selected:state.selectedRoute,
-    sameWaypoints:state.waypoints===testOriginalWaypoints,waypoints:state.waypoints.map(place=>place.id),sameDestination:state.destination===testOriginalDestination,
-    progress:state.nav.progressDistance,currentStep:state.nav.currentStep,sameSteps:state.nav.steps===testOriginalSteps,follow:state.nav.follow,
-    watch:state.nav.watchId,sameLiveLocation:state.currentLocation===testLiveLocation,draft:state.navigationRouteDraft,
-    hud:document.querySelector('#turnText').textContent,routeRendered:!!state.routeLines[state.selectedRoute]
-  })`,context);
+  const result=vm.runInContext(`({screen:state.screen,routes:state.routes.length,routeLines:state.routeLines.length,markers:state.routeEndpointMarkers.length,waypoints:state.waypoints.length,destination:state.destination,selectedRoute:state.selectedRoute,watch:state.nav.watchId,sameLiveLocation:state.currentLocation===testLiveLocation,draft:state.navigationRouteDraft})`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    screen:'navigation',sameRoutes:true,sameRoute:true,selected:0,sameWaypoints:true,waypoints:['existing'],sameDestination:true,
-    progress:300,currentStep:0,sameSteps:true,follow:true,watch:88,sameLiveLocation:true,draft:null,hud:'직진',routeRendered:true
+    screen:'map',routes:0,routeLines:0,markers:0,waypoints:0,destination:null,selectedRoute:null,watch:null,sameLiveLocation:true,draft:null
   });
   assert.equal(context.testWatchStarts,0);
 });
@@ -2188,7 +2186,7 @@ test('navigation search place uses the common selection entry point and adds a s
   assert.equal(context.testWatchStarts,0);
 });
 
-test('navigation search place preview cancel returns to the unchanged live navigation through UI', async () => {
+test('navigation search place preview cancel returns to the clean main map', async () => {
   const context=loadApp();
   installNavigationFlowEnvironment(context);
   context.testMarkerPlace={id:'marker-cancel',name:'Marker Cancel',category:'Cafe',address:'Road',latitude:37.016,longitude:127.016};
@@ -2202,16 +2200,9 @@ test('navigation search place preview cancel returns to the unchanged live navig
   vm.runInContext(`testMarkerLive={id:'marker-live',latitude:37.0002,longitude:127.0002};state.currentLocation=testMarkerLive`,context);
   context.document.querySelector('#cancelRoutePreviewBtn').onclick();
 
-  const result=vm.runInContext(`({
-    screen:state.screen,sameRoutes:state.routes===testOriginalRoutes,selected:state.selectedRoute,
-    sameWaypoints:state.waypoints===testOriginalWaypoints,waypoints:state.waypoints.map(place=>place.id),sameDestination:state.destination===testOriginalDestination,
-    progress:state.nav.progressDistance,currentStep:state.nav.currentStep,sameSteps:state.nav.steps===testOriginalSteps,follow:state.nav.follow,
-    watch:state.nav.watchId,sameLive:state.currentLocation===testMarkerLive,draft:state.navigationRouteDraft,
-    hud:document.querySelector('#turnText').textContent,routeRendered:!!state.routeLines[state.selectedRoute]
-  })`,context);
+  const result=vm.runInContext(`({screen:state.screen,routes:state.routes.length,routeLines:state.routeLines.length,markers:state.routeEndpointMarkers.length,waypoints:state.waypoints.length,destination:state.destination,selectedRoute:state.selectedRoute,watch:state.nav.watchId,sameLive:state.currentLocation===testMarkerLive,draft:state.navigationRouteDraft})`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    screen:'navigation',sameRoutes:true,selected:0,sameWaypoints:true,waypoints:['existing'],sameDestination:true,
-    progress:300,currentStep:0,sameSteps:true,follow:true,watch:88,sameLive:true,draft:null,hud:'직진',routeRendered:true
+    screen:'map',routes:0,routeLines:0,markers:0,waypoints:0,destination:null,selectedRoute:null,watch:null,sameLive:true,draft:null
   });
   assert.equal(context.testWatchStarts,0);
 });
