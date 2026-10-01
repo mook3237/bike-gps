@@ -1879,6 +1879,23 @@ test('route-add appends C D E in order, keeps destination B, and cancel restores
   });
 });
 
+test('route-add replaces the prior card and numbers the new route by accumulated waypoints', () => {
+  const context=loadApp();
+  const result=vm.runInContext(`(()=>{
+    const C={id:'C'},D={id:'D'},E={id:'E'};
+    state.routes=[{id:'route-add',label:'API candidate',totalDistance:1000,totalTime:600}];state.selectedRoute=0;
+    return [[C],[C,D],[C,D,E]].map(waypoints=>{
+      state.navigationRouteDraft={kind:'waypoint',waypoints,routes:state.routes,selectedRoute:0};
+      renderRouteCards();
+      return {cards:ui.routeCards.querySelectorAll('[data-i]').length,html:ui.routeCards.innerHTML};
+    });
+  })()`,context);
+  assert.deepEqual([...result.map(item=>item.cards)],[1,1,1]);
+  assert.match(result[0].html,/>경로 1<\/b>/);
+  assert.match(result[1].html,/>경로 2<\/b>/);
+  assert.match(result[2].html,/>경로 3<\/b>/);
+});
+
 test('route-add snapshots the selected original route when the add-route action opens', async () => {
   const context=loadApp();
   const result=await vm.runInContext(`(async()=>{
