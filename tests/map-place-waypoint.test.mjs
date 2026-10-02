@@ -1357,9 +1357,12 @@ test('category marker recent search stores the exact opened place', () => {
 test('route editor places one compact waypoint add button in the destination row', () => {
   const editor = html.match(/<section id="routeEditor"[\s\S]*?<\/section>/)?.[0] || '';
   const departureRow = editor.match(/<div class="route-departure-row">[\s\S]*?<\/div>/)?.[0] || '';
+  assert.doesNotMatch(editor, /id="routeBack"/);
   assert.doesNotMatch(departureRow, /id="addWaypointBtn"/);
   assert.match(editor, /class="route-destination-row"[\s\S]*?id="destinationField"[\s\S]*?id="addWaypointBtn"[^>]*aria-label="경로 추가"[^>]*>\s*\+\s*<\/button>/);
   assert.doesNotMatch(editor, /id="addWaypointBtn"[^>]*>[\s\S]*?<small>경유<\/small>/);
+  assert.match(styles,/\.route-editor\{[^}]*grid-template-columns:1fr 44px/);
+  assert.match(styles,/\.top-ui,[^{]*\.route-preview-cancel[^{]*\{pointer-events:auto\}/);
 });
 
 test('route edit controls stay visible through destination, waypoints, deletion, and preview', async () => {
@@ -1386,6 +1389,73 @@ test('route edit controls stay visible through destination, waypoints, deletion,
     preview:{addVisible:true,removes:3,removeWired:true},
     navigation:{editorHidden:true},
   });
+});
+
+test('mode A swap keeps waypoint order and recalculates with exchanged endpoints', async () => {
+  const context=loadApp();
+  const result=await vm.runInContext(`(async()=>{
+    const A={id:'A',name:'A'},B={id:'B',name:'B'},C={id:'C',name:'C'},D={id:'D',name:'D'},E={id:'E',name:'E'};
+    state.departure=A;state.waypoints=[C,D,E];state.destination=B;state.routes=[{id:'old'}];state.selectedRoute=0;
+    let recalculated;loadRoutes=async()=>{recalculated={departure:state.departure.id,waypoints:state.waypoints.map(point=>point.id),destination:state.destination.id}};
+    updateRouteFields();await $('#swapBtn').onclick();
+    return{departure:state.departure.id,waypoints:state.waypoints.map(point=>point.id),destination:state.destination.id,recalculated};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    departure:'B',waypoints:['C','D','E'],destination:'A',
+    recalculated:{departure:'B',waypoints:['C','D','E'],destination:'A'},
+  });
+});
+
+test('mode B opens without route alternatives and exposes hit-testable point controls', () => {
+  const context=loadApp();
+  const result=vm.runInContext(`(()=>{
+    const A={id:'A',name:'A'},B={id:'B',name:'B'},C={id:'C',name:'C'},D={id:'D',name:'D'};
+    state.screen='route';state.departure=A;state.waypoints=[C,D];state.destination=B;state.routes=[{id:'old'}];state.selectedRoute=0;history={pushState(){},replaceState(){}};
+    renderScreen('route',false);updateRouteFields();const modeA={addWired:typeof $('#addWaypointBtn').onclick==='function',removeWired:[...$('#waypointFields').querySelectorAll('[data-waypoint-remove]')].every(button=>typeof button.onclick==='function'),swapWired:typeof $('#swapBtn').onclick==='function',startVisible:!$('#startNavBtn').classList.contains('hidden'),cancelVisible:!$('#cancelRoutePreviewBtn').classList.contains('hidden')};$('#addWaypointBtn').onclick();
+    const controls=[...$('#routePointEditorFields').querySelectorAll('[data-route-point-move]'),...$('#routePointEditorFields').querySelectorAll('[data-route-point-remove]'),$('#routePointEditorFields').querySelector('[data-route-point-add]')];
+    return{modeA,screen:state.screen,points:state.routePointEditorDraft.orderedPoints.map(point=>point.id),cardsHidden:$('#routeCards').classList.contains('hidden'),startHidden:$('#startNavBtn').classList.contains('hidden'),modeACancelHidden:$('#cancelRoutePreviewBtn').classList.contains('hidden'),actionsVisible:!$('#routePointEditorActions').classList.contains('hidden'),allWired:controls.every(button=>typeof button.onclick==='function'),confirmWired:typeof $('#confirmRoutePointEditorBtn').onclick==='function',cancelWired:typeof $('#cancelRoutePointEditorBtn').onclick==='function'};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{modeA:{addWired:true,removeWired:true,swapWired:true,startVisible:true,cancelVisible:true},screen:'route-points',points:['A','C','D','B'],cardsHidden:true,startHidden:true,modeACancelHidden:true,actionsVisible:true,allWired:true,confirmWired:true,cancelWired:true});
+  assert.match(styles,/\.route-point-editor-actions[^\n]*pointer-events:auto|\.route-point-editor-actions,[^{]*\{pointer-events:auto\}/);
+});
+
+test('mode B reorders intermediate, start, and destination by final position on confirm', async () => {
+  const context=loadApp();
+  const result=await vm.runInContext(`(async()=>{
+    const A={id:'A',name:'A'},B={id:'B',name:'B'},C={id:'C',name:'C'},D={id:'D',name:'D'};
+    history={pushState(){},replaceState(){}};loadRoutes=async()=>{state.screen='route'};
+    const run=async moves=>{
+      state.departure=A;state.waypoints=[C,D];state.destination=B;state.routes=[{id:'old'}];state.selectedRoute=0;state.navigationRouteDraft=null;
+      openRoutePointEditor();
+      for(const [index,direction] of moves){const button=[...$('#routePointEditorFields').querySelectorAll('[data-route-point-move]')].find(item=>+item.dataset.routePointMove===index&&+item.dataset.direction===direction);button.onclick()}
+      const labels=$('#routePointEditorFields').innerHTML;
+      await $('#confirmRoutePointEditorBtn').onclick();
+      return{departure:state.departure.id,waypoints:state.waypoints.map(point=>point.id),destination:state.destination.id,labels};
+    };
+    return{intermediate:await run([[2,-1]]),start:await run([[0,1]]),destination:await run([[3,-1],[2,-1]])};
+  })()`,context);
+  assert.deepEqual({departure:result.intermediate.departure,waypoints:[...result.intermediate.waypoints],destination:result.intermediate.destination},{departure:'A',waypoints:['D','C'],destination:'B'});
+  assert.deepEqual({departure:result.start.departure,waypoints:[...result.start.waypoints],destination:result.start.destination},{departure:'C',waypoints:['A','D'],destination:'B'});
+  assert.deepEqual({departure:result.destination.departure,waypoints:[...result.destination.waypoints],destination:result.destination.destination},{departure:'A',waypoints:['B','C'],destination:'D'});
+  assert.match(result.start.labels,/출발[\s\S]*C[\s\S]*경로 1[\s\S]*A/);
+  assert.match(result.destination.labels,/도착[\s\S]*D/);
+});
+
+test('mode B add accumulates and cancel discards all editor changes', async () => {
+  const context=loadApp();
+  const result=await vm.runInContext(`(async()=>{
+    const A={id:'A',name:'A'},B={id:'B',name:'B'},C={id:'C',name:'C'},D={id:'D',name:'D'},E={id:'E',name:'E'};
+    history={pushState(){},replaceState(){}};loadRoutes=async()=>{state.screen='route'};drawRoutes=()=>{};renderRouteCards=()=>{};
+    state.departure=A;state.waypoints=[C];state.destination=B;state.routes=[{id:'route-ACB'}];state.selectedRoute=0;renderScreen('route',false);updateRouteFields();
+    $('#addWaypointBtn').onclick();$('#routePointEditorFields').querySelector('[data-route-point-add]').onclick();await choosePlace(D);
+    const editorOrder=state.routePointEditorDraft.orderedPoints.map(point=>point.id);await $('#confirmRoutePointEditorBtn').onclick();
+    const confirmed={departure:state.departure.id,waypoints:state.waypoints.map(point=>point.id),destination:state.destination.id};
+    const preservedRoutes=[{id:'route-ACDB'}];state.routes=preservedRoutes;state.departure=A;state.waypoints=[C,D];state.destination=B;openRoutePointEditor();
+    moveRoutePoint(2,-1);removeRoutePoint(2);$('#routePointEditorFields').querySelector('[data-route-point-add]').onclick();await choosePlace(E);$('#cancelRoutePointEditorBtn').onclick();
+    const cancelled={screen:state.screen,departure:state.departure.id,waypoints:state.waypoints.map(point=>point.id),destination:state.destination.id,sameRoutes:state.routes===preservedRoutes,draft:state.routePointEditorDraft};
+    return{editorOrder,confirmed,cancelled};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{editorOrder:['A','C','D','B'],confirmed:{departure:'A',waypoints:['C','D'],destination:'B'},cancelled:{screen:'route',departure:'A',waypoints:['C','D'],destination:'B',sameRoutes:true,draft:null}});
 });
 
 test('waypoint rows stay empty until a waypoint is actually selected', async () => {
@@ -2144,7 +2214,7 @@ test('navigation menu alternate-route reuses destination and waypoints then init
   assert.equal(context.testWatchStarts,0);
 });
 
-test('route exits reset route state for cancel, back, popstate, and the next place selection', () => {
+test('route exits reset route state for cancel, popstate, and the next place selection', () => {
   const context=loadApp();
   const result=vm.runInContext(`(()=>{
     const A={id:'A',name:'A',latitude:37,longitude:127},B={id:'B',name:'B',latitude:37.03,longitude:127.03},C={id:'C',name:'C',latitude:37.01,longitude:127.01},D={id:'D',name:'D',latitude:37.02,longitude:127.02},X={id:'X',name:'X',latitude:37.04,longitude:127.04};
@@ -2158,14 +2228,12 @@ test('route exits reset route state for cancel, back, popstate, and the next pla
     };
     const snapshot=()=>({screen:state.screen,destination:state.destination,waypoints:state.waypoints.map(place=>place.id),routes:state.routes.length,selectedRoute:state.selectedRoute,draft:state.navigationRouteDraft,original:state.navigationRouteOriginal,selectedPlace:state.selectedPlace,editingEndpoint:state.editingEndpoint,editingWaypointIndex:state.editingWaypointIndex,navigationSearch:state.navigationSearch,navigationSearchMode:state.navigationSearchMode,navSearchViewport:state.navSearchViewport,routeLines:state.routeLines.length,markers:state.routeEndpointMarkers.length,removedLines,removedMarkers,history:{...historyCalls}});
     seed();$('#cancelRoutePreviewBtn').onclick();const cancel=snapshot();
-    seed();$('#routeBack').onclick();const back=snapshot();
     seed();handlePopState({state:{screen:'map'}});const popstate=snapshot();
-    seed();$('#routeBack').onclick();selectRideMatePlace(X,{source:'visible-map-poi',action:'inspect'});const nextPlace={screen:state.screen,selectedPlace:state.selectedPlace?.id,destination:state.destination,waypoints:state.waypoints.map(place=>place.id),routes:state.routes.length,selectedRoute:state.selectedRoute};
-    return{cancel,back,popstate,nextPlace};
+    seed();$('#cancelRoutePreviewBtn').onclick();selectRideMatePlace(X,{source:'visible-map-poi',action:'inspect'});const nextPlace={screen:state.screen,selectedPlace:state.selectedPlace?.id,destination:state.destination,waypoints:state.waypoints.map(place=>place.id),routes:state.routes.length,selectedRoute:state.selectedRoute};
+    return{cancel,popstate,nextPlace};
   })()`,context);
   const clean={screen:'map',destination:null,waypoints:[],routes:0,selectedRoute:null,draft:null,original:null,selectedPlace:null,editingEndpoint:null,editingWaypointIndex:null,navigationSearch:false,navigationSearchMode:null,navSearchViewport:null,routeLines:0,markers:0,removedLines:1,removedMarkers:1};
   assert.deepEqual(JSON.parse(JSON.stringify(result.cancel)),{...clean,history:{back:0,push:0,replace:1}});
-  assert.deepEqual(JSON.parse(JSON.stringify(result.back)),{...clean,history:{back:0,push:0,replace:1}});
   assert.deepEqual(JSON.parse(JSON.stringify(result.popstate)),{...clean,history:{back:0,push:0,replace:0}});
   assert.deepEqual(JSON.parse(JSON.stringify(result.nextPlace)),{screen:'place',selectedPlace:'X',destination:null,waypoints:[],routes:0,selectedRoute:null});
 });
