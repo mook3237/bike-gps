@@ -93,6 +93,7 @@
         <div id="liveResults" class="live-results hidden"></div>
       </section>
 
+      <div class="route-layout">
       <section id="routeEditor" class="route-editor hidden">
         <div id="routeSelectionFields" class="route-fields">
           <div class="route-point-row" data-route-point="0">
@@ -110,6 +111,13 @@
         <button id="swapBtn" class="swap-btn" aria-label="출발 도착 바꾸기">⇅</button>
       </section>
 
+      <section id="routeCards" class="route-cards hidden"></section>
+      <div class="route-selection-actions">
+        <button id="startNavBtn" class="primary-floating hidden">안내 시작</button>
+        <button id="cancelRoutePreviewBtn" class="route-preview-cancel hidden">취소</button>
+      </div>
+      </div>
+
       <div id="mapControls" class="map-controls">
         <div class="zoom-controls"><button id="zoomIn">＋</button><button id="zoomOut">－</button></div>
         <div class="right-controls"><button id="locateBtn" aria-label="현재 위치">⌾</button></div>
@@ -121,9 +129,6 @@
         <div id="sheetContent"></div>
       </section>
 
-      <section id="routeCards" class="route-cards hidden"></section>
-      <button id="startNavBtn" class="primary-floating hidden">안내 시작</button>
-      <button id="cancelRoutePreviewBtn" class="route-preview-cancel hidden">취소</button>
       <div id="routePointEditorActions" class="route-point-editor-actions hidden">
         <button id="cancelRoutePointEditorBtn" class="secondary-btn">취소</button>
         <button id="confirmRoutePointEditorBtn" class="primary-btn">확인</button>

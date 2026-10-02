@@ -1575,11 +1575,11 @@ test('map gestures and landscape controls retain portrait interaction parity', a
   assert.match(styles,/\.map-controls button\{[^}]*pointer-events:auto/);
   assert.match(styles,/\.hidden\{display:none!important\}/);
   assert.match(styles,/@media\(orientation:landscape\) and \(max-height:600px\)/);
-  assert.match(styles,/@media\(orientation:landscape\)[\s\S]*?\.route-editor\{[^}]*width:var\(--route-landscape-panel\)/);
-  assert.match(styles,/@media\(orientation:landscape\)[\s\S]*?\.route-cards\{[^}]*top:calc\(var\(--route-landscape-top\)[^}]*width:var\(--route-landscape-panel\)/);
+  assert.match(styles,/@media\(orientation:landscape\)[\s\S]*?\.route-layout\{[^}]*width:var\(--route-landscape-panel\)[^}]*display:flex[^}]*flex-direction:column/);
+  assert.match(styles,/@media\(orientation:landscape\)[\s\S]*?\.route-editor\{[^}]*position:static[^}]*width:100%/);
 });
 
-test('route layout keeps unlimited points in a three-row vertical viewport and all candidates in a horizontal strip', async () => {
+test('landscape route layout grows naturally to four rows without resizing cards or actions', async () => {
   const context=loadApp();
   const result=await vm.runInContext(`(async()=>{
     history={pushState(){},replaceState(){}};
@@ -1604,8 +1604,15 @@ test('route layout keeps unlimited points in a three-row vertical viewport and a
   assert.match(styles,/\.route-fields\.route-point-dragging\{[^}]*overflow-y:auto/);
   assert.match(styles,/\.route-cards\{[^}]*flex-wrap:nowrap[^}]*overflow-x:auto[^}]*overflow-y:hidden[^}]*touch-action:pan-x/);
   assert.match(styles,/\.route-card\{[^}]*flex:0 0 150px[^}]*min-width:150px/);
-  assert.match(styles,/@media\(orientation:landscape\)[\s\S]*?\.route-cards\{[^}]*top:calc\(var\(--route-landscape-top\) \+ var\(--route-landscape-point-height\) \+ var\(--route-landscape-gap\)\)[^}]*width:var\(--route-landscape-panel\)/);
-  assert.match(styles,/@media\(orientation:landscape\)[\s\S]*?\.primary-floating\.route-preview-start\{[^}]*top:calc\(var\(--route-landscape-top\) \+ var\(--route-landscape-point-height\) \+ var\(--route-landscape-gap\) \+ var\(--route-landscape-card-height\) \+ var\(--route-landscape-gap\)\)/);
+  const landscapeStyles=styles.slice(styles.indexOf('@media(orientation:landscape)'),styles.indexOf('.navigation-active .zoom-controls'));
+  assert.match(landscapeStyles,/\.route-layout\{[^}]*display:flex[^}]*flex-direction:column[^}]*gap:12px/);
+  assert.match(landscapeStyles,/\.route-editor \.route-fields\{max-height:192px\}/);
+  assert.match(landscapeStyles,/\.route-cards\{[^}]*position:static[^}]*width:100%/);
+  assert.match(landscapeStyles,/\.route-selection-actions\{[^}]*display:grid[^}]*grid-template-columns:1fr 1fr/);
+  assert.match(landscapeStyles,/\.primary-floating\.route-preview-start,\.route-preview-cancel\{position:static;width:auto\}/);
+  assert.doesNotMatch(landscapeStyles,/\.route-card\{/);
+  assert.doesNotMatch(landscapeStyles,/\.primary-floating\.route-preview-start,\.route-preview-cancel\{[^}]*height:/);
+  assert.match(html,/<div class="route-layout">[\s\S]*?id="routeEditor"[\s\S]*?id="routeCards"[\s\S]*?<div class="route-selection-actions">[\s\S]*?id="startNavBtn"[\s\S]*?id="cancelRoutePreviewBtn"/);
 });
 
 test('waypoint rows stay empty until a waypoint is actually selected', async () => {
