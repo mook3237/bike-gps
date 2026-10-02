@@ -95,13 +95,15 @@
 
       <section id="routeEditor" class="route-editor hidden">
         <div id="routeSelectionFields" class="route-fields">
-          <div class="route-departure-row">
-            <button id="departureField"><small>출발</small><b>현재 위치</b></button>
+          <div class="route-point-row" data-route-point="0">
+            <button class="route-point-drag" data-route-point-drag="0" aria-label="현재 위치 순서 변경">⠿</button>
+            <button id="departureField" class="route-point-copy route-point-edit"><b>현재 위치</b></button>
           </div>
           <div id="waypointFields"></div>
-          <div class="route-destination-row">
-            <button id="destinationField"><small>도착</small><b>목적지</b></button>
-            <button id="addWaypointBtn" class="waypoint-plus" aria-label="경로 추가">+</button>
+          <div class="route-point-row" data-route-point="1">
+            <button class="route-point-drag" data-route-point-drag="1" aria-label="목적지 순서 변경">⠿</button>
+            <button id="destinationField" class="route-point-copy route-point-edit"><b>목적지</b></button>
+            <div class="route-point-actions"><button id="addWaypointBtn" class="route-point-add" aria-label="경로 추가">+</button></div>
           </div>
         </div>
         <div id="routePointEditorFields" class="route-fields hidden"></div>
