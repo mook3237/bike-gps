@@ -1540,7 +1540,7 @@ test('orientation changes relayout and refit using the current viewport without 
     return{landscape,portrait,portraitPan:testPans.at(-1)};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    landscape:{relayouts:1,fits:1,padding:{top:24,right:24,bottom:302,left:312},width:'844px',height:'390px',pan:{latitude:37.4,longitude:127.4}},
+    landscape:{relayouts:1,fits:1,padding:{top:24,right:24,bottom:24,left:312},width:'844px',height:'390px',pan:{latitude:37.4,longitude:127.4}},
     portrait:{relayouts:1,fits:2,width:'390px',height:'844px',sameDraft:true,order:['A','C','B']},
     portraitPan:{latitude:37.5,longitude:127.5},
   });
@@ -1556,21 +1556,56 @@ test('map gestures and landscape controls retain portrait interaction parity', a
     class TestPlaces {}
     kakao={maps:{LatLng:TestLatLng,Map:TestMap,event:{addListener(){}},services:{Places:TestPlaces}}};loadKakao=async()=>{};locate=async()=>{};const originalRenderScreen=renderScreen;renderScreen=()=>{};await initMap();renderScreen=originalRenderScreen;
     const map=$('#map'),pointerTypes=['pointerdown','pointermove','pointerup','pointercancel'];
-    state.screen='route';renderScreen('route',false);
-    const controls=['#zoomIn','#zoomOut','#locateBtn','#swapBtn','#startNavBtn','#cancelRoutePreviewBtn'].map(selector=>({selector,wired:typeof $(selector).onclick==='function',visible:!$(selector).classList.contains('hidden')}));
-    return{mapOptions:testMapOptions,passive:pointerTypes.every(type=>map.getEventListenerOptions(type)?.passive===true),controls,mapControlsVisible:!$('#mapControls').classList.contains('hidden')};
+    const visibility={};
+    for(const screen of ['map','route','route-points','navigation']){renderScreen(screen,false);visibility[screen]={zoom:!$('.zoom-controls').classList.contains('hidden'),mapControls:!$('#mapControls').classList.contains('hidden'),currentLocation:screen==='navigation'?!$('#navLocateBtn').classList.contains('hidden'):!$('.right-controls').classList.contains('hidden')}}
+    const controls=['#zoomIn','#zoomOut','#locateBtn','#navLocateBtn','#swapBtn','#startNavBtn','#cancelRoutePreviewBtn'].map(selector=>({selector,wired:typeof $(selector).onclick==='function'}));
+    return{mapOptions:testMapOptions,passive:pointerTypes.every(type=>map.getEventListenerOptions(type)?.passive===true),controls,visibility};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result.mapOptions)),{draggable:true,zoomable:true});
   assert.equal(result.passive,true);
-  assert.equal(result.mapControlsVisible,true);
-  assert.equal(result.controls.every(control=>control.wired&&control.visible),true);
+  assert.equal(result.controls.every(control=>control.wired),true);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.visibility)),{
+    map:{zoom:true,mapControls:true,currentLocation:true},
+    route:{zoom:false,mapControls:true,currentLocation:true},
+    'route-points':{zoom:false,mapControls:true,currentLocation:true},
+    navigation:{zoom:true,mapControls:true,currentLocation:true},
+  });
   assert.match(styles,/#map\{[^}]*touch-action:auto/);
   assert.match(styles,/\.map-controls\{[^}]*pointer-events:none/);
   assert.match(styles,/\.map-controls button\{[^}]*pointer-events:auto/);
+  assert.match(styles,/\.hidden\{display:none!important\}/);
   assert.match(styles,/@media\(orientation:landscape\) and \(max-height:600px\)/);
   assert.match(styles,/@media\(orientation:landscape\)[\s\S]*?\.route-editor\{[^}]*width:var\(--route-landscape-panel\)/);
-  assert.match(styles,/@media\(orientation:landscape\)[\s\S]*?\.zoom-controls\{[^}]*top:[^}]*bottom:auto/);
-  assert.match(styles,/@media\(orientation:landscape\)[\s\S]*?\.route-cards\{[^}]*left:var\(--route-landscape-content-left\)/);
+  assert.match(styles,/@media\(orientation:landscape\)[\s\S]*?\.route-cards\{[^}]*top:calc\(var\(--route-landscape-top\)[^}]*width:var\(--route-landscape-panel\)/);
+});
+
+test('route layout keeps unlimited points in a three-row vertical viewport and all candidates in a horizontal strip', async () => {
+  const context=loadApp();
+  const result=await vm.runInContext(`(async()=>{
+    history={pushState(){},replaceState(){}};
+    const points=['A','C','D','E','F','G','H','B'].map((id,index)=>({id,name:id,latitude:37+index/100,longitude:127+index/100}));
+    state.departure=points[0];state.waypoints=points.slice(1,-1);state.destination=points.at(-1);
+    state.routePointEditorDraft={orderedPoints:points.slice(),original:{departure:state.departure,waypoints:state.waypoints.slice(),destination:state.destination,routes:[],selectedRoute:0,navigationRouteDraft:null,navigationRouteOriginal:null}};
+    renderRoutePointEditor();
+    const box=$('#routePointEditorFields'),nativeQuery=box.querySelectorAll.bind(box),handles=[...nativeQuery('[data-route-point-drag]')],rows=handles.map((handle,index)=>{const row=document.createElement('div');row.getBoundingClientRect=()=>({top:index*48,bottom:(index+1)*48,height:48});handle.closest=()=>row;return row});
+    box.querySelectorAll=selector=>selector==='.route-point-row'?rows:nativeQuery(selector);box.getBoundingClientRect=()=>({top:0,bottom:144,height:144});box.scrollTop=0;
+    const handle=handles[2];handle.dispatch('pointerdown',{clientY:120});handle.dispatch('pointermove',{clientY:140});handle.dispatch('pointermove',{clientY:140});handle.dispatch('pointermove',{clientY:140});const duringDrag={scrollTop:box.scrollTop,order:state.routePointEditorDraft.orderedPoints.map(point=>point.id)};handle.dispatch('pointerup',{clientY:140});
+    state.editingEndpoint='route-point-add';await choosePlace({id:'I',name:'I',latitude:37.09,longitude:127.09});
+    const finalPoints=state.routePointEditorDraft.orderedPoints.map(point=>point.id),finalHandles=$('#routePointEditorFields').querySelectorAll('[data-route-point-drag]').length;
+    state.routes=Array.from({length:5},(_,index)=>({label:'R'+index,totalTime:600,totalDistance:1000}));state.selectedRoute=0;renderRouteCards();
+    return{duringDrag,finalPoints,finalHandles,cards:$('#routeCards').querySelectorAll('[data-i]').length};
+  })()`,context);
+  assert.equal(result.duringDrag.scrollTop>0,true);
+  assert.deepEqual([...result.duringDrag.order].slice(0,4),['A','C','E','D']);
+  assert.equal(result.finalPoints.length,9);
+  assert.equal(result.finalHandles,9);
+  assert.equal(result.cards,5);
+  assert.match(styles,/\.route-fields\{[^}]*max-height:144px[^}]*overflow-y:auto/);
+  assert.match(styles,/\.route-fields\.route-point-dragging\{[^}]*overflow-y:auto/);
+  assert.match(styles,/\.route-cards\{[^}]*flex-wrap:nowrap[^}]*overflow-x:auto[^}]*overflow-y:hidden[^}]*touch-action:pan-x/);
+  assert.match(styles,/\.route-card\{[^}]*flex:0 0 150px[^}]*min-width:150px/);
+  assert.match(styles,/@media\(orientation:landscape\)[\s\S]*?\.route-cards\{[^}]*top:calc\(var\(--route-landscape-top\) \+ var\(--route-landscape-point-height\) \+ var\(--route-landscape-gap\)\)[^}]*width:var\(--route-landscape-panel\)/);
+  assert.match(styles,/@media\(orientation:landscape\)[\s\S]*?\.primary-floating\.route-preview-start\{[^}]*top:calc\(var\(--route-landscape-top\) \+ var\(--route-landscape-point-height\) \+ var\(--route-landscape-gap\) \+ var\(--route-landscape-card-height\) \+ var\(--route-landscape-gap\)\)/);
 });
 
 test('waypoint rows stay empty until a waypoint is actually selected', async () => {
