@@ -329,12 +329,11 @@ test('short tap uses the same place pipeline and state-based actions in every in
   }
 });
 
-test('the compact PERF panel keeps and copies only the five latest map tap records', async () => {
-  assert.match(html,/id="mapTapPerfToggle"[^>]*>PERF<\/button>/);
-  assert.match(html,/id="mapTapPerfBody"[^>]*class="hidden"/);
+test('map tap performance records remain internal with no production PERF UI', () => {
+  assert.doesNotMatch(html,/mapTapPerf|>PERF<\/button>/);
+  assert.doesNotMatch(styles,/map-tap-perf/);
+  assert.doesNotMatch(appSource,/renderMapTapPerformance|copyMapTapPerformance|mapTapPerfToggle|mapTapPerfCopy/);
   const context=loadApp();
-  context.testCopied='';
-  context.navigator.clipboard={writeText:async text=>{context.testCopied=text}};
   vm.runInContext(`
     for(let index=1;index<=6;index++)recordMapTapPerformance({
       '결과':index===6?'NO_CANDIDATE':'SELECTED',
@@ -348,25 +347,10 @@ test('the compact PERF panel keeps and copies only the five latest map tap recor
     });
   `,context);
   assert.equal(vm.runInContext('mapTapPerformanceRecords.length',context),5);
-  const records=context.document.querySelector('#mapTapPerfRecords').innerHTML;
-  assert.doesNotMatch(records,/전체 10ms/);
-  assert.match(records,/전체 60ms/);
-  assert.match(records,/Fresh 48ms/);
-  assert.match(records,/결정 6ms/);
-  assert.match(records,/열기 6ms/);
-  assert.match(records,/NO_CANDIDATE/);
-  assert.match(records,/L4 · 12m/);
-  assert.match(records,/후보 0/);
-  const body=context.document.querySelector('#mapTapPerfBody');
-  assert.equal(body.classList.contains('hidden'),true);
-  context.document.querySelector('#mapTapPerfToggle').onclick({stopPropagation(){}});
-  assert.equal(body.classList.contains('hidden'),false);
-  await context.document.querySelector('#mapTapPerfCopy').onclick({stopPropagation(){}});
-  const copied=JSON.parse(context.testCopied);
-  assert.equal(copied.length,5);
-  assert.equal(copied.at(-1)['전체 터치 → 업체 카드 호출'],60);
-  assert.equal(copied.at(-1)['결과'],'NO_CANDIDATE');
-  assert.equal(copied.at(-1)['후보 수'],0);
+  const latest=vm.runInContext('mapTapPerformanceRecords.at(-1)',context);
+  assert.equal(latest['전체 터치 → 업체 카드 호출'],60);
+  assert.equal(latest['결과'],'NO_CANDIDATE');
+  assert.equal(latest['후보 수'],0);
 });
 
 test('a short map tap with no nearby business does nothing', async () => {
@@ -389,7 +373,6 @@ test('a short map tap with no nearby business does nothing', async () => {
   assert.equal(perf['검색 반경(m)'],12);
   assert.equal(perf['후보 수'],0);
   assert.equal(perf['가장 가까운 후보'],null);
-  assert.match(context.document.querySelector('#mapTapPerfRecords').innerHTML,/NO_CANDIDATE/);
 });
 
 test('browser fresh nearby uses all categories at the touched location without the nearby API', async () => {
@@ -505,9 +488,6 @@ test('a returned nearby candidate outside the existing radius is recorded withou
   assert.equal(perf['후보 수'],1);
   assert.equal(perf['가장 가까운 후보'],'반경 밖 업체');
   assert.equal(perf['가장 가까운 거리(m)']>6,true);
-  const rendered=context.document.querySelector('#mapTapPerfRecords').innerHTML;
-  assert.match(rendered,/OUT_OF_RADIUS/);
-  assert.match(rendered,/반경 밖 업체 52m/);
 });
 
 test('a failed browser fresh-nearby search is recorded as ERROR', async () => {
@@ -1076,7 +1056,9 @@ test('live Kakao autocomplete keeps the keyboard open and selects the exact plac
 test('main map keeps the menu but moves saved-place shortcuts into the search landing', () => {
   const mapHeader=html.match(/<header id="mapHeader"[\s\S]*?<\/header>/)?.[0]||'';
   const searchLanding=html.match(/<div id="searchLanding">[\s\S]*?<div id="liveResults"/)?.[0]||'';
+  const bottomNav=html.match(/<nav id="bottomNav"[\s\S]*?<\/nav>/)?.[0]||'';
   assert.match(mapHeader,/id="searchEntry"[\s\S]*id="menuBtn"/);
+  assert.match(bottomNav,/>지도<\/button>[\s\S]*>레이싱<\/button>[\s\S]*>기록계<\/button>/);
   assert.doesNotMatch(html,/id="quickActions"/);
   assert.match(searchLanding,/class="search-shortcuts"/);
   for(const shortcut of ['home','work','favorite'])assert.match(searchLanding,new RegExp(`data-quick="${shortcut}"`));
@@ -1557,7 +1539,7 @@ test('map gestures and landscape controls retain portrait interaction parity', a
     kakao={maps:{LatLng:TestLatLng,Map:TestMap,event:{addListener(){}},services:{Places:TestPlaces}}};loadKakao=async()=>{};locate=async()=>{};const originalRenderScreen=renderScreen;renderScreen=()=>{};await initMap();renderScreen=originalRenderScreen;
     const map=$('#map'),pointerTypes=['pointerdown','pointermove','pointerup','pointercancel'];
     const visibility={};
-    for(const screen of ['map','route','route-points','navigation']){renderScreen(screen,false);visibility[screen]={zoom:!$('.zoom-controls').classList.contains('hidden'),mapControls:!$('#mapControls').classList.contains('hidden'),currentLocation:screen==='navigation'?!$('#navLocateBtn').classList.contains('hidden'):!$('.right-controls').classList.contains('hidden')}}
+    for(const screen of ['map','route','route-points','navigation']){renderScreen(screen,false);visibility[screen]={zoom:!$('.zoom-controls').classList.contains('hidden'),mapControls:!$('#mapControls').classList.contains('hidden'),currentLocation:screen==='navigation'?!$('#navLocateBtn').classList.contains('hidden'):!$('.right-controls').classList.contains('hidden'),mapActive:document.body.classList.contains('map-active')}}
     const controls=['#zoomIn','#zoomOut','#locateBtn','#navLocateBtn','#swapBtn','#startNavBtn','#cancelRoutePreviewBtn'].map(selector=>({selector,wired:typeof $(selector).onclick==='function'}));
     return{mapOptions:testMapOptions,passive:pointerTypes.every(type=>map.getEventListenerOptions(type)?.passive===true),controls,visibility};
   })()`,context);
@@ -1565,16 +1547,20 @@ test('map gestures and landscape controls retain portrait interaction parity', a
   assert.equal(result.passive,true);
   assert.equal(result.controls.every(control=>control.wired),true);
   assert.deepEqual(JSON.parse(JSON.stringify(result.visibility)),{
-    map:{zoom:true,mapControls:true,currentLocation:true},
-    route:{zoom:false,mapControls:true,currentLocation:true},
-    'route-points':{zoom:false,mapControls:true,currentLocation:true},
-    navigation:{zoom:true,mapControls:true,currentLocation:true},
+    map:{zoom:true,mapControls:true,currentLocation:true,mapActive:true},
+    route:{zoom:false,mapControls:true,currentLocation:true,mapActive:false},
+    'route-points':{zoom:false,mapControls:true,currentLocation:true,mapActive:false},
+    navigation:{zoom:true,mapControls:true,currentLocation:true,mapActive:false},
   });
   assert.match(styles,/#map\{[^}]*touch-action:auto/);
   assert.match(styles,/\.map-controls\{[^}]*pointer-events:none/);
   assert.match(styles,/\.map-controls button\{[^}]*pointer-events:auto/);
   assert.match(styles,/\.hidden\{display:none!important\}/);
   assert.match(styles,/@media\(orientation:landscape\) and \(max-height:600px\)/);
+  assert.match(styles,/\.map-active \.zoom-controls\{[^}]*top:auto[^}]*right:auto[^}]*bottom:calc\(66px \+ env\(safe-area-inset-bottom\) \+ var\(--viewport-bottom,0px\)\)[^}]*left:calc\(14px \+ env\(safe-area-inset-left\)\)[^}]*flex-direction:column/);
+  assert.match(styles,/\.map-active \.right-controls\{[^}]*top:auto[^}]*right:calc\(14px \+ env\(safe-area-inset-right\)\)[^}]*bottom:calc\(66px \+ env\(safe-area-inset-bottom\) \+ var\(--viewport-bottom,0px\)\)/);
+  assert.match(styles,/\.bottom-nav\{[^}]*height:calc\(52px \+ env\(safe-area-inset-bottom\)\)/);
+  assert.match(styles,/\.bottom-nav button\{[^}]*min-height:44px/);
   assert.match(styles,/@media\(orientation:landscape\)[\s\S]*?\.route-layout\{[^}]*width:var\(--route-landscape-panel\)[^}]*display:flex[^}]*flex-direction:column/);
   assert.match(styles,/@media\(orientation:landscape\)[\s\S]*?\.route-editor\{[^}]*position:static[^}]*width:100%/);
 });
