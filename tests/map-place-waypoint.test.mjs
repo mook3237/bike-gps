@@ -1579,7 +1579,7 @@ test('map gestures and landscape controls retain portrait interaction parity', a
   assert.match(styles,/@media\(orientation:landscape\)[\s\S]*?\.route-editor\{[^}]*position:static[^}]*width:100%/);
 });
 
-test('landscape route layout grows naturally to four rows without resizing cards or actions', async () => {
+test('landscape route layout reserves four rows and compacts the place sheet without resizing controls', async () => {
   const context=loadApp();
   const result=await vm.runInContext(`(async()=>{
     history={pushState(){},replaceState(){}};
@@ -1593,25 +1593,32 @@ test('landscape route layout grows naturally to four rows without resizing cards
     state.editingEndpoint='route-point-add';await choosePlace({id:'I',name:'I',latitude:37.09,longitude:127.09});
     const finalPoints=state.routePointEditorDraft.orderedPoints.map(point=>point.id),finalHandles=$('#routePointEditorFields').querySelectorAll('[data-route-point-drag]').length;
     state.routes=Array.from({length:5},(_,index)=>({label:'R'+index,totalTime:600,totalDistance:1000}));state.selectedRoute=0;renderRouteCards();
-    return{duringDrag,finalPoints,finalHandles,cards:$('#routeCards').querySelectorAll('[data-i]').length};
+    window.visualViewport.width=844;const landscapeSheetHeight=placeSheetCollapsedHeight(390);window.visualViewport.width=390;const portraitSheetHeight=placeSheetCollapsedHeight(844);
+    return{duringDrag,finalPoints,finalHandles,cards:$('#routeCards').querySelectorAll('[data-i]').length,landscapeSheetHeight,portraitSheetHeight};
   })()`,context);
   assert.equal(result.duringDrag.scrollTop>0,true);
   assert.deepEqual([...result.duringDrag.order].slice(0,4),['A','C','E','D']);
   assert.equal(result.finalPoints.length,9);
   assert.equal(result.finalHandles,9);
   assert.equal(result.cards,5);
+  assert.equal(result.landscapeSheetHeight,190);
+  assert.equal(result.portraitSheetHeight,300);
   assert.match(styles,/\.route-fields\{[^}]*max-height:144px[^}]*overflow-y:auto/);
   assert.match(styles,/\.route-fields\.route-point-dragging\{[^}]*overflow-y:auto/);
   assert.match(styles,/\.route-cards\{[^}]*flex-wrap:nowrap[^}]*overflow-x:auto[^}]*overflow-y:hidden[^}]*touch-action:pan-x/);
   assert.match(styles,/\.route-card\{[^}]*flex:0 0 150px[^}]*min-width:150px/);
   const landscapeStyles=styles.slice(styles.indexOf('@media(orientation:landscape)'),styles.indexOf('.navigation-active .zoom-controls'));
   assert.match(landscapeStyles,/\.route-layout\{[^}]*display:flex[^}]*flex-direction:column[^}]*gap:12px/);
+  assert.match(landscapeStyles,/\.route-editor\{[^}]*height:192px[^}]*flex:0 0 192px/);
   assert.match(landscapeStyles,/\.route-editor \.route-fields\{max-height:192px\}/);
   assert.match(landscapeStyles,/\.route-cards\{[^}]*position:static[^}]*width:100%/);
   assert.match(landscapeStyles,/\.route-selection-actions\{[^}]*display:grid[^}]*grid-template-columns:1fr 1fr/);
   assert.match(landscapeStyles,/\.primary-floating\.route-preview-start,\.route-preview-cancel\{position:static;width:auto\}/);
   assert.doesNotMatch(landscapeStyles,/\.route-card\{/);
   assert.doesNotMatch(landscapeStyles,/\.primary-floating\.route-preview-start,\.route-preview-cancel\{[^}]*height:/);
+  assert.match(landscapeStyles,/\.sheet\.place-detail \.detail\{padding-bottom:calc\(8px \+ env\(safe-area-inset-bottom\)\)\}/);
+  assert.match(landscapeStyles,/\.sheet\.place-detail \.detail-actions\{padding-top:8px\}/);
+  assert.match(styles,/\.detail-actions button\{height:48px/);
   assert.match(html,/<div class="route-layout">[\s\S]*?id="routeEditor"[\s\S]*?id="routeCards"[\s\S]*?<div class="route-selection-actions">[\s\S]*?id="startNavBtn"[\s\S]*?id="cancelRoutePreviewBtn"/);
 });
 
