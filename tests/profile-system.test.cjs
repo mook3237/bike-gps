@@ -127,20 +127,6 @@ test('recent searches and rides remain isolated by profile', () => {
   assert.deepEqual(repo.readRides(second.id), [{ distance: 200 }]);
 });
 
-test('theme preference defaults to light and remains isolated by profile', () => {
-  const storage = memoryStorage();
-  const repo = repository(storage);
-  repo.initialize();
-  const second = repo.addProfile('둘째');
-
-  assert.equal(repo.readTheme('profile-dad'), 'light');
-  assert.equal(repo.writeTheme('profile-dad', 'dark'), 'dark');
-  assert.equal(repo.writeTheme(second.id, 'device'), 'device');
-  assert.equal(repo.readTheme('profile-dad'), 'dark');
-  assert.equal(repo.readTheme(second.id), 'device');
-  assert.throws(() => repo.writeTheme('profile-dad', 'sepia'), /화면 테마/);
-});
-
 test('malformed legacy values are preserved and recorded without destructive overwrite', () => {
   const storage = memoryStorage({
     ridemate_recent_searches: '{broken recent',

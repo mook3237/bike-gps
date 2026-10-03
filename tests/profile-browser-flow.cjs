@@ -101,6 +101,31 @@ const kakaoStub = `(() => {
   class Places { categorySearch() {} }
   globalThis.kakao = { maps: { LatLng, LatLngBounds: Bounds, Map, Marker: Overlay, CustomOverlay: Overlay, services: { Places, Status: { OK: 'OK', ZERO_RESULT: 'ZERO' }, SortBy: { DISTANCE: 'DISTANCE' } }, event: { addListener() {} } } };
   Object.defineProperty(navigator, 'geolocation', { configurable: true, value: { getCurrentPosition(success, error) { error?.(new Error('QA geolocation unavailable')); }, watchPosition() { return 1; }, clearWatch() {} } });
+  const makeVoice = (name, lang, localService, isDefault) => ({ name, lang, localService, default: isDefault });
+  globalThis.__voiceTestState = {
+    voices: [
+      makeVoice('한국어 로컬', 'ko-KR', true, true),
+      makeVoice('한국어 네트워크', 'ko-KR', false, false),
+      makeVoice('English', 'en-US', true, false),
+    ],
+    listeners: {},
+    cancels: 0,
+    spoken: [],
+  };
+  const speechSynthesisMock = {
+    getVoices() { return globalThis.__voiceTestState.voices; },
+    cancel() { globalThis.__voiceTestState.cancels += 1; },
+    speak(utterance) { globalThis.__voiceTestState.spoken.push({ text: utterance.text, lang: utterance.lang, voiceName: utterance.voice?.name, rate: utterance.rate, pitch: utterance.pitch, volume: utterance.volume }); },
+    addEventListener(type, listener) { globalThis.__voiceTestState.listeners[type] = listener; },
+  };
+  Object.defineProperty(globalThis, 'speechSynthesis', { configurable: true, value: speechSynthesisMock });
+  Object.defineProperty(globalThis, 'SpeechSynthesisUtterance', { configurable: true, value: class {
+    constructor(text) { this.text = text; this.lang = ''; this.voice = null; this.rate = 1; this.pitch = 1; this.volume = 1; }
+  } });
+  globalThis.__setTestVoices = voices => {
+    globalThis.__voiceTestState.voices = voices;
+    globalThis.__voiceTestState.listeners.voiceschanged?.();
+  };
 })();`;
 
 async function run() {
@@ -215,7 +240,7 @@ async function run() {
     assert.equal(await evaluate(`document.querySelector('#profileScreen').classList.contains('hidden')`), true);
     assert.equal(await evaluate(`document.querySelector('#mapHeader').classList.contains('hidden')`), false);
 
-    const menuItems = ['내 장소 집 · 회사 · 즐겨찾기', '레이싱 기록', '화면 설정', '음성 설정', '앱 설정', '공지사항', '도움말', '앱 정보'];
+    const menuItems = ['내 장소 집 · 회사 · 즐겨찾기', '레이싱 기록', '음성 설정', '앱 설정', '공지사항', '도움말', '앱 정보'];
     const routeBefore = await evaluate(`(() => {
       state.destination = { id: 'destination' };
       state.waypoints = [{ id: 'waypoint' }];
@@ -270,30 +295,32 @@ async function run() {
     await evaluate(`document.querySelector('#menuBtn').click()`);
     assert.equal(await evaluate(`document.querySelector('#mainMenu').classList.contains('hidden')`), false);
 
-    await evaluate(`document.querySelector('[data-menu-item="display-settings"]').click()`);
-    assert.equal(await evaluate(`document.querySelector('#displaySettings').classList.contains('hidden')`), false);
-    assert.deepEqual(await evaluate(`[...document.querySelectorAll('input[name="displayTheme"]')].map(input => input.value)`), ['light', 'dark', 'device']);
-    assert.equal(await evaluate(`document.querySelector('#displaySettings').textContent.includes('휴대폰의 라이트/다크 모드를 자동으로 따릅니다.')`), true);
-    await evaluate(`document.querySelector('input[name="displayTheme"][value="dark"]').click()`);
-    assert.equal(await evaluate(`document.documentElement.dataset.theme`), 'dark');
-    await evaluate(`document.querySelector('input[name="displayTheme"][value="light"]').click()`);
-    assert.equal(await evaluate(`document.documentElement.dataset.theme`), 'light');
-    await client.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] });
-    await evaluate(`document.querySelector('input[name="displayTheme"][value="device"]').click()`);
-    assert.equal(await evaluate(`document.documentElement.dataset.theme`), 'dark');
-    await client.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] });
+    assert.equal(await evaluate(`document.querySelector('[data-menu-item="display-settings"]') === null && document.querySelector('#displaySettings') === null`), true);
+    await evaluate(`document.querySelector('[data-menu-item="voice-settings"]').click()`);
+    assert.equal(await evaluate(`document.querySelector('#voiceTestScreen').classList.contains('hidden')`), false);
+    assert.equal(await evaluate(`document.querySelector('#voiceCount').textContent.trim()`), '사용 가능한 한국어 음성: 2개');
+    assert.deepEqual(await evaluate(`[...document.querySelectorAll('.voice-item')].map(node => ({ name: node.querySelector('strong').textContent, details: [...node.querySelectorAll('small')].map(item => item.textContent), action: node.querySelector('button').textContent }))`), [
+      { name: '한국어 로컬', details: ['ko-KR', 'localService: true', 'default: true'], action: '듣기' },
+      { name: '한국어 네트워크', details: ['ko-KR', 'localService: false', 'default: false'], action: '듣기' },
+    ]);
+    await evaluate(`document.querySelectorAll('[data-voice-index]')[0].click()`);
+    await evaluate(`document.querySelectorAll('[data-voice-index]')[1].click()`);
+    assert.deepEqual(await evaluate(`({ cancels: __voiceTestState.cancels, spoken: __voiceTestState.spoken })`), {
+      cancels: 2,
+      spoken: [
+        { text: '안녕하세요. 라이드메이트입니다. 300미터 앞에서 우회전하세요.', lang: 'ko-KR', voiceName: '한국어 로컬', rate: 1, pitch: 1, volume: 1 },
+        { text: '안녕하세요. 라이드메이트입니다. 300미터 앞에서 우회전하세요.', lang: 'ko-KR', voiceName: '한국어 네트워크', rate: 1, pitch: 1, volume: 1 },
+      ],
+    });
+    await evaluate(`__setTestVoices([{ name: '새 한국어', lang: 'ko-KR', localService: true, default: false }])`);
+    assert.equal(await evaluate(`document.querySelector('#voiceCount').textContent.trim()`), '사용 가능한 한국어 음성: 1개');
+    assert.equal(await evaluate(`document.querySelector('.voice-item strong').textContent.trim()`), '새 한국어');
+    await evaluate(`document.querySelector('#voiceTestBack').click()`);
     for (let attempt = 0; attempt < 40; attempt += 1) {
-      if (await evaluate(`document.documentElement.dataset.theme === 'light'`)) break;
+      if (await evaluate(`document.querySelector('#voiceTestScreen').classList.contains('hidden')`)) break;
       await new Promise(resolve => setTimeout(resolve, 25));
     }
-    assert.equal(await evaluate(`document.documentElement.dataset.theme`), 'light');
-    await evaluate(`document.querySelector('input[name="displayTheme"][value="dark"]').click()`);
-    await evaluate(`document.querySelector('#displaySettingsBack').click()`);
-    for (let attempt = 0; attempt < 40; attempt += 1) {
-      if (await evaluate(`document.querySelector('#displaySettings').classList.contains('hidden')`)) break;
-      await new Promise(resolve => setTimeout(resolve, 25));
-    }
-    assert.equal(await evaluate(`document.querySelector('#displaySettings').classList.contains('hidden')`), true);
+    assert.equal(await evaluate(`document.querySelector('#voiceTestScreen').classList.contains('hidden')`), true);
     assert.equal(await evaluate(`JSON.stringify({ destination: state.destination, waypoints: state.waypoints, routes: state.routes, selectedRoute: state.selectedRoute })`), routeBefore);
     await evaluate(`document.querySelector('#menuBtn').click()`);
 
@@ -315,16 +342,16 @@ async function run() {
     assert.ok(landscapeMenu.top >= 0 && landscapeMenu.bottom <= landscapeMenu.viewport[1]);
     assert.ok(landscapeMenu.closeBottom <= landscapeMenu.bottom);
     assert.equal(landscapeMenu.overflowY, 'auto');
-    await evaluate(`document.querySelector('[data-menu-item="display-settings"]').click()`);
-    const landscapeSettings = await evaluate(`(() => {
-      const screen = document.querySelector('#displaySettings').getBoundingClientRect();
-      const back = document.querySelector('#displaySettingsBack').getBoundingClientRect();
-      const lastOption = document.querySelector('.theme-options label:last-child').getBoundingClientRect();
-      return { screenTop: screen.top, screenBottom: screen.bottom, backTop: back.top, optionBottom: lastOption.bottom, viewport: [innerWidth, innerHeight] };
+    await evaluate(`document.querySelector('[data-menu-item="voice-settings"]').click()`);
+    const landscapeVoiceScreen = await evaluate(`(() => {
+      const screen = document.querySelector('#voiceTestScreen').getBoundingClientRect();
+      const back = document.querySelector('#voiceTestBack').getBoundingClientRect();
+      const lastVoice = document.querySelector('.voice-item:last-child').getBoundingClientRect();
+      return { screenTop: screen.top, screenBottom: screen.bottom, backTop: back.top, voiceBottom: lastVoice.bottom, viewport: [innerWidth, innerHeight] };
     })()`);
-    assert.ok(landscapeSettings.screenTop >= 0 && landscapeSettings.screenBottom <= landscapeSettings.viewport[1]);
-    assert.ok(landscapeSettings.backTop >= 0 && landscapeSettings.optionBottom <= landscapeSettings.screenBottom);
-    await evaluate(`document.querySelector('#displaySettingsBack').click()`);
+    assert.ok(landscapeVoiceScreen.screenTop >= 0 && landscapeVoiceScreen.screenBottom <= landscapeVoiceScreen.viewport[1]);
+    assert.ok(landscapeVoiceScreen.backTop >= 0 && landscapeVoiceScreen.voiceBottom <= landscapeVoiceScreen.screenBottom);
+    await evaluate(`document.querySelector('#voiceTestBack').click()`);
 
     await client.send('Emulation.setDeviceMetricsOverride', {
       width: 390,
@@ -345,12 +372,6 @@ async function run() {
     await evaluate(`[...document.querySelectorAll('[data-profile-select]')].find(node => node.textContent.includes('아이')).click()`);
     await evaluate(`document.querySelector('#profileSelectButton').click()`);
     assert.equal(await evaluate(`document.querySelector('#profileScreen').classList.contains('hidden')`), true);
-    assert.equal(await evaluate(`document.documentElement.dataset.theme`), 'light');
-
-    await reload();
-    await evaluate(`[...document.querySelectorAll('[data-profile-select]')].find(node => node.textContent.includes('메뉴 사용자')).click()`);
-    await evaluate(`document.querySelector('#profileSelectButton').click()`);
-    assert.equal(await evaluate(`document.documentElement.dataset.theme`), 'dark');
 
     await reload();
     for (let count = 0; count < 2; count += 1) {
