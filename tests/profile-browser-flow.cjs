@@ -115,12 +115,14 @@ const kakaoStub = `(() => {
   const speechSynthesisMock = {
     getVoices() { return globalThis.__voiceTestState.voices; },
     cancel() { globalThis.__voiceTestState.cancels += 1; },
-    speak(utterance) { globalThis.__voiceTestState.spoken.push({ text: utterance.text, lang: utterance.lang, voiceName: utterance.voice?.name, rate: utterance.rate, pitch: utterance.pitch, volume: utterance.volume }); },
+    speak(utterance) { globalThis.__voiceTestState.spoken.push({ text: utterance.text, lang: utterance.lang, voiceName: utterance.voice?.name, voiceAssigned: utterance.voiceAssigned, rate: utterance.rate, pitch: utterance.pitch, volume: utterance.volume }); },
     addEventListener(type, listener) { globalThis.__voiceTestState.listeners[type] = listener; },
   };
   Object.defineProperty(globalThis, 'speechSynthesis', { configurable: true, value: speechSynthesisMock });
   Object.defineProperty(globalThis, 'SpeechSynthesisUtterance', { configurable: true, value: class {
-    constructor(text) { this.text = text; this.lang = ''; this.voice = null; this.rate = 1; this.pitch = 1; this.volume = 1; }
+    constructor(text) { this.text = text; this.lang = ''; this._voice = null; this.voiceAssigned = false; this.rate = 1; this.pitch = 1; this.volume = 1; }
+    get voice() { return this._voice; }
+    set voice(value) { this._voice = value; this.voiceAssigned = true; }
   } });
   globalThis.__setTestVoices = voices => {
     globalThis.__voiceTestState.voices = voices;
@@ -299,7 +301,13 @@ async function run() {
     await evaluate(`document.querySelector('[data-menu-item="voice-settings"]').click()`);
     assert.equal(await evaluate(`document.querySelector('#voiceTestScreen').classList.contains('hidden')`), false);
     assert.equal(await evaluate(`document.querySelector('#voiceCount').textContent.trim()`), '사용 가능한 한국어 음성: 2개');
-    assert.deepEqual(await evaluate(`[...document.querySelectorAll('.voice-item')].map(node => ({ name: node.querySelector('strong').textContent, details: [...node.querySelectorAll('small')].map(item => item.textContent), action: node.querySelector('button').textContent }))`), [
+    assert.equal(await evaluate(`document.querySelector('#allVoiceCount').textContent.trim()`), '사용 가능한 전체 음성: 3개');
+    assert.deepEqual(await evaluate(`[...document.querySelectorAll('#allVoiceList .voice-item')].map(node => ({ name: node.querySelector('strong').textContent, details: [...node.querySelectorAll('small')].map(item => item.textContent) }))`), [
+      { name: '한국어 로컬', details: ['ko-KR', 'localService: true', 'default: true'] },
+      { name: '한국어 네트워크', details: ['ko-KR', 'localService: false', 'default: false'] },
+      { name: 'English', details: ['en-US', 'localService: true', 'default: false'] },
+    ]);
+    assert.deepEqual(await evaluate(`[...document.querySelectorAll('#voiceList .voice-item')].map(node => ({ name: node.querySelector('strong').textContent, details: [...node.querySelectorAll('small')].map(item => item.textContent), action: node.querySelector('button').textContent }))`), [
       { name: '한국어 로컬', details: ['ko-KR', 'localService: true', 'default: true'], action: '듣기' },
       { name: '한국어 네트워크', details: ['ko-KR', 'localService: false', 'default: false'], action: '듣기' },
     ]);
@@ -308,13 +316,21 @@ async function run() {
     assert.deepEqual(await evaluate(`({ cancels: __voiceTestState.cancels, spoken: __voiceTestState.spoken })`), {
       cancels: 2,
       spoken: [
-        { text: '안녕하세요. 라이드메이트입니다. 300미터 앞에서 우회전하세요.', lang: 'ko-KR', voiceName: '한국어 로컬', rate: 1, pitch: 1, volume: 1 },
-        { text: '안녕하세요. 라이드메이트입니다. 300미터 앞에서 우회전하세요.', lang: 'ko-KR', voiceName: '한국어 네트워크', rate: 1, pitch: 1, volume: 1 },
+        { text: '안녕하세요. 라이드메이트입니다. 300미터 앞에서 우회전하세요.', lang: 'ko-KR', voiceName: '한국어 로컬', voiceAssigned: true, rate: 1, pitch: 1, volume: 1 },
+        { text: '안녕하세요. 라이드메이트입니다. 300미터 앞에서 우회전하세요.', lang: 'ko-KR', voiceName: '한국어 네트워크', voiceAssigned: true, rate: 1, pitch: 1, volume: 1 },
       ],
     });
     await evaluate(`__setTestVoices([{ name: '새 한국어', lang: 'ko-KR', localService: true, default: false }])`);
     assert.equal(await evaluate(`document.querySelector('#voiceCount').textContent.trim()`), '사용 가능한 한국어 음성: 1개');
     assert.equal(await evaluate(`document.querySelector('.voice-item strong').textContent.trim()`), '새 한국어');
+    await evaluate(`__setTestVoices([])`);
+    assert.equal(await evaluate(`document.querySelector('#voiceCount').textContent.trim()`), '사용 가능한 한국어 음성: 0개');
+    assert.equal(await evaluate(`document.querySelector('#allVoiceCount').textContent.trim()`), '사용 가능한 전체 음성: 0개');
+    assert.equal(await evaluate(`document.querySelector('#defaultKoreanVoiceTest').classList.contains('hidden')`), false);
+    await evaluate(`document.querySelector('#defaultKoreanVoiceTest').click()`);
+    assert.deepEqual(await evaluate(`__voiceTestState.spoken.at(-1)`), { text: '안녕하세요. 라이드메이트입니다. 300미터 앞에서 우회전하세요.', lang: 'ko-KR', voiceAssigned: false, rate: 1, pitch: 1, volume: 1 });
+    assert.equal(await evaluate(`__voiceTestState.cancels`), 3);
+    await evaluate(`__setTestVoices([{ name: '새 한국어', lang: 'ko-KR', localService: true, default: false }])`);
     await evaluate(`document.querySelector('#voiceTestBack').click()`);
     for (let attempt = 0; attempt < 40; attempt += 1) {
       if (await evaluate(`document.querySelector('#voiceTestScreen').classList.contains('hidden')`)) break;

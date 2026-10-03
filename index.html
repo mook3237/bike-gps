@@ -109,9 +109,15 @@
           <h1>음성 테스트</h1>
         </header>
         <main class="voice-test-content">
+          <button id="defaultKoreanVoiceTest" class="voice-default-test" type="button">기본 한국어 음성 테스트</button>
           <p id="voiceCount" class="voice-test-count">사용 가능한 한국어 음성: 0개</p>
           <p id="voiceEmpty" class="voice-test-empty">이 기기에서 Web Speech 한국어 음성을 찾지 못했습니다.</p>
           <div id="voiceList" class="voice-list"></div>
+          <section class="all-voices-section" aria-labelledby="allVoicesTitle">
+            <h2 id="allVoicesTitle">전체 Web Speech 음성</h2>
+            <p id="allVoiceCount" class="voice-test-count">사용 가능한 전체 음성: 0개</p>
+            <div id="allVoiceList" class="voice-list"></div>
+          </section>
         </main>
       </section>
 
