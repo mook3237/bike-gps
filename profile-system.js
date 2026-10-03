@@ -197,6 +197,21 @@
       return Array.isArray(data.rides) ? data.rides.slice(0, 100) : [];
     }
 
+    function readTheme(profileId) {
+      const theme = getProfileData(profileId).settings?.theme;
+      return ['light', 'dark', 'device'].includes(theme) ? theme : 'light';
+    }
+
+    function writeTheme(profileId, theme) {
+      if (!['light', 'dark', 'device'].includes(theme)) throw new Error('올바른 화면 테마가 아닙니다.');
+      const store = ensureStore();
+      if (!store.dataByProfileId[profileId]) throw new Error('프로필을 찾을 수 없습니다.');
+      const next = clone(store);
+      next.dataByProfileId[profileId].settings = { ...next.dataByProfileId[profileId].settings, theme };
+      persist(next);
+      return theme;
+    }
+
     return {
       initialize,
       getProfiles,
@@ -208,6 +223,8 @@
       readRecentSearches,
       prependRide,
       readRides,
+      readTheme,
+      writeTheme,
     };
   }
 

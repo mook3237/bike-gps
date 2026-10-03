@@ -5,7 +5,8 @@ const state={screen:'map',map:null,currentLocation:null,gpsMarker:null,gpsMarker
 const ui={mapHeader:$('#mapHeader'),search:$('#searchPanel'),searchHere:$('#searchHereBtn'),routeEditor:$('#routeEditor'),routeSelectionFields:$('#routeSelectionFields'),routePointEditorFields:$('#routePointEditorFields'),routePointEditorActions:$('#routePointEditorActions'),sheet:$('#sheet'),sheetContent:$('#sheetContent'),routeCards:$('#routeCards'),start:$('#startNavBtn'),routePreviewCancel:$('#cancelRoutePreviewBtn'),bottom:$('#bottomNav'),nav:$('#navOverlay'),controls:$('#mapControls'),zoomControls:$('.zoom-controls'),rightControls:$('.right-controls')};
 let toastTimer, searchTimer, sheetY=0, placeSheetHeight=0, sheetDrag=null, routePointDrag=null, viewportRefreshFrame=null, navProgrammaticZoom=false, navReturnTimer=null, navCameraTimer=null;
 let profileRepository=null,profileSession=null,profileController=null,activeProfileId=null,editingProfileId=null;
-let mainMenuHistoryClosing=false;
+let mainMenuHistoryClosing=false,displaySettingsHistoryClosing=false;
+const deviceThemeMedia=globalThis.matchMedia?.('(prefers-color-scheme: dark)')||null;
 const PROFILE_AVATARS={rider:'🚴',bike:'🚲',helmet:'⛑️',leaf:'🌿'};
 const KAKAO_PLACE_CATEGORIES=['MT1','CS2','PS3','SC4','AC5','PK6','OL7','SW8','BK9','CT1','AG2','PO3','AT4','AD5','FD6','CE7','HP8','PM9'];
 const VISIBLE_PLACE_MAX_LEVEL=6,VISIBLE_PLACE_CACHE_TTL_MS=60000,VISIBLE_PLACE_CACHE_LIMIT=8,CATEGORY_PIN_WIDTH_PX=32,CATEGORY_PIN_HEIGHT_PX=42,CATEGORY_PIN_GAP_PX=8,PLACE_HIT_RADIUS_PX=28,PLACE_AMBIGUITY_PX=6,MAP_LONG_PRESS_MS=1000;
@@ -88,7 +89,7 @@ function renderScreen(screen,push=true,data={}){state.screen=screen;const navMap
 function restoreScreen(screen){renderScreen(screen,false);if(screen!=='route'&&screen!=='navigation'&&screen!=='navigation-place')clearRoutes();if(screen==='map')clearSearchMarkers();else if(screen==='results'){showMarkers(state.searchResults);renderResultsContent(state.searchResults,state.searchQuery)}else if(screen==='place'&&state.selectedPlace){const p=state.selectedPlace;state.map.panTo(new kakao.maps.LatLng(p.latitude,p.longitude));renderPlaceContent(p)}else if(screen==='navigation-place'&&state.selectedPlace)renderNavigationPlaceContent(state.selectedPlace);else if(screen==='route'&&state.routes.length){clearSearchMarkers();drawRoutes();renderRouteCards()}else if(screen==='navigation'&&state.routes[state.selectedRoute]){state.navigationSearch=false;clearSearchMarkers();state.routeLines.forEach((l,i)=>{if(l)l.setMap(i===state.selectedRoute?state.map:null)});state.routeLines[state.selectedRoute]?.setOptions({strokeWeight:8,strokeColor:'#0878f9',strokeOpacity:.95,zIndex:8});drawRouteEndpointMarkers(true);if(state.nav.watchId==null)startWatch();restoreNavigationSearchViewport();setGpsMarker(state.currentLocation,true,state.nav.heading);updateNavHud(state.currentLocation)}}
 function resetRouteToMap(){clearTimeout(searchTimer);state.routeSeq++;cancelSearch();clearRoutes();clearSearchMarkers();state.routes=[];state.selectedRoute=null;state.departure=null;state.waypoints=[];state.destination=null;state.selectedPlace=null;state.editingEndpoint=null;state.editingWaypointIndex=null;state.navigationRouteDraft=null;state.navigationRouteOriginal=null;state.routePointEditorDraft=null;state.navigationSearch=false;state.navigationSearchMode=null;state.navSearchViewport=null;renderScreen('map',false)}
 function handlePopState(e){const entry=e.state||{},screen=entry.screen||'map';if(state.screen==='route-points'&&screen==='route'){cancelRoutePointEditor(false);return}if((state.screen==='route'||state.screen==='route-points')&&screen==='map'){resetRouteToMap();return}clearTimeout(searchTimer);cancelSearch();state.routeSeq++;if(state.navigationRouteDraft&&screen==='navigation')cancelNavigationRoutePreview(false);if(state.screen==='navigation'&&screen!=='navigation'){cancelNavigationReturn();if(state.nav.watchId!=null){navigator.geolocation.clearWatch(state.nav.watchId);state.nav.watchId=null}}state.navigationSearch=!!entry.navigationSearch;state.navigationSearchMode=entry.navigationSearchMode||null;if(screen==='results'&&Array.isArray(entry.places)){state.searchResults=entry.places;state.searchQuery=entry.q||'';state.searchCorrection=entry.correction||null}else if((screen==='place'||screen==='navigation-place')&&entry.place)state.selectedPlace=entry.place;restoreScreen(screen)}
-function handleHistoryPopState(e){if(mainMenuHistoryClosing){mainMenuHistoryClosing=false;return}if(!$('#mainMenu').classList.contains('hidden')){closeMainMenu(true);return}handlePopState(e)}
+function handleHistoryPopState(e){if(displaySettingsHistoryClosing){displaySettingsHistoryClosing=false;return}if(!$('#displaySettings').classList.contains('hidden')){closeDisplaySettings(true);return}if(mainMenuHistoryClosing){mainMenuHistoryClosing=false;return}if(!$('#mainMenu').classList.contains('hidden')){closeMainMenu(true);return}handlePopState(e)}
 window.addEventListener('popstate',handleHistoryPopState);
 function setControlBottom(px){ui.controls.style.setProperty('--control-bottom',`${px}px`)}
 function setSheet(mode){ui.sheet.classList.remove('place-detail','place-expanded');const h=ui.sheet.offsetHeight||Math.min(innerHeight*.66,560),y=mode==='low'?h*.68:mode==='high'?h*.08:h*.38;sheetY=y;ui.sheet.style.setProperty('--sheet-y',`${y}px`);setControlBottom(Math.max(90,h-y+18))}
@@ -219,6 +220,11 @@ function profileAvatarMarkup(avatar){const iconId=avatar?.type==='icon'&&PROFILE
 function renderMainMenuProfile(){const profile=profileRepository?.getProfiles().find(item=>item.id===activeProfileId);if(!profile)return;const iconId=profile.avatar?.type==='icon'&&PROFILE_AVATARS[profile.avatar.iconId]?profile.avatar.iconId:'rider';$('#mainMenuProfileAvatar').textContent=PROFILE_AVATARS[iconId];$('#mainMenuProfileName').textContent=profile.name}
 function openMainMenu(){const menu=$('#mainMenu');if(!menu.classList.contains('hidden'))return;renderMainMenuProfile();menu.classList.remove('hidden');menu.setAttribute('aria-hidden','false');history.pushState({...history.state,screen:state.screen,mainMenu:true},'')}
 function closeMainMenu(fromHistory=false){const menu=$('#mainMenu');if(menu.classList.contains('hidden'))return;menu.classList.add('hidden');menu.setAttribute('aria-hidden','true');if(!fromHistory&&history.state?.mainMenu){mainMenuHistoryClosing=true;history.back()}}
+function activeTheme(){return profileRepository&&activeProfileId?profileRepository.readTheme(activeProfileId):'light'}
+function applyTheme(preference=activeTheme()){const theme=preference==='dark'||preference==='device'&&deviceThemeMedia?.matches?'dark':'light';document.documentElement.dataset.theme=theme;document.documentElement.dataset.themePreference=preference;document.querySelector('meta[name="theme-color"]')?.setAttribute('content',theme==='dark'?'#111b28':'#ffffff')}
+function renderDisplaySettings(){const preference=activeTheme(),input=$(`input[name="displayTheme"][value="${preference}"]`);if(input)input.checked=true}
+function openDisplaySettings(){closeMainMenu(true);renderDisplaySettings();const screen=$('#displaySettings');screen.classList.remove('hidden');screen.setAttribute('aria-hidden','false');history.replaceState({...history.state,mainMenu:false,displaySettings:true},'','#display-settings')}
+function closeDisplaySettings(fromHistory=false){const screen=$('#displaySettings');if(screen.classList.contains('hidden'))return;screen.classList.add('hidden');screen.setAttribute('aria-hidden','true');if(!fromHistory&&history.state?.displaySettings){displaySettingsHistoryClosing=true;history.back()}}
 function renderProfileSelection(model){
   const grid=$('#profileGrid'),empty=$('#profileEmptyState'),selectButton=$('#profileSelectButton');
   if(!grid||!empty||!selectButton)return;
@@ -231,7 +237,7 @@ function renderProfileSelection(model){
   $('#profileAddCard').onclick=()=>openProfileEditor();
 }
 function showProfileScreen(){activeProfileId=null;$('#profileScreen')?.classList.remove('hidden');$('#app')?.classList.add('hidden')}
-function showMapScreen(){activeProfileId=profileSession.getSelectedProfileId();$('#profileScreen')?.classList.add('hidden');$('#app')?.classList.remove('hidden')}
+function showMapScreen(){activeProfileId=profileSession.getSelectedProfileId();applyTheme();$('#profileScreen')?.classList.add('hidden');$('#app')?.classList.remove('hidden')}
 function renderProfileAvatarChoices(selectedIconId='rider'){$('#profileAvatarChoices').innerHTML=Object.entries(PROFILE_AVATARS).map(([iconId,icon])=>`<label class="profile-avatar-option"><input type="radio" name="profileAvatar" value="${iconId}"${iconId===selectedIconId?' checked':''}><span aria-hidden="true">${icon}</span></label>`).join('')}
 function openProfileEditor(profileId=null){
   editingProfileId=profileId;
@@ -268,6 +274,10 @@ $('#searchEntry').onclick=()=>openSearch();
 $('#menuBtn').onclick=openMainMenu;
 $('#mainMenuBackdrop').onclick=()=>closeMainMenu();
 $('#mainMenuClose').onclick=()=>closeMainMenu();
+$('#mainMenu').querySelector('[data-menu-item="display-settings"]').onclick=openDisplaySettings;
+$('#displaySettingsBack').onclick=()=>closeDisplaySettings();
+$$('input[name="displayTheme"]').forEach(input=>input.onchange=()=>{if(!input.checked||!activeProfileId)return;profileRepository.writeTheme(activeProfileId,input.value);applyTheme(input.value)});
+deviceThemeMedia?.addEventListener?.('change',()=>{if(document.documentElement.dataset.themePreference==='device')applyTheme('device')});
 $('#searchBack').onclick=()=>{cancelSearch();history.back()};
 $('#selectOnMapBtn').onclick=()=>{cancelSearch();history.back()};
 $('#searchClear').onclick=()=>{cancelSearch();$('#searchInput').value='';$('#liveResults').classList.add('hidden');$('#searchLanding').classList.remove('hidden');$('#searchInput').focus()};
