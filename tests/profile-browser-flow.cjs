@@ -330,6 +330,15 @@ async function run() {
     await evaluate(`document.querySelector('#defaultKoreanVoiceTest').click()`);
     assert.deepEqual(await evaluate(`__voiceTestState.spoken.at(-1)`), { text: '안녕하세요. 라이드메이트입니다. 300미터 앞에서 우회전하세요.', lang: 'ko-KR', voiceAssigned: false, rate: 1, pitch: 1, volume: 1 });
     assert.equal(await evaluate(`__voiceTestState.cancels`), 3);
+    assert.deepEqual(await evaluate(`[...document.querySelectorAll('[data-naturalness-rate]')].map(button => button.textContent.trim())`), ['A. 기본', 'B. 조금 느리게', 'C. 부드럽게 1', 'D. 부드럽게 2']);
+    await evaluate(`[...document.querySelectorAll('[data-naturalness-rate]')].forEach(button => button.click())`);
+    assert.deepEqual(await evaluate(`__voiceTestState.spoken.slice(-4)`), [
+      { text: '300미터 앞에서 우회전하세요.', lang: 'ko-KR', voiceAssigned: false, rate: 1, pitch: 1, volume: 1 },
+      { text: '300미터 앞에서 우회전하세요.', lang: 'ko-KR', voiceAssigned: false, rate: 0.9, pitch: 1, volume: 1 },
+      { text: '300미터 앞에서 우회전하세요.', lang: 'ko-KR', voiceAssigned: false, rate: 0.9, pitch: 0.95, volume: 1 },
+      { text: '300미터 앞에서 우회전하세요.', lang: 'ko-KR', voiceAssigned: false, rate: 0.85, pitch: 0.95, volume: 1 },
+    ]);
+    assert.equal(await evaluate(`__voiceTestState.cancels`), 7);
     await evaluate(`__setTestVoices([{ name: '새 한국어', lang: 'ko-KR', localService: true, default: false }])`);
     await evaluate(`document.querySelector('#voiceTestBack').click()`);
     for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -360,13 +369,15 @@ async function run() {
     assert.equal(landscapeMenu.overflowY, 'auto');
     await evaluate(`document.querySelector('[data-menu-item="voice-settings"]').click()`);
     const landscapeVoiceScreen = await evaluate(`(() => {
-      const screen = document.querySelector('#voiceTestScreen').getBoundingClientRect();
+      const node = document.querySelector('#voiceTestScreen');
+      const screen = node.getBoundingClientRect();
       const back = document.querySelector('#voiceTestBack').getBoundingClientRect();
-      const lastVoice = document.querySelector('.voice-item:last-child').getBoundingClientRect();
-      return { screenTop: screen.top, screenBottom: screen.bottom, backTop: back.top, voiceBottom: lastVoice.bottom, viewport: [innerWidth, innerHeight] };
+      return { screenTop: screen.top, screenBottom: screen.bottom, backTop: back.top, overflowY: getComputedStyle(node).overflowY, scrollHeight: node.scrollHeight, clientHeight: node.clientHeight, viewport: [innerWidth, innerHeight] };
     })()`);
     assert.ok(landscapeVoiceScreen.screenTop >= 0 && landscapeVoiceScreen.screenBottom <= landscapeVoiceScreen.viewport[1]);
-    assert.ok(landscapeVoiceScreen.backTop >= 0 && landscapeVoiceScreen.voiceBottom <= landscapeVoiceScreen.screenBottom);
+    assert.ok(landscapeVoiceScreen.backTop >= 0);
+    assert.equal(landscapeVoiceScreen.overflowY, 'auto');
+    assert.ok(landscapeVoiceScreen.scrollHeight > landscapeVoiceScreen.clientHeight);
     await evaluate(`document.querySelector('#voiceTestBack').click()`);
 
     await client.send('Emulation.setDeviceMetricsOverride', {

@@ -110,6 +110,15 @@
         </header>
         <main class="voice-test-content">
           <button id="defaultKoreanVoiceTest" class="voice-default-test" type="button">기본 한국어 음성 테스트</button>
+          <section class="voice-naturalness" aria-labelledby="voiceNaturalnessTitle">
+            <h2 id="voiceNaturalnessTitle">음성 자연스러움 테스트</h2>
+            <div class="voice-naturalness-buttons">
+              <button type="button" data-naturalness-rate="1" data-naturalness-pitch="1">A. 기본</button>
+              <button type="button" data-naturalness-rate="0.9" data-naturalness-pitch="1">B. 조금 느리게</button>
+              <button type="button" data-naturalness-rate="0.9" data-naturalness-pitch="0.95">C. 부드럽게 1</button>
+              <button type="button" data-naturalness-rate="0.85" data-naturalness-pitch="0.95">D. 부드럽게 2</button>
+            </div>
+          </section>
           <p id="voiceCount" class="voice-test-count">사용 가능한 한국어 음성: 0개</p>
           <p id="voiceEmpty" class="voice-test-empty">이 기기에서 Web Speech 한국어 음성을 찾지 못했습니다.</p>
           <div id="voiceList" class="voice-list"></div>

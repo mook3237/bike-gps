@@ -8,6 +8,7 @@ let profileRepository=null,profileSession=null,profileController=null,activeProf
 let mainMenuHistoryClosing=false,voiceTestHistoryClosing=false;
 let koreanSpeechVoices=[];
 const VOICE_TEST_SENTENCE='안녕하세요. 라이드메이트입니다. 300미터 앞에서 우회전하세요.';
+const VOICE_NATURALNESS_SENTENCE='300미터 앞에서 우회전하세요.';
 const PROFILE_AVATARS={rider:'🚴',bike:'🚲',helmet:'⛑️',leaf:'🌿'};
 const KAKAO_PLACE_CATEGORIES=['MT1','CS2','PS3','SC4','AC5','PK6','OL7','SW8','BK9','CT1','AG2','PO3','AT4','AD5','FD6','CE7','HP8','PM9'];
 const VISIBLE_PLACE_MAX_LEVEL=6,VISIBLE_PLACE_CACHE_TTL_MS=60000,VISIBLE_PLACE_CACHE_LIMIT=8,CATEGORY_PIN_WIDTH_PX=32,CATEGORY_PIN_HEIGHT_PX=42,CATEGORY_PIN_GAP_PX=8,PLACE_HIT_RADIUS_PX=28,PLACE_AMBIGUITY_PX=6,MAP_LONG_PRESS_MS=1000;
@@ -224,6 +225,7 @@ function closeMainMenu(fromHistory=false){const menu=$('#mainMenu');if(menu.clas
 function renderVoiceTest(){const synthesis=window.speechSynthesis,allVoices=synthesis?[...synthesis.getVoices()]:[];koreanSpeechVoices=allVoices.filter(voice=>String(voice.lang||'').toLowerCase().startsWith('ko'));$('#voiceCount').textContent=`사용 가능한 한국어 음성: ${koreanSpeechVoices.length}개`;$('#voiceEmpty').classList.toggle('hidden',koreanSpeechVoices.length>0);const list=$('#voiceList');list.innerHTML=koreanSpeechVoices.map((voice,index)=>`<article class="voice-item"><strong>${esc(voice.name)}</strong><small>${esc(voice.lang)}</small><small>localService: ${Boolean(voice.localService)}</small><small>default: ${Boolean(voice.default)}</small><button type="button" data-voice-index="${index}">듣기</button></article>`).join('');list.querySelectorAll('[data-voice-index]').forEach(button=>button.onclick=()=>speakVoice(Number(button.dataset.voiceIndex)));$('#allVoiceCount').textContent=`사용 가능한 전체 음성: ${allVoices.length}개`;$('#allVoiceList').innerHTML=allVoices.map(voice=>`<article class="voice-item voice-item-readonly"><strong>${esc(voice.name)}</strong><small>${esc(voice.lang)}</small><small>localService: ${Boolean(voice.localService)}</small><small>default: ${Boolean(voice.default)}</small></article>`).join('')}
 function speakVoice(index){const synthesis=window.speechSynthesis,voice=koreanSpeechVoices[index];if(!synthesis||!voice||typeof window.SpeechSynthesisUtterance!=='function')return;synthesis.cancel();const utterance=new SpeechSynthesisUtterance(VOICE_TEST_SENTENCE);utterance.voice=voice;utterance.lang='ko-KR';synthesis.speak(utterance)}
 function speakDefaultKorean(){const synthesis=window.speechSynthesis;if(!synthesis||typeof window.SpeechSynthesisUtterance!=='function')return;synthesis.cancel();const utterance=new SpeechSynthesisUtterance(VOICE_TEST_SENTENCE);utterance.lang='ko-KR';synthesis.speak(utterance)}
+function speakNaturalnessSample(rate,pitch){const synthesis=window.speechSynthesis;if(!synthesis||typeof window.SpeechSynthesisUtterance!=='function')return;synthesis.cancel();const utterance=new SpeechSynthesisUtterance(VOICE_NATURALNESS_SENTENCE);utterance.lang='ko-KR';utterance.rate=rate;utterance.pitch=pitch;utterance.volume=1;synthesis.speak(utterance)}
 function openVoiceTest(){closeMainMenu(true);renderVoiceTest();const screen=$('#voiceTestScreen');screen.classList.remove('hidden');screen.setAttribute('aria-hidden','false');history.replaceState({...history.state,mainMenu:false,voiceTest:true},'','#voice-test')}
 function closeVoiceTest(fromHistory=false){const screen=$('#voiceTestScreen');if(screen.classList.contains('hidden'))return;window.speechSynthesis?.cancel();screen.classList.add('hidden');screen.setAttribute('aria-hidden','true');if(!fromHistory&&history.state?.voiceTest){voiceTestHistoryClosing=true;history.back()}}
 function renderProfileSelection(model){
@@ -278,6 +280,7 @@ $('#mainMenuClose').onclick=()=>closeMainMenu();
 $('#mainMenu').querySelector('[data-menu-item="voice-settings"]').onclick=openVoiceTest;
 $('#voiceTestBack').onclick=()=>closeVoiceTest();
 $('#defaultKoreanVoiceTest').onclick=speakDefaultKorean;
+$$('[data-naturalness-rate]').forEach(button=>button.onclick=()=>speakNaturalnessSample(Number(button.dataset.naturalnessRate),Number(button.dataset.naturalnessPitch)));
 if(window.speechSynthesis?.addEventListener)window.speechSynthesis.addEventListener('voiceschanged',()=>{if(!$('#voiceTestScreen').classList.contains('hidden'))renderVoiceTest()});
 else if(window.speechSynthesis)window.speechSynthesis.onvoiceschanged=()=>{if(!$('#voiceTestScreen').classList.contains('hidden'))renderVoiceTest()};
 $('#searchBack').onclick=()=>{cancelSearch();history.back()};
