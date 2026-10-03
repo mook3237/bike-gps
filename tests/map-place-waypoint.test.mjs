@@ -2604,6 +2604,51 @@ function navigationLifecycleSnapshot(context) {
   })`,context));
 }
 
+test('navigation speech uses the default Korean voice once per guidance step', () => {
+  const context=loadApp();installConfirmedWaypointFixture(context);
+  const result=JSON.parse(JSON.stringify(vm.runInContext(`(() => {
+    speechLog=[];speechCancelCount=0;
+    class TestUtterance {constructor(text){this.text=text;this.lang='';this.rate=1;this.pitch=1;this.volume=1;this._voice=null;this.voiceAssigned=false}get voice(){return this._voice}set voice(value){this._voice=value;this.voiceAssigned=true}}
+    SpeechSynthesisUtterance=TestUtterance;window.SpeechSynthesisUtterance=TestUtterance;
+    window.speechSynthesis={cancel(){speechCancelCount++},speak(utterance){speechLog.push({text:utterance.text,lang:utterance.lang,rate:utterance.rate,pitch:utterance.pitch,volume:utterance.volume,voiceAssigned:utterance.voiceAssigned})}};
+    lifecycleRoute._steps=[
+      {guidance:'직진',_startAlong:0,_endAlong:1000,points:[lifecycleOrigin,lifecycleWaypoint1]},
+      {guidance:'우회전',_startAlong:1000,_endAlong:3336,points:[lifecycleWaypoint1,lifecycleDestination]},
+    ];
+    startNavigation();
+    updateNavHud({latitude:37.005,longitude:127},5);
+    updateNavHud({latitude:37.015,longitude:127},5);
+    updateNavHud({latitude:37.016,longitude:127},5);
+    return {speechLog,cancels:speechCancelCount};
+  })()`,context)));
+
+  assert.equal(result.speechLog.length,2);
+  assert.match(result.speechLog[0].text,/직진/);
+  assert.match(result.speechLog[1].text,/우회전/);
+  assert.deepEqual(result.speechLog.map(({lang,rate,pitch,volume,voiceAssigned})=>({lang,rate,pitch,volume,voiceAssigned})),[
+    {lang:'ko-KR',rate:1,pitch:1,volume:1,voiceAssigned:false},
+    {lang:'ko-KR',rate:1,pitch:1,volume:1,voiceAssigned:false},
+  ]);
+  assert.equal(result.cancels,2);
+});
+
+test('navigation speech cancels queued guidance when navigation ends', () => {
+  const context=loadApp();installConfirmedWaypointFixture(context);
+  const result=vm.runInContext(`(() => {
+    speechCancelCount=0;
+    class TestUtterance {constructor(text){this.text=text;this.lang=''}}
+    SpeechSynthesisUtterance=TestUtterance;window.SpeechSynthesisUtterance=TestUtterance;
+    window.speechSynthesis={cancel(){speechCancelCount++},speak(){}};
+    startNavigation();
+    const afterStart=speechCancelCount;
+    finishNavigation(false);
+    return {afterStart,afterFinish:speechCancelCount};
+  })()`,context);
+
+  assert.equal(result.afterStart,1);
+  assert.equal(result.afterFinish,2);
+});
+
 test('multi-waypoint guidance start records both confirmed remaining waypoints', () => {
   const context=loadApp();installConfirmedWaypointFixture(context);
   vm.runInContext('startNavigation()',context);

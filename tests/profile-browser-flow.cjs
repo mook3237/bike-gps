@@ -101,33 +101,6 @@ const kakaoStub = `(() => {
   class Places { categorySearch() {} }
   globalThis.kakao = { maps: { LatLng, LatLngBounds: Bounds, Map, Marker: Overlay, CustomOverlay: Overlay, services: { Places, Status: { OK: 'OK', ZERO_RESULT: 'ZERO' }, SortBy: { DISTANCE: 'DISTANCE' } }, event: { addListener() {} } } };
   Object.defineProperty(navigator, 'geolocation', { configurable: true, value: { getCurrentPosition(success, error) { error?.(new Error('QA geolocation unavailable')); }, watchPosition() { return 1; }, clearWatch() {} } });
-  const makeVoice = (name, lang, localService, isDefault) => ({ name, lang, localService, default: isDefault });
-  globalThis.__voiceTestState = {
-    voices: [
-      makeVoice('한국어 로컬', 'ko-KR', true, true),
-      makeVoice('한국어 네트워크', 'ko-KR', false, false),
-      makeVoice('English', 'en-US', true, false),
-    ],
-    listeners: {},
-    cancels: 0,
-    spoken: [],
-  };
-  const speechSynthesisMock = {
-    getVoices() { return globalThis.__voiceTestState.voices; },
-    cancel() { globalThis.__voiceTestState.cancels += 1; },
-    speak(utterance) { globalThis.__voiceTestState.spoken.push({ text: utterance.text, lang: utterance.lang, voiceName: utterance.voice?.name, voiceAssigned: utterance.voiceAssigned, rate: utterance.rate, pitch: utterance.pitch, volume: utterance.volume }); },
-    addEventListener(type, listener) { globalThis.__voiceTestState.listeners[type] = listener; },
-  };
-  Object.defineProperty(globalThis, 'speechSynthesis', { configurable: true, value: speechSynthesisMock });
-  Object.defineProperty(globalThis, 'SpeechSynthesisUtterance', { configurable: true, value: class {
-    constructor(text) { this.text = text; this.lang = ''; this._voice = null; this.voiceAssigned = false; this.rate = 1; this.pitch = 1; this.volume = 1; }
-    get voice() { return this._voice; }
-    set voice(value) { this._voice = value; this.voiceAssigned = true; }
-  } });
-  globalThis.__setTestVoices = voices => {
-    globalThis.__voiceTestState.voices = voices;
-    globalThis.__voiceTestState.listeners.voiceschanged?.();
-  };
 })();`;
 
 async function run() {
@@ -242,7 +215,7 @@ async function run() {
     assert.equal(await evaluate(`document.querySelector('#profileScreen').classList.contains('hidden')`), true);
     assert.equal(await evaluate(`document.querySelector('#mapHeader').classList.contains('hidden')`), false);
 
-    const menuItems = ['내 장소 집 · 회사 · 즐겨찾기', '레이싱 기록', '음성 설정', '앱 설정', '공지사항', '도움말', '앱 정보'];
+    const menuItems = ['내 장소 집 · 회사 · 즐겨찾기', '레이싱 기록', '앱 설정', '공지사항', '도움말', '앱 정보'];
     const routeBefore = await evaluate(`(() => {
       state.destination = { id: 'destination' };
       state.waypoints = [{ id: 'waypoint' }];
@@ -297,55 +270,67 @@ async function run() {
     await evaluate(`document.querySelector('#menuBtn').click()`);
     assert.equal(await evaluate(`document.querySelector('#mainMenu').classList.contains('hidden')`), false);
 
-    assert.equal(await evaluate(`document.querySelector('[data-menu-item="display-settings"]') === null && document.querySelector('#displaySettings') === null`), true);
-    await evaluate(`document.querySelector('[data-menu-item="voice-settings"]').click()`);
-    assert.equal(await evaluate(`document.querySelector('#voiceTestScreen').classList.contains('hidden')`), false);
-    assert.equal(await evaluate(`document.querySelector('#voiceCount').textContent.trim()`), '사용 가능한 한국어 음성: 2개');
-    assert.equal(await evaluate(`document.querySelector('#allVoiceCount').textContent.trim()`), '사용 가능한 전체 음성: 3개');
-    assert.deepEqual(await evaluate(`[...document.querySelectorAll('#allVoiceList .voice-item')].map(node => ({ name: node.querySelector('strong').textContent, details: [...node.querySelectorAll('small')].map(item => item.textContent) }))`), [
-      { name: '한국어 로컬', details: ['ko-KR', 'localService: true', 'default: true'] },
-      { name: '한국어 네트워크', details: ['ko-KR', 'localService: false', 'default: false'] },
-      { name: 'English', details: ['en-US', 'localService: true', 'default: false'] },
+    assert.equal(await evaluate(`document.querySelector('[data-menu-item="voice-settings"]') === null && document.querySelector('#voiceTestScreen') === null`), true);
+    await evaluate(`document.querySelector('[data-menu-item="places"]').click()`);
+    assert.equal(await evaluate(`document.querySelector('#myPlacesScreen').classList.contains('hidden')`), false);
+
+    const home = { id: 'home-place', name: '우리 아파트', address: '서울 집 주소', latitude: 37.51, longitude: 127.01 };
+    const newHome = { id: 'new-home', name: '새 아파트', address: '서울 새 집 주소', latitude: 37.52, longitude: 127.02 };
+    const work = { id: 'work-place', name: '회사 건물', address: '서울 회사 주소', latitude: 37.53, longitude: 127.03 };
+    const gym = { id: 'gym-place', name: '실제 헬스장 상호', address: '서울 헬스장 주소', latitude: 37.54, longitude: 127.04 };
+    const cafe = { id: 'cafe-place', name: '실제 카페 상호', address: '서울 카페 주소', latitude: 37.55, longitude: 127.05 };
+    const shop = { id: 'shop-place', name: '실제 자전거점 상호', address: '서울 자전거점 주소', latitude: 37.56, longitude: 127.06 };
+    const selectForMyPlaces = async place => {
+      await evaluate(`selectRideMatePlace(${JSON.stringify(place)},{source:'my-places'})`);
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        if (await evaluate(`!document.querySelector('#myPlacesScreen').classList.contains('hidden')`)) break;
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+    };
+
+    await evaluate(`document.querySelector('[data-my-place-set="home"]').click()`);
+    assert.equal(await evaluate(`state.screen`), 'search');
+    await selectForMyPlaces(home);
+    assert.equal(await evaluate(`document.querySelector('#myPlaceHome').textContent.includes('우리 아파트')`), true);
+    await evaluate(`document.querySelector('[data-my-place-set="home"]').click()`);
+    await selectForMyPlaces(newHome);
+    assert.equal(await evaluate(`document.querySelector('#myPlaceHome').textContent.includes('새 아파트')`), true);
+
+    await evaluate(`document.querySelector('[data-my-place-set="work"]').click()`);
+    await selectForMyPlaces(work);
+    assert.equal(await evaluate(`document.querySelector('#myPlaceWork').textContent.includes('회사 건물')`), true);
+
+    await evaluate(`document.querySelector('#addFavoriteBtn').click()`);
+    await selectForMyPlaces(gym);
+    await evaluate(`(() => { const input=document.querySelector('#favoriteNameInput'); input.value='헬스장'; document.querySelector('#favoriteEditorForm').requestSubmit(); })()`);
+    await evaluate(`document.querySelector('#addFavoriteBtn').click()`);
+    await selectForMyPlaces(cafe);
+    await evaluate(`(() => { const input=document.querySelector('#favoriteNameInput'); input.value='커피숍'; document.querySelector('#favoriteEditorForm').requestSubmit(); })()`);
+    assert.deepEqual(await evaluate(`[...document.querySelectorAll('[data-favorite-id]')].map(node => ({ customName: node.querySelector('strong').textContent, placeName: node.querySelector('[data-favorite-place-name]').textContent }))`), [
+      { customName: '헬스장', placeName: '실제 헬스장 상호' },
+      { customName: '커피숍', placeName: '실제 카페 상호' },
     ]);
-    assert.deepEqual(await evaluate(`[...document.querySelectorAll('#voiceList .voice-item')].map(node => ({ name: node.querySelector('strong').textContent, details: [...node.querySelectorAll('small')].map(item => item.textContent), action: node.querySelector('button').textContent }))`), [
-      { name: '한국어 로컬', details: ['ko-KR', 'localService: true', 'default: true'], action: '듣기' },
-      { name: '한국어 네트워크', details: ['ko-KR', 'localService: false', 'default: false'], action: '듣기' },
-    ]);
-    await evaluate(`document.querySelectorAll('[data-voice-index]')[0].click()`);
-    await evaluate(`document.querySelectorAll('[data-voice-index]')[1].click()`);
-    assert.deepEqual(await evaluate(`({ cancels: __voiceTestState.cancels, spoken: __voiceTestState.spoken })`), {
-      cancels: 2,
-      spoken: [
-        { text: '안녕하세요. 라이드메이트입니다. 300미터 앞에서 우회전하세요.', lang: 'ko-KR', voiceName: '한국어 로컬', voiceAssigned: true, rate: 1, pitch: 1, volume: 1 },
-        { text: '안녕하세요. 라이드메이트입니다. 300미터 앞에서 우회전하세요.', lang: 'ko-KR', voiceName: '한국어 네트워크', voiceAssigned: true, rate: 1, pitch: 1, volume: 1 },
-      ],
-    });
-    await evaluate(`__setTestVoices([{ name: '새 한국어', lang: 'ko-KR', localService: true, default: false }])`);
-    assert.equal(await evaluate(`document.querySelector('#voiceCount').textContent.trim()`), '사용 가능한 한국어 음성: 1개');
-    assert.equal(await evaluate(`document.querySelector('.voice-item strong').textContent.trim()`), '새 한국어');
-    await evaluate(`__setTestVoices([])`);
-    assert.equal(await evaluate(`document.querySelector('#voiceCount').textContent.trim()`), '사용 가능한 한국어 음성: 0개');
-    assert.equal(await evaluate(`document.querySelector('#allVoiceCount').textContent.trim()`), '사용 가능한 전체 음성: 0개');
-    assert.equal(await evaluate(`document.querySelector('#defaultKoreanVoiceTest').classList.contains('hidden')`), false);
-    await evaluate(`document.querySelector('#defaultKoreanVoiceTest').click()`);
-    assert.deepEqual(await evaluate(`__voiceTestState.spoken.at(-1)`), { text: '안녕하세요. 라이드메이트입니다. 300미터 앞에서 우회전하세요.', lang: 'ko-KR', voiceAssigned: false, rate: 1, pitch: 1, volume: 1 });
-    assert.equal(await evaluate(`__voiceTestState.cancels`), 3);
-    assert.deepEqual(await evaluate(`[...document.querySelectorAll('[data-naturalness-rate]')].map(button => button.textContent.trim())`), ['A. 기본', 'B. 조금 느리게', 'C. 부드럽게 1', 'D. 부드럽게 2']);
-    await evaluate(`[...document.querySelectorAll('[data-naturalness-rate]')].forEach(button => button.click())`);
-    assert.deepEqual(await evaluate(`__voiceTestState.spoken.slice(-4)`), [
-      { text: '300미터 앞에서 우회전하세요.', lang: 'ko-KR', voiceAssigned: false, rate: 1, pitch: 1, volume: 1 },
-      { text: '300미터 앞에서 우회전하세요.', lang: 'ko-KR', voiceAssigned: false, rate: 0.9, pitch: 1, volume: 1 },
-      { text: '300미터 앞에서 우회전하세요.', lang: 'ko-KR', voiceAssigned: false, rate: 0.9, pitch: 0.95, volume: 1 },
-      { text: '300미터 앞에서 우회전하세요.', lang: 'ko-KR', voiceAssigned: false, rate: 0.85, pitch: 0.95, volume: 1 },
-    ]);
-    assert.equal(await evaluate(`__voiceTestState.cancels`), 7);
-    await evaluate(`__setTestVoices([{ name: '새 한국어', lang: 'ko-KR', localService: true, default: false }])`);
-    await evaluate(`document.querySelector('#voiceTestBack').click()`);
+
+    await evaluate(`document.querySelector('[data-favorite-action="rename"]').click()`);
+    await evaluate(`(() => { const input=document.querySelector('#favoriteNameInput'); input.value='단골 헬스장'; document.querySelector('#favoriteEditorForm').requestSubmit(); })()`);
+    await evaluate(`document.querySelector('[data-favorite-action="location"]').click()`);
+    await selectForMyPlaces(shop);
+    assert.deepEqual(await evaluate(`(() => { const item=document.querySelector('[data-favorite-id]'); return { customName:item.querySelector('strong').textContent, placeName:item.querySelector('[data-favorite-place-name]').textContent }; })()`), { customName: '단골 헬스장', placeName: '실제 자전거점 상호' });
+    await evaluate(`document.querySelectorAll('[data-favorite-action="delete"]')[1].click()`);
+    assert.equal(await evaluate(`document.querySelectorAll('[data-favorite-id]').length`), 1);
+
+    await evaluate(`document.querySelector('[data-my-place-delete="home"]').click()`);
+    await evaluate(`document.querySelector('[data-my-place-delete="work"]').click()`);
+    assert.equal(await evaluate(`document.querySelector('#myPlaceHome').textContent.includes('등록되지 않았습니다.')`), true);
+    assert.equal(await evaluate(`document.querySelector('#myPlaceWork').textContent.includes('등록되지 않았습니다.')`), true);
+    assert.deepEqual(await evaluate(`profileRepository.readMyPlaces(activeProfileId).favorites.map(item => ({ customName:item.customName, placeName:item.place.name }))`), [{ customName: '단골 헬스장', placeName: '실제 자전거점 상호' }]);
+
+    await evaluate(`document.querySelector('#myPlacesBack').click()`);
     for (let attempt = 0; attempt < 40; attempt += 1) {
-      if (await evaluate(`document.querySelector('#voiceTestScreen').classList.contains('hidden')`)) break;
+      if (await evaluate(`document.querySelector('#myPlacesScreen').classList.contains('hidden')`)) break;
       await new Promise(resolve => setTimeout(resolve, 25));
     }
-    assert.equal(await evaluate(`document.querySelector('#voiceTestScreen').classList.contains('hidden')`), true);
+    assert.equal(await evaluate(`document.querySelector('#myPlacesScreen').classList.contains('hidden')`), true);
     assert.equal(await evaluate(`JSON.stringify({ destination: state.destination, waypoints: state.waypoints, routes: state.routes, selectedRoute: state.selectedRoute })`), routeBefore);
     await evaluate(`document.querySelector('#menuBtn').click()`);
 
@@ -367,18 +352,17 @@ async function run() {
     assert.ok(landscapeMenu.top >= 0 && landscapeMenu.bottom <= landscapeMenu.viewport[1]);
     assert.ok(landscapeMenu.closeBottom <= landscapeMenu.bottom);
     assert.equal(landscapeMenu.overflowY, 'auto');
-    await evaluate(`document.querySelector('[data-menu-item="voice-settings"]').click()`);
-    const landscapeVoiceScreen = await evaluate(`(() => {
-      const node = document.querySelector('#voiceTestScreen');
+    await evaluate(`document.querySelector('[data-menu-item="places"]').click()`);
+    const landscapeMyPlaces = await evaluate(`(() => {
+      const node = document.querySelector('#myPlacesScreen');
       const screen = node.getBoundingClientRect();
-      const back = document.querySelector('#voiceTestBack').getBoundingClientRect();
+      const back = document.querySelector('#myPlacesBack').getBoundingClientRect();
       return { screenTop: screen.top, screenBottom: screen.bottom, backTop: back.top, overflowY: getComputedStyle(node).overflowY, scrollHeight: node.scrollHeight, clientHeight: node.clientHeight, viewport: [innerWidth, innerHeight] };
     })()`);
-    assert.ok(landscapeVoiceScreen.screenTop >= 0 && landscapeVoiceScreen.screenBottom <= landscapeVoiceScreen.viewport[1]);
-    assert.ok(landscapeVoiceScreen.backTop >= 0);
-    assert.equal(landscapeVoiceScreen.overflowY, 'auto');
-    assert.ok(landscapeVoiceScreen.scrollHeight > landscapeVoiceScreen.clientHeight);
-    await evaluate(`document.querySelector('#voiceTestBack').click()`);
+    assert.ok(landscapeMyPlaces.screenTop >= 0 && landscapeMyPlaces.screenBottom <= landscapeMyPlaces.viewport[1]);
+    assert.ok(landscapeMyPlaces.backTop >= 0);
+    assert.equal(landscapeMyPlaces.overflowY, 'auto');
+    await evaluate(`document.querySelector('#myPlacesBack').click()`);
 
     await client.send('Emulation.setDeviceMetricsOverride', {
       width: 390,

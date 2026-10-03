@@ -19,7 +19,7 @@
   function emptyProfileData() {
     return {
       settings: {},
-      places: { recentSearches: [] },
+      places: { recentSearches: [], home: null, work: null, favorites: [] },
       routes: [],
       rides: [],
       racing: [],
@@ -182,6 +182,28 @@
       return Array.isArray(data.places?.recentSearches) ? data.places.recentSearches.slice(0, 10) : [];
     }
 
+    function readMyPlaces(profileId) {
+      const places = getProfileData(profileId).places || {};
+      return {
+        home: places.home ? clone(places.home) : null,
+        work: places.work ? clone(places.work) : null,
+        favorites: Array.isArray(places.favorites) ? clone(places.favorites) : [],
+      };
+    }
+
+    function writeMyPlaces(profileId, myPlaces = {}) {
+      const store = ensureStore();
+      if (!store.dataByProfileId[profileId]) throw new Error('프로필을 찾을 수 없습니다.');
+      const next = clone(store);
+      const places = next.dataByProfileId[profileId].places || { recentSearches: [] };
+      places.home = myPlaces.home ? clone(myPlaces.home) : null;
+      places.work = myPlaces.work ? clone(myPlaces.work) : null;
+      places.favorites = Array.isArray(myPlaces.favorites) ? clone(myPlaces.favorites) : [];
+      next.dataByProfileId[profileId].places = places;
+      persist(next);
+      return readMyPlaces(profileId);
+    }
+
     function prependRide(profileId, ride) {
       const store = ensureStore();
       if (!store.dataByProfileId[profileId]) throw new Error('프로필을 찾을 수 없습니다.');
@@ -206,6 +228,8 @@
       deleteProfile,
       replaceRecentSearches,
       readRecentSearches,
+      readMyPlaces,
+      writeMyPlaces,
       prependRide,
       readRides,
     };

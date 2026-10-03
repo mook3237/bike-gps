@@ -76,7 +76,7 @@ test('adding a profile creates an isolated namespace and rejects blank names', (
   assert.deepEqual(added.avatar, { type: 'icon', iconId: 'bike' });
   assert.deepEqual(repo.getProfileData(added.id), {
     settings: {},
-    places: { recentSearches: [] },
+    places: { recentSearches: [], home: null, work: null, favorites: [] },
     routes: [],
     rides: [],
     racing: [],
@@ -125,6 +125,48 @@ test('recent searches and rides remain isolated by profile', () => {
   assert.deepEqual(repo.readRecentSearches(second.id), [{ query: '둘째 검색' }]);
   assert.deepEqual(repo.readRides('profile-dad'), [{ distance: 100 }]);
   assert.deepEqual(repo.readRides(second.id), [{ distance: 200 }]);
+});
+
+test('my places persist home, work, and independently named favorites per profile', () => {
+  const storage = memoryStorage();
+  const repo = repository(storage);
+  repo.initialize();
+  const second = repo.addProfile('둘째');
+  const home = { id: 'home-place', name: '한강아파트', address: '서울 집 주소', latitude: 37.5, longitude: 127 };
+  const work = { id: 'work-place', name: '라이드메이트', address: '서울 회사 주소', latitude: 37.6, longitude: 127.1 };
+  const cafe = { id: 'cafe-place', name: '실제 카페 상호', address: '서울 카페 주소', latitude: 37.55, longitude: 127.05 };
+  const shop = { id: 'shop-place', name: '실제 자전거점 상호', address: '서울 자전거점 주소', latitude: 37.56, longitude: 127.06 };
+
+  assert.deepEqual(repo.readMyPlaces('profile-dad'), { home: null, work: null, favorites: [] });
+  repo.writeMyPlaces('profile-dad', {
+    home,
+    work,
+    favorites: [
+      { id: 'favorite-1', customName: '커피숍', place: cafe },
+      { id: 'favorite-2', customName: '자전거샵', place: shop },
+    ],
+  });
+
+  assert.deepEqual(repo.readMyPlaces('profile-dad'), {
+    home,
+    work,
+    favorites: [
+      { id: 'favorite-1', customName: '커피숍', place: cafe },
+      { id: 'favorite-2', customName: '자전거샵', place: shop },
+    ],
+  });
+  assert.deepEqual(repo.readMyPlaces(second.id), { home: null, work: null, favorites: [] });
+
+  repo.writeMyPlaces('profile-dad', {
+    home: null,
+    work: { ...work, name: '새 회사 위치' },
+    favorites: [{ id: 'favorite-1', customName: '단골 카페', place: shop }],
+  });
+  assert.deepEqual(repo.readMyPlaces('profile-dad'), {
+    home: null,
+    work: { ...work, name: '새 회사 위치' },
+    favorites: [{ id: 'favorite-1', customName: '단골 카페', place: shop }],
+  });
 });
 
 test('malformed legacy values are preserved and recorded without destructive overwrite', () => {
