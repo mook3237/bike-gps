@@ -203,6 +203,8 @@ async function run() {
     assert.ok(firstBoot.buttonGridGap >= 24, `select button needs breathing room below cards: ${firstBoot.buttonGridGap}`);
     assert.ok(firstBoot.buttonBottom >= 760 && firstBoot.buttonBottom <= 810, `select button must sit naturally above the bottom safe area: ${firstBoot.buttonBottom}`);
     assert.equal(firstBoot.horizontalOverflow, false);
+    await evaluate(`document.querySelector('[data-profile-manage]').click()`);
+    await evaluate(`(() => { const input = document.querySelector('#profileNameInput'); input.value = '메뉴 사용자'; document.querySelector('#profileEditorForm').requestSubmit(); })()`);
     await evaluate(`document.querySelector('[data-profile-select]').click()`);
     assert.equal(await evaluate(`document.querySelector('#profileSelectButton').disabled`), false);
     await evaluate(`document.querySelector('#profileSelectButton').click()`);
@@ -213,13 +215,96 @@ async function run() {
     assert.equal(await evaluate(`document.querySelector('#profileScreen').classList.contains('hidden')`), true);
     assert.equal(await evaluate(`document.querySelector('#mapHeader').classList.contains('hidden')`), false);
 
+    const menuItems = ['내 장소 집 · 회사 · 즐겨찾기', '레이싱 기록', '화면 설정', '앱 설정', '공지사항', '도움말', '앱 정보'];
+    const routeBefore = await evaluate(`(() => {
+      state.destination = { id: 'destination' };
+      state.waypoints = [{ id: 'waypoint' }];
+      state.routes = [{ id: 'route' }];
+      state.selectedRoute = 0;
+      return JSON.stringify({ destination: state.destination, waypoints: state.waypoints, routes: state.routes, selectedRoute: state.selectedRoute });
+    })()`);
+
+    await evaluate(`document.querySelector('#menuBtn').click()`);
+    assert.equal(await evaluate(`document.querySelector('#mainMenu').classList.contains('hidden')`), false);
+    assert.equal(await evaluate(`document.querySelector('#mainMenuProfileName').textContent.trim()`), '메뉴 사용자');
+    assert.deepEqual(await evaluate(`[...document.querySelectorAll('[data-menu-item]')].map(node => node.textContent.trim().replace(/\\s+/g, ' '))`), menuItems);
+    assert.equal(await evaluate(`document.querySelector('#mainMenu').textContent.includes('라이딩 기록')`), false);
+    assert.equal(await evaluate(`document.querySelector('#mainMenu').textContent.includes('저장 경로')`), false);
+    assert.equal(await evaluate(`[...document.querySelectorAll('[data-menu-item]')].every(node => node.getBoundingClientRect().height >= 44)`), true);
+    await evaluate(`document.querySelector('#mainMenuDrawer').click()`);
+    assert.equal(await evaluate(`document.querySelector('#mainMenu').classList.contains('hidden')`), false);
+
+    const portraitMenu = await evaluate(`(() => {
+      const drawer = document.querySelector('#mainMenuDrawer').getBoundingClientRect();
+      const close = document.querySelector('#mainMenuClose').getBoundingClientRect();
+      return { top: drawer.top, bottom: drawer.bottom, width: drawer.width, closeBottom: close.bottom, viewport: [innerWidth, innerHeight] };
+    })()`);
+    assert.ok(portraitMenu.width < portraitMenu.viewport[0]);
+    assert.ok(portraitMenu.top >= 0 && portraitMenu.bottom <= portraitMenu.viewport[1]);
+    assert.ok(portraitMenu.closeBottom <= portraitMenu.bottom);
+
+    await evaluate(`document.querySelector('#mainMenuBackdrop').click()`);
+    assert.equal(await evaluate(`document.querySelector('#mainMenu').classList.contains('hidden')`), true);
+    await evaluate(`document.querySelector('#menuBtn').click()`);
+    await evaluate(`document.querySelector('#mainMenuClose').click()`);
+    assert.equal(await evaluate(`document.querySelector('#mainMenu').classList.contains('hidden')`), true);
+    await evaluate(`document.querySelector('#menuBtn').click()`);
+    await evaluate(`history.back()`);
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (await evaluate(`document.querySelector('#mainMenu').classList.contains('hidden')`)) break;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    assert.equal(await evaluate(`document.querySelector('#mainMenu').classList.contains('hidden')`), true);
+    assert.equal(await evaluate(`JSON.stringify({ destination: state.destination, waypoints: state.waypoints, routes: state.routes, selectedRoute: state.selectedRoute })`), routeBefore);
+    assert.equal(await evaluate(`state.screen`), 'map');
+
+    const mapReceivesClick = await evaluate(`(() => {
+      let clicked = false;
+      const map = document.querySelector('#map');
+      map.addEventListener('click', () => { clicked = true; }, { once: true });
+      map.click();
+      return clicked && getComputedStyle(document.querySelector('#mainMenu')).display === 'none';
+    })()`);
+    assert.equal(mapReceivesClick, true);
+    await evaluate(`document.querySelector('#menuBtn').click()`);
+    assert.equal(await evaluate(`document.querySelector('#mainMenu').classList.contains('hidden')`), false);
+
+    await client.send('Emulation.setDeviceMetricsOverride', {
+      width: 844,
+      height: 390,
+      deviceScaleFactor: 3,
+      mobile: true,
+      screenWidth: 844,
+      screenHeight: 390,
+    });
+    const landscapeMenu = await evaluate(`(() => {
+      const drawer = document.querySelector('#mainMenuDrawer').getBoundingClientRect();
+      const close = document.querySelector('#mainMenuClose').getBoundingClientRect();
+      const content = document.querySelector('#mainMenuContent');
+      return { width: drawer.width, top: drawer.top, bottom: drawer.bottom, closeBottom: close.bottom, overflowY: getComputedStyle(content).overflowY, viewport: [innerWidth, innerHeight] };
+    })()`);
+    assert.ok(landscapeMenu.width < landscapeMenu.viewport[0] / 2);
+    assert.ok(landscapeMenu.top >= 0 && landscapeMenu.bottom <= landscapeMenu.viewport[1]);
+    assert.ok(landscapeMenu.closeBottom <= landscapeMenu.bottom);
+    assert.equal(landscapeMenu.overflowY, 'auto');
+    await evaluate(`document.querySelector('#mainMenuClose').click()`);
+
+    await client.send('Emulation.setDeviceMetricsOverride', {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 3,
+      mobile: true,
+      screenWidth: 390,
+      screenHeight: 844,
+    });
+
     await reload();
     assert.equal(await evaluate(`document.querySelectorAll('.profile-select-control.selected').length`), 0);
     assert.equal(await evaluate(`document.querySelector('#profileSelectButton').disabled`), true);
 
     await evaluate(`document.querySelector('#profileAddTop').click()`);
     await evaluate(`(() => { const input = document.querySelector('#profileNameInput'); input.value = '아이'; document.querySelector('input[name="profileAvatar"][value="leaf"]').checked = true; document.querySelector('#profileEditorForm').requestSubmit(); })()`);
-    assert.deepEqual(await evaluate(`[...document.querySelectorAll('[data-profile-select] strong')].map(node => node.textContent)`), ['아빠', '아이']);
+    assert.deepEqual(await evaluate(`[...document.querySelectorAll('[data-profile-select] strong')].map(node => node.textContent)`), ['메뉴 사용자', '아이']);
     await evaluate(`[...document.querySelectorAll('[data-profile-select]')].find(node => node.textContent.includes('아이')).click()`);
     await evaluate(`document.querySelector('#profileSelectButton').click()`);
     assert.equal(await evaluate(`document.querySelector('#profileScreen').classList.contains('hidden')`), true);
@@ -244,7 +329,7 @@ async function run() {
     assert.equal(await evaluate(`document.querySelectorAll('[data-profile-select]').length`), 0);
     assert.equal(await evaluate(`document.querySelector('#profileEmptyState').classList.contains('hidden')`), false);
     client.socket.close();
-    process.stdout.write('BROWSER FLOW PASS: boot, explicit selection, map gate, reload, add, select, delete-all, empty-state persistence\n');
+    process.stdout.write('BROWSER FLOW PASS: profile flow and main menu drawer regression cases\n');
   } finally {
     if (browser.exitCode == null) {
       const exited = new Promise(resolve => browser.once('exit', resolve));

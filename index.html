@@ -76,6 +76,33 @@
         <button id="menuBtn" class="icon-btn" aria-label="메뉴">☰</button>
       </header>
 
+      <section id="mainMenu" class="main-menu-layer hidden" aria-hidden="true">
+        <button id="mainMenuBackdrop" class="main-menu-backdrop" type="button" aria-label="메뉴 닫기"></button>
+        <aside id="mainMenuDrawer" class="main-menu-drawer" role="dialog" aria-modal="true" aria-label="RideMate 메뉴">
+          <div id="mainMenuContent" class="main-menu-content">
+            <button id="mainMenuProfile" class="main-menu-profile" type="button" data-menu-profile-change>
+              <span id="mainMenuProfileAvatar" class="main-menu-avatar" aria-hidden="true"></span>
+              <span class="main-menu-profile-copy"><strong id="mainMenuProfileName"></strong><small>프로필 변경</small></span>
+              <span class="main-menu-chevron" aria-hidden="true">›</span>
+            </button>
+            <div class="main-menu-divider"></div>
+            <nav class="main-menu-primary" aria-label="주요 메뉴">
+              <button type="button" data-menu-item="places"><strong>내 장소</strong> <small>집 · 회사 · 즐겨찾기</small></button>
+              <button type="button" data-menu-item="racing-records"><strong>레이싱 기록</strong></button>
+              <button type="button" data-menu-item="display-settings"><strong>화면 설정</strong></button>
+              <button type="button" data-menu-item="app-settings"><strong>앱 설정</strong></button>
+            </nav>
+            <div class="main-menu-divider"></div>
+            <nav class="main-menu-support" aria-label="지원 메뉴">
+              <button type="button" data-menu-item="notices">공지사항</button>
+              <button type="button" data-menu-item="help">도움말</button>
+              <button type="button" data-menu-item="app-info">앱 정보</button>
+            </nav>
+          </div>
+          <button id="mainMenuClose" class="main-menu-close" type="button">닫기</button>
+        </aside>
+      </section>
+
       <section id="searchPanel" class="panel hidden">
         <div class="search-head">
           <button id="searchBack" class="icon-btn">‹</button>
