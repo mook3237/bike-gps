@@ -280,6 +280,7 @@ async function run() {
     const gym = { id: 'gym-place', name: '실제 헬스장 상호', address: '서울 헬스장 주소', latitude: 37.54, longitude: 127.04 };
     const cafe = { id: 'cafe-place', name: '실제 카페 상호', address: '서울 카페 주소', latitude: 37.55, longitude: 127.05 };
     const shop = { id: 'shop-place', name: '실제 자전거점 상호', address: '서울 자전거점 주소', latitude: 37.56, longitude: 127.06 };
+    const addressOnly = { id: 'address-place', name: '서울 성북구 장위동 214-16', address: ' 서울 성북구 장위동 214-16 ', latitude: 37.57, longitude: 127.07 };
     const selectForMyPlaces = async place => {
       await evaluate(`selectRideMatePlace(${JSON.stringify(place)},{source:'my-places'})`);
       for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -302,6 +303,20 @@ async function run() {
 
     await evaluate(`document.querySelector('#addFavoriteBtn').click()`);
     await selectForMyPlaces(gym);
+    const favoriteEditorLayout = await evaluate(`(() => {
+      const label = document.querySelector('#favoriteEditor label span');
+      const input = document.querySelector('#favoriteNameInput').getBoundingClientRect();
+      const buttons = [...document.querySelector('#favoriteEditor .profile-editor-actions').querySelectorAll('button')];
+      const left = buttons[0].getBoundingClientRect();
+      const right = buttons[1].getBoundingClientRect();
+      return { label: label.textContent.trim(), buttons: buttons.map(button => button.textContent.trim()), inputGap: input.top - label.getBoundingClientRect().bottom, horizontal: left.right < right.left, buttonGap: right.left - left.right, heights: buttons.map(button => button.getBoundingClientRect().height) };
+    })()`);
+    assert.equal(favoriteEditorLayout.label, '이름');
+    assert.deepEqual(favoriteEditorLayout.buttons, ['저장', '취소']);
+    assert.ok(favoriteEditorLayout.inputGap >= 10);
+    assert.equal(favoriteEditorLayout.horizontal, true);
+    assert.ok(favoriteEditorLayout.buttonGap >= 10);
+    assert.equal(favoriteEditorLayout.heights.every(height => height >= 44), true);
     await evaluate(`(() => { const input=document.querySelector('#favoriteNameInput'); input.value='헬스장'; document.querySelector('#favoriteEditorForm').requestSubmit(); })()`);
     await evaluate(`document.querySelector('#addFavoriteBtn').click()`);
     await selectForMyPlaces(cafe);
@@ -314,13 +329,74 @@ async function run() {
     await evaluate(`document.querySelector('[data-favorite-action="rename"]').click()`);
     await evaluate(`(() => { const input=document.querySelector('#favoriteNameInput'); input.value='단골 헬스장'; document.querySelector('#favoriteEditorForm').requestSubmit(); })()`);
     await evaluate(`document.querySelector('[data-favorite-action="location"]').click()`);
-    await selectForMyPlaces(shop);
+    await evaluate(`document.querySelector('#selectOnMapBtn').click()`);
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (await evaluate(`state.screen === 'map' && document.querySelector('#myPlacesScreen').classList.contains('hidden')`)) break;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    await evaluate(`openPlace(${JSON.stringify(shop)})`);
+    const mapPickerState = await evaluate(`({ screen:state.screen, selection:myPlaceSelection, hasConfirm:document.querySelector('#confirmMyPlaceMap') !== null })`);
+    assert.equal(mapPickerState.hasConfirm, true, JSON.stringify(mapPickerState));
+    await evaluate(`document.querySelector('#confirmMyPlaceMap').click()`);
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (await evaluate(`!document.querySelector('#myPlacesScreen').classList.contains('hidden')`)) break;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
     assert.deepEqual(await evaluate(`(() => { const item=document.querySelector('[data-favorite-id]'); return { customName:item.querySelector('strong').textContent, placeName:item.querySelector('[data-favorite-place-name]').textContent }; })()`), { customName: '단골 헬스장', placeName: '실제 자전거점 상호' });
     await evaluate(`document.querySelectorAll('[data-favorite-action="delete"]')[1].click()`);
     assert.equal(await evaluate(`document.querySelectorAll('[data-favorite-id]').length`), 1);
 
+    await evaluate(`document.querySelector('#addFavoriteBtn').click()`);
+    await evaluate(`document.querySelector('#selectOnMapBtn').click()`);
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (await evaluate(`state.screen === 'map' && document.querySelector('#myPlacesScreen').classList.contains('hidden')`)) break;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    await evaluate(`openPlace(${JSON.stringify(addressOnly)}); document.querySelector('#confirmMyPlaceMap').click()`);
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (await evaluate(`!document.querySelector('#favoriteEditor').classList.contains('hidden')`)) break;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    await evaluate(`(() => { const input=document.querySelector('#favoriteNameInput'); input.value='방앗간'; document.querySelector('#favoriteEditorForm').requestSubmit(); })()`);
+    assert.equal(await evaluate(`(() => { const item=[...document.querySelectorAll('[data-favorite-id]')].find(node => node.querySelector('strong').textContent === '방앗간'); return (item.textContent.match(/서울 성북구 장위동 214-16/g)||[]).length; })()`), 1);
+
+    await evaluate(`state.departure={ id:'saved-place-departure', name:'출발지', latitude:37.5, longitude:127 }; loadRoutes = async () => { globalThis.__savedPlaceRouteLoads = (globalThis.__savedPlaceRouteLoads || 0) + 1; return true; }; document.querySelector('#myPlacesBack').click()`);
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (await evaluate(`document.querySelector('#myPlacesScreen').classList.contains('hidden')`)) break;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    await evaluate(`openSearch('destination'); document.querySelector('[data-quick="home"]').click()`);
+    assert.equal(await evaluate(`state.destination.id`), newHome.id);
+    await evaluate(`openSearch('destination'); document.querySelector('[data-quick="work"]').click()`);
+    assert.equal(await evaluate(`state.destination.id`), work.id);
+    await evaluate(`openSearch('destination'); document.querySelector('[data-quick="favorite"]').click()`);
+    const favoriteSearch = await evaluate(`(() => ({
+      title: document.querySelector('#searchLandingTitle').textContent.trim(),
+      names: [...document.querySelectorAll('[data-saved-favorite] b')].map(node => node.textContent.trim()),
+      overflowY: getComputedStyle(document.querySelector('#recentSearches')).overflowY,
+      shortcutActive: document.querySelector('[data-quick="favorite"]').classList.contains('active')
+    }))()`);
+    assert.equal(favoriteSearch.title, '즐겨찾기');
+    assert.deepEqual(favoriteSearch.names, ['단골 헬스장', '방앗간']);
+    assert.equal(favoriteSearch.overflowY, 'auto');
+    assert.equal(favoriteSearch.shortcutActive, true);
+    await evaluate(`document.querySelector('[data-quick="favorite"]').click()`);
+    assert.equal(await evaluate(`document.querySelector('#searchLandingTitle').textContent.trim()`), '최근 검색');
+    await evaluate(`document.querySelector('[data-quick="favorite"]').click(); document.querySelector('[data-saved-favorite]').click()`);
+    assert.equal(await evaluate(`state.destination.id`), shop.id);
+
+    await evaluate(`(() => { const places=profileRepository.readMyPlaces(activeProfileId); places.work=null; profileRepository.writeMyPlaces(activeProfileId,places); openSearch('destination'); document.querySelector('[data-quick="work"]').click(); })()`);
+    assert.equal(await evaluate(`document.querySelector('#toast').textContent.trim()`), '회사 주소를 먼저 등록해주세요.');
+    assert.ok(await evaluate(`globalThis.__savedPlaceRouteLoads >= 3`));
+
+    const myPlacesStateBefore = await evaluate(`(() => {
+      renderScreen('map', true);
+      openMainMenu();
+      document.querySelector('[data-menu-item="places"]').click();
+      return JSON.stringify({ destination: state.destination, waypoints: state.waypoints, routes: state.routes, selectedRoute: state.selectedRoute });
+    })()`);
     await evaluate(`document.querySelector('[data-my-place-delete="home"]').click()`);
-    await evaluate(`document.querySelector('[data-my-place-delete="work"]').click()`);
+    await evaluate(`(() => { const item=[...document.querySelectorAll('[data-favorite-id]')].find(node => node.querySelector('strong').textContent === '방앗간'); item.querySelector('[data-favorite-action="delete"]').click(); })()`);
     assert.equal(await evaluate(`document.querySelector('#myPlaceHome').textContent.includes('등록되지 않았습니다.')`), true);
     assert.equal(await evaluate(`document.querySelector('#myPlaceWork').textContent.includes('등록되지 않았습니다.')`), true);
     assert.deepEqual(await evaluate(`profileRepository.readMyPlaces(activeProfileId).favorites.map(item => ({ customName:item.customName, placeName:item.place.name }))`), [{ customName: '단골 헬스장', placeName: '실제 자전거점 상호' }]);
@@ -331,7 +407,7 @@ async function run() {
       await new Promise(resolve => setTimeout(resolve, 25));
     }
     assert.equal(await evaluate(`document.querySelector('#myPlacesScreen').classList.contains('hidden')`), true);
-    assert.equal(await evaluate(`JSON.stringify({ destination: state.destination, waypoints: state.waypoints, routes: state.routes, selectedRoute: state.selectedRoute })`), routeBefore);
+    assert.equal(await evaluate(`JSON.stringify({ destination: state.destination, waypoints: state.waypoints, routes: state.routes, selectedRoute: state.selectedRoute })`), myPlacesStateBefore);
     await evaluate(`document.querySelector('#menuBtn').click()`);
 
     await client.send('Emulation.setDeviceMetricsOverride', {
