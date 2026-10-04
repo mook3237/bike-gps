@@ -44,6 +44,14 @@
         </label>
         <fieldset class="profile-avatar-field">
           <legend>Avatar</legend>
+          <div class="profile-photo-row">
+            <span id="profilePhotoPreview" class="profile-photo-preview" aria-hidden="true"></span>
+            <div class="profile-photo-actions">
+              <button id="profilePhotoSelect" type="button">프로필 사진 선택</button>
+              <button id="profilePhotoRemove" type="button">사진 제거</button>
+            </div>
+            <input id="profilePhotoInput" type="file" accept="image/*" hidden>
+          </div>
           <div id="profileAvatarChoices" class="profile-avatar-choices"></div>
         </fieldset>
         <p id="profileEditorError" class="profile-editor-error" role="alert"></p>
@@ -125,6 +133,20 @@
         </div>
       </section>
 
+      <section id="appSettingsScreen" class="app-settings-screen hidden" aria-hidden="true">
+        <header class="app-settings-header">
+          <button id="appSettingsBack" class="app-settings-back" type="button" aria-label="뒤로">‹</button>
+          <h1>앱 설정</h1>
+        </header>
+        <main class="app-settings-content">
+          <h2>일반</h2>
+          <label class="app-setting-row"><span><strong>거리 단위</strong><small>거리와 속도 표시 단위</small></span><select data-setting="distanceUnit"><option value="km">km</option><option value="mi">mi</option></select></label>
+          <label class="app-setting-row"><span><strong>화면 항상 켜기</strong><small>지원되는 기기에서 화면 꺼짐 방지</small></span><input type="checkbox" data-setting="keepScreenAwake"></label>
+          <label class="app-setting-row"><span><strong>짧은 주행 저장</strong><small>저장 기준 확정 후 적용 예정</small></span><input type="checkbox" data-setting="saveShortRides"></label>
+          <label class="app-setting-row"><span><strong>시계 형식</strong><small>도착 예정 시간 표시</small></span><select data-setting="clockFormat"><option value="device">기기 설정</option><option value="12h">12시간</option><option value="24h">24시간</option></select></label>
+        </main>
+      </section>
+
       <section id="searchPanel" class="panel hidden">
         <div class="search-head">
           <button id="searchBack" class="icon-btn">‹</button>
@@ -193,7 +215,7 @@
           <button id="navLocateBtn" aria-label="현재 위치 추적">◎</button>
         </div>
         <div id="navRouteStatus" class="nav-route-status" aria-live="polite"></div>
-        <div class="speed-pill"><b id="speedValue">0</b><small>km/h</small></div>
+        <div class="speed-pill"><b id="speedValue">0</b><small id="speedUnit">km/h</small></div>
         <div id="navHud" class="nav-hud">
           <button id="navRecalcBtn" class="nav-recalc-btn" aria-label="경로 재탐색">↻</button>
           <button id="navInfoToggle" class="nav-info-toggle">
@@ -240,7 +262,8 @@
       </nav>
     </div>
   </main>
-  <script src="/profile-system.js?v=20260930-profile"></script>
+  <script src="/settings-foundation.js?v=20261004-settings"></script>
+  <script src="/profile-system.js?v=20261004-settings"></script>
   <script src="/app.js?v=20260930-profile"></script>
 </body>
 </html>

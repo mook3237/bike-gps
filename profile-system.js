@@ -8,6 +8,7 @@
   const LEGACY_RECENT_KEY = 'ridemate_recent_searches';
   const LEGACY_RIDES_KEY = 'ridemate_rides';
   const DEFAULT_AVATAR = Object.freeze({ type: 'icon', iconId: 'rider' });
+  const DEFAULT_SETTINGS = Object.freeze({ distanceUnit: 'km', keepScreenAwake: false, saveShortRides: false, clockFormat: 'device' });
 
   const clone = value => JSON.parse(JSON.stringify(value));
 
@@ -53,14 +54,26 @@
   }
 
   function normalizeAvatar(avatar) {
-    if (!avatar || avatar.type !== 'icon' || !String(avatar.iconId || '').trim()) return clone(DEFAULT_AVATAR);
-    return { type: 'icon', iconId: String(avatar.iconId).trim() };
+    if (avatar?.type === 'photo' && String(avatar.photoId || '').trim()) return { type: 'photo', photoId: String(avatar.photoId).trim() };
+    if (avatar?.type === 'icon' && String(avatar.iconId || '').trim()) return { type: 'icon', iconId: String(avatar.iconId).trim() };
+    return clone(DEFAULT_AVATAR);
+  }
+
+  function normalizeSettings(settings = {}) {
+    return {
+      distanceUnit: settings.distanceUnit === 'mi' ? 'mi' : 'km',
+      keepScreenAwake: settings.keepScreenAwake === true,
+      saveShortRides: settings.saveShortRides === true,
+      clockFormat: ['12h', '24h'].includes(settings.clockFormat) ? settings.clockFormat : 'device',
+      ...(settings.dashboard && typeof settings.dashboard === 'object' ? { dashboard: clone(settings.dashboard) } : {}),
+    };
   }
 
   function createProfileRepository(storage, options = {}) {
     if (!storage?.getItem || !storage?.setItem) throw new Error('프로필 저장소가 필요합니다.');
     const createId = options.createId || defaultCreateId;
     const now = options.now || (() => new Date().toISOString());
+    const onPhotoRemoved = typeof options.onPhotoRemoved === 'function' ? options.onPhotoRemoved : () => {};
     let currentStore = null;
 
     function persist(nextStore) {
@@ -151,21 +164,41 @@
       if (index < 0) throw new Error('프로필을 찾을 수 없습니다.');
       const next = clone(store);
       const profile = next.profiles[index];
+      const previousPhotoId = profile.avatar?.type === 'photo' ? profile.avatar.photoId : null;
       if (Object.hasOwn(updates, 'name')) profile.name = normalizeName(updates.name);
       if (Object.hasOwn(updates, 'avatar')) profile.avatar = normalizeAvatar(updates.avatar);
       profile.updatedAt = now();
       persist(next);
+      if (previousPhotoId && previousPhotoId !== profile.avatar?.photoId) onPhotoRemoved(previousPhotoId);
       return clone(profile);
     }
 
     function deleteProfile(profileId) {
       const store = ensureStore();
       if (!store.profiles.some(profile => profile.id === profileId)) return false;
+      const removedProfile = store.profiles.find(profile => profile.id === profileId);
       const next = clone(store);
       next.profiles = next.profiles.filter(profile => profile.id !== profileId);
       delete next.dataByProfileId[profileId];
       persist(next);
+      if (removedProfile.avatar?.type === 'photo') onPhotoRemoved(removedProfile.avatar.photoId);
       return true;
+    }
+
+    function readSettings(profileId) {
+      return normalizeSettings(getProfileData(profileId).settings);
+    }
+
+    function updateSettings(profileId, updates = {}) {
+      const store = ensureStore();
+      if (!store.dataByProfileId[profileId]) throw new Error('프로필을 찾을 수 없습니다.');
+      const next = clone(store);
+      next.dataByProfileId[profileId].settings = normalizeSettings({
+        ...next.dataByProfileId[profileId].settings,
+        ...updates,
+      });
+      persist(next);
+      return readSettings(profileId);
     }
 
     function replaceRecentSearches(profileId, items) {
@@ -226,6 +259,8 @@
       addProfile,
       updateProfile,
       deleteProfile,
+      readSettings,
+      updateSettings,
       replaceRecentSearches,
       readRecentSearches,
       readMyPlaces,
@@ -310,6 +345,12 @@
       return refresh();
     }
 
+    function returnToSelection() {
+      mapShown = false;
+      view.showProfileScreen();
+      return refresh();
+    }
+
     function selectProfile(profileId) {
       if (!session.selectProfile(profileId)) return false;
       render();
@@ -349,13 +390,14 @@
       return deleted;
     }
 
-    return { start, refresh, selectProfile, confirmSelection, addProfile, updateProfile, deleteProfile };
+    return { start, returnToSelection, refresh, selectProfile, confirmSelection, addProfile, updateProfile, deleteProfile };
   }
 
   return {
     PROFILE_STORE_KEY,
     PROFILE_SCHEMA_VERSION,
     DEFAULT_AVATAR,
+    DEFAULT_SETTINGS,
     createProfileRepository,
     createProfileSession,
     createProfileController,
