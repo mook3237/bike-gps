@@ -165,18 +165,87 @@
           </div>
 
           <section class="riding-speed-block" aria-label="속도 정보">
-            <div class="riding-dial-ticks" aria-hidden="true"></div>
+
+            <div class="riding-gauge" aria-hidden="true">
+              <svg
+                class="riding-gauge-svg"
+                viewBox="0 0 400 210"
+                preserveAspectRatio="none"
+                aria-hidden="true">
+
+                <defs>
+                  <linearGradient id="ridingGaugeGradient"
+                                  x1="0%" y1="100%"
+                                  x2="100%" y2="0%">
+                    <stop offset="0%" stop-color="#1597ff"/>
+                    <stop offset="52%" stop-color="#16bff4"/>
+                    <stop offset="100%" stop-color="#19d8e7"/>
+                  </linearGradient>
+
+                  <filter id="ridingGaugeGlow"
+                          x="-20%"
+                          y="-30%"
+                          width="140%"
+                          height="160%">
+                    <feGaussianBlur stdDeviation="3.2" result="blur"/>
+                    <feMerge>
+                      <feMergeNode in="blur"/>
+                      <feMergeNode in="SourceGraphic"/>
+                    </feMerge>
+                  </filter>
+                </defs>
+
+                <path
+                  class="riding-gauge-track"
+                  pathLength="100"
+                  d="M 26 184
+                     C 37 76,
+                       105 20,
+                       200 20
+                     C 295 20,
+                       363 76,
+                       374 184" />
+
+                <path
+                  class="riding-gauge-progress"
+                  pathLength="100"
+                  d="M 26 184
+                     C 37 76,
+                       105 20,
+                       200 20
+                     C 295 20,
+                       363 76,
+                       374 184" />
+              </svg>
+            </div>
+
             <div class="riding-current-speed">
               <div class="riding-current-copy">
-                <small>현재 속도</small>
                 <strong id="ridingSpeedValue">0</strong>
                 <span>km/h</span>
               </div>
             </div>
+
+            <div class="riding-speed-divider" aria-hidden="true"></div>
+
             <div class="riding-speed-stats">
-              <article data-riding-metric="averageSpeed"><small>평균 속도</small><div><strong></strong><span>km/h</span></div></article>
-              <article data-riding-metric="maxSpeed"><small>최고 속도</small><div><strong></strong><span>km/h</span></div></article>
+              <article data-riding-metric="averageSpeed">
+                <small>평균 속도</small>
+                <div>
+                  <strong></strong>
+                  <span>km/h</span>
+                </div>
+              </article>
+
+              <article data-riding-metric="maxSpeed">
+                <small>최고 속도</small>
+                <div>
+                  <strong></strong>
+                  <span>km/h</span>
+                </div>
+              </article>
             </div>
+
           </section>
 
           <section class="riding-metric-grid" aria-label="주행 지표">

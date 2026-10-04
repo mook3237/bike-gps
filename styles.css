@@ -186,3 +186,903 @@
 .riding-board:not(.hidden)~.bottom-nav button,.riding-board:not(.hidden)~.bottom-nav button.active{background:#020b11;color:#fff}
 @media(max-height:720px) and (orientation:portrait){.riding-speed-block{grid-template-rows:minmax(0,1fr) 62px}.riding-speed-block::before{inset:0 5% auto}.riding-dial-ticks{inset:17px 13% auto}.riding-current-speed{padding-top:21px}.riding-current-copy>strong{font-size:108px}.riding-current-copy>span{margin-bottom:10px;font-size:17px}.riding-speed-stats{padding-top:7px}.riding-speed-stats::after{top:7px}.riding-metric-grid .riding-number{font-size:28px}}
 @media(orientation:landscape) and (max-height:600px){.riding-speed-block{grid-template-rows:minmax(0,1fr) 54px}.riding-speed-block::before{inset:0 6% auto;aspect-ratio:2/1}.riding-dial-ticks{inset:12px 13% auto;aspect-ratio:2/1}.riding-current-speed{padding-top:7px}.riding-current-copy>strong{font-size:clamp(82px,13vw,112px)}.riding-current-copy>span{margin-bottom:9px;font-size:16px}.riding-speed-stats{padding-top:4px}.riding-speed-stats::after{top:4px}.riding-summary strong{font-size:26px}.riding-summary .riding-number{font-size:28px}.riding-metric-grid .riding-number{font-size:24px}.riding-board:not(.hidden)~.bottom-nav{top:auto;bottom:0;height:calc(52px + env(safe-area-inset-bottom));padding:0 0 env(safe-area-inset-bottom)}}
+
+/* =========================================================
+   RIDEMATE RIDING BOARD  FINAL VISUAL OVERRIDE
+   ========================================================= */
+
+.riding-board{
+  --rb-bg:#020c14;
+  --rb-panel:#071a26;
+  --rb-panel-2:#08202e;
+  --rb-border:#12394d;
+  --rb-label:#61b6e4;
+  --rb-unit:#79bddd;
+  --rb-white:#f5fbff;
+  --rb-cyan:#18c9ee;
+
+  inset:0 0 calc(52px + env(safe-area-inset-bottom));
+  padding:
+    calc(env(safe-area-inset-top) + 8px)
+    max(14px,env(safe-area-inset-right))
+    9px
+    max(14px,env(safe-area-inset-left));
+
+  overflow:hidden;
+
+  background:
+    radial-gradient(
+      ellipse at 50% 34%,
+      rgba(8,48,70,.72) 0%,
+      rgba(4,26,39,.42) 35%,
+      rgba(2,12,20,0) 68%
+    ),
+    var(--rb-bg);
+
+  color:var(--rb-white);
+}
+
+.riding-board::before{
+  display:none;
+}
+
+
+/* ---------- HEADER ---------- */
+
+.riding-board-header{
+  height:46px;
+}
+
+.riding-board-header h1{
+  margin:0;
+  color:#f7fcff;
+  font-size:20px;
+  font-weight:850;
+  letter-spacing:-.035em;
+}
+
+.riding-gps-status{
+  gap:7px;
+  color:#58afe1;
+  font-size:12px;
+  font-weight:800;
+}
+
+.riding-gps-status i{
+  width:9px;
+  height:9px;
+  border-radius:50%;
+  background:#13d9a5;
+  box-shadow:
+    0 0 0 4px rgba(19,217,165,.10),
+    0 0 10px rgba(19,217,165,.35);
+}
+
+.riding-board-header button{
+  width:40px;
+  height:40px;
+  padding:9px;
+  border:1px solid #105276;
+  border-radius:11px;
+  background:#082132;
+  box-shadow:none;
+}
+
+.riding-board-header button span{
+  display:block;
+  width:19px;
+  height:2px;
+  margin:auto;
+  border-radius:2px;
+  background:#edf8ff;
+}
+
+
+/* ---------- MAIN LAYOUT ---------- */
+
+.riding-board-body{
+  height:calc(100% - 46px);
+
+  display:grid;
+
+  grid-template-rows:
+    76px
+    minmax(250px,1fr)
+    144px
+    54px;
+
+  gap:9px;
+
+  overflow:hidden;
+}
+
+
+/* ---------- TOP SUMMARY ---------- */
+
+.riding-summary{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:9px;
+}
+
+.riding-summary article{
+  display:block;
+  min-width:0;
+  min-height:0;
+
+  padding:11px 13px;
+
+  border:1px solid var(--rb-border);
+  border-radius:13px;
+
+  background:
+    linear-gradient(
+      145deg,
+      #092232 0%,
+      #061722 100%
+    );
+
+  box-shadow:
+    inset 0 1px rgba(255,255,255,.025);
+}
+
+.riding-summary article>div{
+  display:grid;
+  width:100%;
+  min-width:0;
+}
+
+.riding-summary small{
+  display:block;
+
+  color:var(--rb-label);
+
+  font-size:12px;
+  line-height:1;
+  font-weight:750;
+  letter-spacing:0;
+}
+
+.riding-summary strong{
+  display:flex;
+  align-items:baseline;
+  justify-content:center;
+
+  width:100%;
+
+  margin-top:11px;
+
+  color:var(--rb-white);
+
+  font-size:34px;
+  line-height:.9;
+  font-weight:760;
+
+  letter-spacing:-.045em;
+
+  text-align:center;
+
+  font-variant-numeric:tabular-nums;
+}
+
+.riding-summary .riding-number{
+  font-size:34px;
+  line-height:.9;
+  font-weight:760;
+}
+
+.riding-summary .riding-unit{
+  margin-left:6px;
+
+  color:var(--rb-unit);
+
+  font-size:13px;
+  line-height:1;
+  font-weight:750;
+
+  letter-spacing:0;
+}
+
+
+/* =========================================================
+   SPEED GAUGE
+   ========================================================= */
+
+.riding-speed-block{
+  position:relative;
+
+  display:block;
+
+  width:100%;
+  max-width:430px;
+  min-height:250px;
+
+  justify-self:center;
+
+  overflow:hidden;
+
+  border:0;
+  border-radius:0;
+
+  background:none;
+
+  box-shadow:none;
+}
+
+
+/* disable ALL old CSS gauge/tick graphics */
+
+.riding-speed-block::before,
+.riding-speed-block::after,
+.riding-dial-ticks{
+  display:none !important;
+  content:none !important;
+}
+
+
+/* ---------- SVG GAUGE ---------- */
+
+.riding-gauge{
+  position:absolute;
+
+  left:50%;
+  top:0;
+
+  width:min(100%,400px);
+  height:190px;
+
+  transform:translateX(-50%);
+
+  pointer-events:none;
+}
+
+.riding-gauge-svg{
+  display:block;
+
+  width:100%;
+  height:100%;
+
+  overflow:visible;
+}
+
+.riding-gauge-track,
+.riding-gauge-progress{
+  fill:none;
+
+  stroke-width:13;
+
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+
+.riding-gauge-track{
+  stroke:#123b55;
+  opacity:.78;
+}
+
+.riding-gauge-progress{
+  stroke:url(#ridingGaugeGradient);
+
+  /*
+    Prototype value only.
+    This controls the visible cyan amount.
+    Later it can be connected to real speed.
+  */
+
+  stroke-dasharray:68 32;
+
+  filter:url(#ridingGaugeGlow);
+}
+
+
+/* ---------- MAIN SPEED ---------- */
+
+.riding-current-speed{
+  position:absolute;
+
+  left:0;
+  right:0;
+  top:49px;
+
+  z-index:2;
+
+  display:flex;
+
+  align-items:center;
+  justify-content:center;
+
+  min-width:0;
+
+  padding:0;
+
+  text-align:center;
+}
+
+.riding-current-copy{
+  display:flex;
+
+  align-items:baseline;
+  justify-content:center;
+
+  width:100%;
+
+  min-width:0;
+
+  text-align:center;
+}
+
+.riding-current-copy>small{
+  display:none !important;
+}
+
+.riding-current-copy>strong{
+  display:block;
+
+  margin:0;
+
+  color:#ffffff;
+
+  font-size:clamp(104px,30vw,136px);
+  line-height:.82;
+  font-weight:780;
+
+  letter-spacing:-.07em;
+
+  text-shadow:
+    0 0 18px rgba(22,177,229,.16);
+
+  font-variant-numeric:tabular-nums;
+}
+
+.riding-current-copy>span{
+  display:block;
+
+  margin-left:11px;
+
+  color:#7ec6e7;
+
+  font-size:19px;
+  line-height:1;
+  font-weight:750;
+
+  letter-spacing:0;
+}
+
+
+/*
+  Optical centering:
+  the unit sits on the right, but the large number itself
+  must remain visually near the center of the gauge.
+*/
+
+.riding-current-copy{
+  transform:translateX(18px);
+}
+
+
+/* ---------- DIVIDER ---------- */
+
+.riding-speed-divider{
+  position:absolute;
+
+  left:14%;
+  right:14%;
+
+  bottom:70px;
+
+  height:1px;
+
+  background:
+    linear-gradient(
+      90deg,
+      transparent 0%,
+      #16445c 10%,
+      #16445c 90%,
+      transparent 100%
+    );
+
+  opacity:.9;
+}
+
+
+/* ---------- AVG / MAX ---------- */
+
+.riding-speed-stats{
+  position:absolute;
+
+  left:15%;
+  right:15%;
+  bottom:4px;
+
+  z-index:3;
+
+  display:grid;
+
+  width:auto;
+  height:58px;
+
+  margin:0;
+  padding:0;
+
+  grid-template-columns:1fr 1fr;
+  grid-template-rows:1fr;
+
+  border:0;
+
+  background:none;
+}
+
+.riding-speed-stats::after{
+  content:"";
+
+  position:absolute;
+
+  left:50%;
+  top:7px;
+  bottom:6px;
+
+  width:1px;
+
+  background:#16455e;
+}
+
+.riding-speed-stats article{
+  display:flex;
+
+  min-width:0;
+  min-height:0;
+
+  flex-direction:column;
+
+  align-items:center;
+  justify-content:center;
+
+  padding:0 8px;
+
+  border:0;
+
+  text-align:center;
+}
+
+.riding-speed-stats article+article{
+  border:0;
+}
+
+.riding-speed-stats small{
+  display:block;
+
+  color:#58b5e8;
+
+  font-size:11px;
+  line-height:1;
+  font-weight:750;
+}
+
+.riding-speed-stats div{
+  display:flex;
+
+  align-items:baseline;
+  justify-content:center;
+
+  gap:5px;
+
+  margin-top:5px;
+}
+
+.riding-speed-stats strong{
+  display:block;
+
+  margin:0;
+
+  color:#f7fcff;
+
+  font-size:29px;
+  line-height:1;
+  font-weight:760;
+
+  letter-spacing:-.035em;
+
+  font-variant-numeric:tabular-nums;
+}
+
+.riding-speed-stats span{
+  display:block;
+
+  color:#74b9da;
+
+  font-size:10px;
+  line-height:1;
+  font-weight:750;
+}
+
+
+/* =========================================================
+   LOWER 2 x 2 METRICS
+   ========================================================= */
+
+.riding-metric-grid{
+  display:grid;
+
+  min-height:0;
+
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  grid-template-rows:repeat(2,minmax(0,1fr));
+
+  gap:7px;
+}
+
+.riding-metric-grid article{
+  display:block;
+
+  min-width:0;
+  min-height:0;
+
+  padding:9px 11px;
+
+  border:1px solid var(--rb-border);
+  border-radius:13px;
+
+  background:
+    linear-gradient(
+      145deg,
+      #092232 0%,
+      #061722 100%
+    );
+
+  box-shadow:
+    inset 0 1px rgba(255,255,255,.025);
+}
+
+.riding-metric-grid article>div{
+  display:grid;
+
+  width:100%;
+  min-width:0;
+}
+
+.riding-metric-grid small{
+  display:block;
+
+  color:var(--rb-label);
+
+  font-size:11px;
+  line-height:1;
+  font-weight:750;
+
+  letter-spacing:0;
+}
+
+.riding-metric-grid strong{
+  display:flex;
+
+  align-items:baseline;
+  justify-content:center;
+
+  width:100%;
+
+  margin-top:11px;
+
+  overflow:visible;
+
+  color:#f7fcff;
+
+  line-height:1;
+
+  white-space:nowrap;
+
+  text-align:center;
+
+  text-overflow:clip;
+
+  font-variant-numeric:tabular-nums;
+}
+
+.riding-metric-grid .riding-number{
+  color:#ffffff;
+
+  font-size:34px;
+  line-height:.9;
+  font-weight:760;
+
+  letter-spacing:-.045em;
+}
+
+.riding-metric-grid .riding-unit{
+  margin-left:6px;
+
+  color:var(--rb-unit);
+
+  font-size:11px;
+  line-height:1;
+  font-weight:750;
+
+  letter-spacing:0;
+}
+
+
+/* ---------- RECORD BUTTON ---------- */
+
+.riding-record-button{
+  align-self:center;
+  justify-self:center;
+
+  width:88%;
+  max-width:370px;
+
+  height:52px;
+
+  border:0;
+  border-radius:27px;
+
+  background:
+    linear-gradient(
+      100deg,
+      #1199f5 0%,
+      #14bff0 55%,
+      #18d3dc 100%
+    );
+
+  color:#ffffff;
+
+  box-shadow:
+    0 5px 15px rgba(0,174,221,.20),
+    inset 0 1px rgba(255,255,255,.30);
+
+  font-size:18px;
+  font-weight:900;
+}
+
+.riding-record-button span{
+  margin-right:11px;
+
+  color:#ffffff;
+
+  font-size:16px;
+}
+
+.riding-record-button:active{
+  transform:translateY(1px);
+}
+
+
+/* =========================================================
+   BOTTOM NAV
+   Keep ORIGINAL MAP geometry.
+   ========================================================= */
+
+.riding-board:not(.hidden)~.bottom-nav{
+  position:absolute;
+
+  left:0;
+  right:0;
+  top:auto;
+  bottom:0;
+
+  height:calc(52px + env(safe-area-inset-bottom));
+
+  padding:0 0 env(safe-area-inset-bottom);
+
+  border:0;
+  border-top:1px solid rgba(255,255,255,.04);
+
+  border-radius:0;
+
+  background:#020c14;
+
+  box-shadow:none;
+}
+
+.riding-board:not(.hidden)~.bottom-nav button,
+.riding-board:not(.hidden)~.bottom-nav button.active{
+  display:block;
+
+  min-height:44px;
+
+  border:0;
+
+  background:#020c14;
+
+  color:#ffffff;
+
+  font-size:inherit;
+  font-weight:800;
+
+  text-shadow:none;
+}
+
+.riding-board:not(.hidden)~.bottom-nav button.active{
+  color:#ffffff;
+}
+
+.riding-board:not(.hidden)~.bottom-nav button.active::after{
+  content:none;
+}
+
+
+/* =========================================================
+   SHORT PORTRAIT
+   ========================================================= */
+
+@media(max-height:720px) and (orientation:portrait){
+
+  .riding-board-header{
+    height:40px;
+  }
+
+  .riding-board-body{
+    height:calc(100% - 40px);
+
+    grid-template-rows:
+      62px
+      minmax(215px,1fr)
+      122px
+      48px;
+
+    gap:6px;
+  }
+
+  .riding-summary article{
+    padding:8px 10px;
+  }
+
+  .riding-summary strong,
+  .riding-summary .riding-number{
+    margin-top:7px;
+    font-size:29px;
+  }
+
+  .riding-speed-block{
+    min-height:215px;
+  }
+
+  .riding-gauge{
+    height:165px;
+  }
+
+  .riding-current-speed{
+    top:39px;
+  }
+
+  .riding-current-copy>strong{
+    font-size:96px;
+  }
+
+  .riding-current-copy>span{
+    margin-left:9px;
+    font-size:16px;
+  }
+
+  .riding-speed-divider{
+    bottom:61px;
+  }
+
+  .riding-speed-stats{
+    bottom:2px;
+    height:54px;
+  }
+
+  .riding-speed-stats strong{
+    font-size:25px;
+  }
+
+  .riding-metric-grid article{
+    padding:7px 9px;
+  }
+
+  .riding-metric-grid strong{
+    margin-top:7px;
+  }
+
+  .riding-metric-grid .riding-number{
+    font-size:29px;
+  }
+
+  .riding-record-button{
+    height:48px;
+    font-size:17px;
+  }
+}
+
+
+/* =========================================================
+   LANDSCAPE
+   ========================================================= */
+
+@media(orientation:landscape) and (max-height:600px){
+
+  .riding-board{
+    inset:0 0 calc(52px + env(safe-area-inset-bottom));
+  }
+
+  .riding-board-header{
+    height:34px;
+  }
+
+  .riding-board-body{
+    height:calc(100% - 34px);
+
+    display:grid;
+
+    grid-template-columns:minmax(280px,.95fr) minmax(340px,1.05fr);
+
+    grid-template-rows:
+      62px
+      minmax(0,1fr)
+      46px;
+
+    grid-template-areas:
+      "speed summary"
+      "speed metrics"
+      "speed record";
+
+    gap:6px 12px;
+
+    overflow:hidden;
+  }
+
+  .riding-summary{
+    grid-area:summary;
+  }
+
+  .riding-speed-block{
+    grid-area:speed;
+
+    min-height:0;
+    max-width:none;
+  }
+
+  .riding-metric-grid{
+    grid-area:metrics;
+  }
+
+  .riding-record-button{
+    grid-area:record;
+
+    height:44px;
+  }
+
+  .riding-gauge{
+    top:0;
+
+    width:min(100%,430px);
+    height:170px;
+  }
+
+  .riding-current-speed{
+    top:37px;
+  }
+
+  .riding-current-copy>strong{
+    font-size:96px;
+  }
+
+  .riding-current-copy>span{
+    font-size:16px;
+  }
+
+  .riding-speed-divider{
+    bottom:57px;
+  }
+
+  .riding-speed-stats{
+    bottom:0;
+    height:52px;
+  }
+
+  .riding-summary strong,
+  .riding-summary .riding-number{
+    font-size:27px;
+  }
+
+  .riding-metric-grid .riding-number{
+    font-size:27px;
+  }
+
+  .riding-board:not(.hidden)~.bottom-nav{
+    bottom:0;
+
+    height:calc(52px + env(safe-area-inset-bottom));
+
+    padding:0 0 env(safe-area-inset-bottom);
+  }
+}
