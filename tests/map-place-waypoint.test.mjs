@@ -2878,3 +2878,26 @@ test('reroute resets progress before recalculating remaining waypoint positions 
   assert.notEqual(result.afterReroute.hud,'');
   assert.deepEqual(JSON.parse(JSON.stringify(result.afterPass)),{remaining:[],destination:'destination'});
 });
+
+test('riding board prototype opens from recorder tab and returns to the map with responsive bounded layouts', () => {
+  const context=loadApp('',false,true);
+  const metricCells=[...html.matchAll(/data-riding-metric="([^"]+)"/g)].map(match=>match[1]);
+  assert.deepEqual(metricCells,['averageSpeed','maxSpeed','averagePace','bestPace','monthlyDistance','totalDistance']);
+  assert.match(html,/id="ridingTimeValue"/);
+  assert.match(html,/id="ridingDistanceValue"/);
+  assert.match(html,/id="ridingSpeedValue"/);
+  assert.match(html,/id="ridingRecordPrototypeBtn"[\s\S]*기록 시작/);
+  assert.match(appSource,/const RIDING_BOARD_PROTOTYPE_VALUES=Object\.freeze/);
+
+  vm.runInContext(`state.currentLocation=null;$('#ridingBoardTabBtn').onclick()`,context);
+  assert.equal(vm.runInContext('state.screen',context),'riding-board');
+  assert.equal(vm.runInContext("$('#ridingBoard').classList.contains('hidden')",context),false);
+  assert.equal(vm.runInContext("$('#mapControls').classList.contains('hidden')",context),true);
+
+  vm.runInContext(`$('#mapTabBtn').onclick()`,context);
+  assert.equal(vm.runInContext('state.screen',context),'map');
+  assert.equal(vm.runInContext("$('#ridingBoard').classList.contains('hidden')",context),true);
+  assert.equal(vm.runInContext("$('#mapHeader').classList.contains('hidden')",context),false);
+  assert.match(styles,/\.riding-board\{[^}]*overflow:hidden/);
+  assert.match(styles,/@media\(orientation:landscape\) and \(max-height:600px\)[\s\S]*?grid-template-areas:"speed summary" "speed metrics" "record metrics"/);
+});
