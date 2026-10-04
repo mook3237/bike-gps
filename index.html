@@ -160,18 +160,21 @@
             <article><small>거리</small><strong id="ridingDistanceValue">0.0 km</strong></article>
           </div>
 
-          <section class="riding-speed" aria-label="현재 속도">
-            <div class="riding-speed-gauge">
-              <div class="riding-speed-reading">
+          <section class="riding-speed-block" aria-label="속도 정보">
+            <div class="riding-current-speed">
+              <div class="riding-speed-icon" aria-hidden="true"></div>
+              <div class="riding-current-copy">
                 <small>현재 속도</small>
                 <div><strong id="ridingSpeedValue">0</strong><span>km/h</span></div>
               </div>
             </div>
+            <div class="riding-speed-stats">
+              <article data-riding-metric="averageSpeed"><small>평균 속도</small><div><strong></strong><span>km/h</span></div></article>
+              <article data-riding-metric="maxSpeed"><small>최고 속도</small><div><strong></strong><span>km/h</span></div></article>
+            </div>
           </section>
 
           <section class="riding-metric-grid" aria-label="주행 지표">
-            <article data-riding-metric="averageSpeed"><small>평균 속도</small><strong></strong></article>
-            <article data-riding-metric="maxSpeed"><small>최고 속도</small><strong></strong></article>
             <article data-riding-metric="averagePace"><small>평균 페이스</small><strong></strong></article>
             <article data-riding-metric="bestPace"><small>최고 페이스</small><strong></strong></article>
             <article data-riding-metric="monthlyDistance"><small>월간 거리</small><strong></strong></article>

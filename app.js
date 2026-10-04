@@ -12,7 +12,7 @@ const KAKAO_PLACE_CATEGORIES=['MT1','CS2','PS3','SC4','AC5','PK6','OL7','SW8','B
 const VISIBLE_PLACE_MAX_LEVEL=6,VISIBLE_PLACE_CACHE_TTL_MS=60000,VISIBLE_PLACE_CACHE_LIMIT=8,CATEGORY_PIN_WIDTH_PX=32,CATEGORY_PIN_HEIGHT_PX=42,CATEGORY_PIN_GAP_PX=8,PLACE_HIT_RADIUS_PX=28,PLACE_AMBIGUITY_PX=6,MAP_LONG_PRESS_MS=1000;
 let mapLongPress=null,suppressNextMapClick=false,mapPointerStartedAt=null;
 const mapTapPerformanceRecords=[];
-const RIDING_BOARD_PROTOTYPE_VALUES=Object.freeze({time:'01:24:36',distance:'28.4 km',currentSpeed:'27',metrics:Object.freeze({averageSpeed:'24.2 km/h',maxSpeed:'41.8 km/h',averagePace:'2:29 min/km',bestPace:'1:26 min/km',monthlyDistance:'186.7 km',totalDistance:'2,842 km'})});
+const RIDING_BOARD_PROTOTYPE_VALUES=Object.freeze({time:'01:24:36',distance:'28.4 km',currentSpeed:'27',metrics:Object.freeze({averageSpeed:'24.2',maxSpeed:'41.8',averagePace:'2:29 min/km',bestPace:'1:26 min/km',monthlyDistance:'186.7 km',totalDistance:'2,842 km'})});
 
 function toast(msg,ms=1800){clearTimeout(toastTimer);const t=$('#toast');t.textContent=msg;t.classList.remove('hidden');toastTimer=setTimeout(()=>t.classList.add('hidden'),ms)}
 function esc(s=''){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}

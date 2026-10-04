@@ -2888,7 +2888,9 @@ test('riding board prototype opens from recorder tab and returns to the map with
   assert.match(html,/id="ridingSpeedValue"/);
   assert.match(html,/id="ridingRecordPrototypeBtn"[\s\S]*기록 시작/);
   assert.match(appSource,/const RIDING_BOARD_PROTOTYPE_VALUES=Object\.freeze/);
-  assert.match(html,/class="riding-speed-gauge"/);
+  assert.match(html,/class="riding-speed-block"/);
+  assert.match(html,/class="riding-speed-stats"/);
+  assert.doesNotMatch(html,/riding-speed-gauge/);
 
   vm.runInContext(`state.currentLocation=null;$('#ridingBoardTabBtn').onclick()`,context);
   assert.equal(vm.runInContext('state.screen',context),'riding-board');
@@ -2900,7 +2902,8 @@ test('riding board prototype opens from recorder tab and returns to the map with
   assert.equal(vm.runInContext("$('#ridingBoard').classList.contains('hidden')",context),true);
   assert.equal(vm.runInContext("$('#mapHeader').classList.contains('hidden')",context),false);
   assert.match(styles,/\.riding-board\{[^}]*overflow:hidden/);
-  assert.match(styles,/\.riding-board\{[^}]*background:radial-gradient/);
-  assert.match(styles,/\.riding-speed-gauge::before\{[^}]*conic-gradient/);
+  assert.match(styles,/\.riding-board\{[^}]*background:linear-gradient/);
+  assert.match(styles,/\.riding-speed-block\{[^}]*grid-template-columns:minmax\(0,2fr\) minmax\(94px,1fr\)/);
+  assert.doesNotMatch(styles,/\.riding-speed-gauge/);
   assert.match(styles,/@media\(orientation:landscape\) and \(max-height:600px\)[\s\S]*?grid-template-areas:"speed summary" "speed metrics" "speed record"/);
 });
