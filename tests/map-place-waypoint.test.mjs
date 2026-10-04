@@ -2890,7 +2890,11 @@ test('riding board prototype opens from recorder tab and returns to the map with
   assert.match(appSource,/const RIDING_BOARD_PROTOTYPE_VALUES=Object\.freeze/);
   assert.match(html,/class="riding-speed-block"/);
   assert.match(html,/class="riding-speed-stats"/);
-  assert.doesNotMatch(html,/riding-speed-gauge/);
+  assert.match(html,/class="riding-reference-gauge"[\s\S]*viewBox="0 0 852 640"/);
+  assert.match(html,/id="ridingGaugeTrack"/);
+  assert.match(html,/id="ridingGaugeProgress"/);
+  assert.match(html,/id="ridingGaugeTicks"/);
+  assert.doesNotMatch(html,/현재 속도/);
 
   vm.runInContext(`state.currentLocation=null;$('#ridingBoardTabBtn').onclick()`,context);
   assert.equal(vm.runInContext('state.screen',context),'riding-board');
@@ -2901,9 +2905,12 @@ test('riding board prototype opens from recorder tab and returns to the map with
   assert.equal(vm.runInContext('state.screen',context),'map');
   assert.equal(vm.runInContext("$('#ridingBoard').classList.contains('hidden')",context),true);
   assert.equal(vm.runInContext("$('#mapHeader').classList.contains('hidden')",context),false);
-  assert.match(styles,/\.riding-board\{[^}]*overflow:hidden/);
-  assert.match(styles,/\.riding-board\{[^}]*background:linear-gradient/);
-  assert.match(styles,/\.riding-speed-block\{[^}]*grid-template-columns:minmax\(0,2fr\) minmax\(94px,1fr\)/);
-  assert.doesNotMatch(styles,/\.riding-speed-gauge/);
-  assert.match(styles,/@media\(orientation:landscape\) and \(max-height:600px\)[\s\S]*?grid-template-areas:"speed summary" "speed metrics" "speed record"/);
+  assert.match(styles,/--riding-u:/);
+  assert.match(styles,/background:#020a18/);
+  assert.match(styles,/\.riding-reference-gauge\{/);
+  assert.doesNotMatch(styles,/conic-gradient/);
+  assert.match(styles,/\.riding-board:not\(\.hidden\)~\.bottom-nav\{[^}]*bottom:0/);
+  assert.match(styles,/\.riding-board:not\(\.hidden\)~\.bottom-nav\{[^}]*height:calc\(52px \+ env\(safe-area-inset-bottom\)\)/);
+  assert.match(appSource,/const RIDING_GAUGE_CX=427,RIDING_GAUGE_CY=350,RIDING_GAUGE_R=335,RIDING_GAUGE_START=151,RIDING_GAUGE_SPAN=238,RIDING_GAUGE_MAX=43\.2;/);
+  assert.match(appSource,/renderRidingGauge\(values\.currentSpeed\)/);
 });
