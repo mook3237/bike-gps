@@ -158,11 +158,9 @@
           <div class="riding-summary" aria-label="주행 요약">
             <article>
               <div><small>주행 시간</small><strong id="ridingTimeValue">00:00:00</strong></div>
-              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg>
             </article>
             <article>
-              <div><small>거리</small><strong id="ridingDistanceValue">0.0 km</strong></div>
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 20s-4-4.1-4-7a4 4 0 0 1 8 0c0 2.9-4 7-4 7Z"/><circle cx="7.5" cy="13" r="1.2"/><path d="M16.5 14s-4-4.1-4-7a4 4 0 0 1 8 0c0 2.9-4 7-4 7Z"/><circle cx="16.5" cy="7" r="1.2"/></svg>
+              <div><small>거리</small><strong id="ridingDistanceValue"><span class="riding-number">0.0</span><span class="riding-unit">km</span></strong></div>
             </article>
           </div>
 
@@ -182,10 +180,10 @@
           </section>
 
           <section class="riding-metric-grid" aria-label="주행 지표">
-            <article data-riding-metric="averagePace"><span class="riding-metric-icon">◴</span><div><small>평균 페이스</small><strong></strong></div></article>
-            <article data-riding-metric="bestPace"><span class="riding-metric-icon">⌁</span><div><small>최고 페이스</small><strong></strong></div></article>
-            <article data-riding-metric="monthlyDistance"><span class="riding-metric-icon">▥</span><div><small>월간 거리</small><strong></strong></div></article>
-            <article data-riding-metric="totalDistance"><span class="riding-metric-icon">╱╲</span><div><small>누적 거리</small><strong></strong></div></article>
+            <article data-riding-metric="averagePace"><div><small>평균 페이스</small><strong><span class="riding-number"></span><span class="riding-unit"></span></strong></div></article>
+            <article data-riding-metric="bestPace"><div><small>최고 페이스</small><strong><span class="riding-number"></span><span class="riding-unit"></span></strong></div></article>
+            <article data-riding-metric="monthlyDistance"><div><small>월간 거리</small><strong><span class="riding-number"></span><span class="riding-unit"></span></strong></div></article>
+            <article data-riding-metric="totalDistance"><div><small>누적 거리</small><strong><span class="riding-number"></span><span class="riding-unit"></span></strong></div></article>
           </section>
 
           <button id="ridingRecordPrototypeBtn" class="riding-record-button" type="button"><span aria-hidden="true">▶</span> 기록 시작</button>
