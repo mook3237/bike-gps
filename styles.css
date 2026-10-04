@@ -164,3 +164,25 @@
 .riding-board:not(.hidden)~.bottom-nav button.active{color:#fff;text-shadow:0 0 7px #19bdf066}
 @media(max-height:720px) and (orientation:portrait){.riding-speed-block{grid-template-rows:minmax(0,1fr) 59px}.riding-speed-block::before{inset:3px 8% 59px}.riding-dial-ticks{inset:24px 16% 74px}.riding-current-speed{padding-top:20px}.riding-current-copy>strong{font-size:84px}.riding-speed-stats{padding-top:5px}.riding-speed-stats strong{font-size:25px}.riding-summary strong{font-size:28px}.riding-summary .riding-number{font-size:30px}.riding-metric-grid .riding-number{font-size:22px}}
 @media(orientation:landscape) and (max-height:600px){.riding-speed-block{grid-template-rows:minmax(0,1fr) 52px}.riding-speed-block::before{inset:2px 8% 52px}.riding-dial-ticks{inset:18px 15% 64px}.riding-current-speed{padding-top:10px}.riding-current-copy>strong{font-size:clamp(72px,11vw,96px)}.riding-speed-stats{padding-top:3px}.riding-summary strong{font-size:24px}.riding-summary .riding-number{font-size:26px}.riding-metric-grid .riding-number{font-size:20px}}
+
+/* Riding Board device-QA corrections */
+.riding-speed-block{grid-template-rows:minmax(0,1fr) 70px}
+.riding-speed-block::before{inset:0 4% auto;aspect-ratio:1.8/1;border-radius:50%;background:conic-gradient(from 270deg,#128fe8 0deg,#18d8e8 180deg,transparent 180deg 360deg);filter:drop-shadow(0 0 4px #11bcd055);-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 15px),#000 calc(100% - 14px));mask:radial-gradient(farthest-side,transparent calc(100% - 15px),#000 calc(100% - 14px))}
+.riding-dial-ticks{inset:20px 12% auto;aspect-ratio:1.8/1;border-radius:50%;background:repeating-conic-gradient(from 270deg,#20bff0 0 1.4deg,transparent 1.4deg 11.25deg);opacity:.56;clip-path:inset(0 0 50% 0);-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 7px),#000 calc(100% - 6px));mask:radial-gradient(farthest-side,transparent calc(100% - 7px),#000 calc(100% - 6px))}
+.riding-current-speed{padding:27px 0 0}
+.riding-current-copy{display:grid;grid-template-columns:auto auto;grid-template-areas:"label label" "value unit";align-items:end;justify-content:center;column-gap:8px}
+.riding-current-copy>small{grid-area:label;justify-self:center}
+.riding-current-copy>strong{grid-area:value;margin-top:0;font-size:clamp(122px,34vw,156px);line-height:.78}
+.riding-current-copy>span{grid-area:unit;align-self:end;margin:0 0 13px;font-size:20px;line-height:1}
+.riding-speed-stats{width:84%;margin-top:0;padding-top:10px;border-top:1px solid #1b4a5e}
+.riding-speed-stats::after{top:10px;bottom:4px}
+.riding-speed-stats strong{font-size:30px}
+.riding-summary article>div,.riding-metric-grid article>div{display:grid;width:100%;min-width:0}
+.riding-summary strong{width:100%;justify-self:center;text-align:center}
+.riding-summary strong:has(.riding-number){justify-content:center}
+.riding-metric-grid strong{width:100%;justify-self:center;justify-content:center;text-align:center}
+.riding-metric-grid .riding-number{font-size:clamp(30px,8vw,36px)}
+.riding-board:not(.hidden)~.bottom-nav{top:auto;bottom:0;height:calc(52px + env(safe-area-inset-bottom));padding:0 0 env(safe-area-inset-bottom);border-top-color:#ffffff08;background:#020b11}
+.riding-board:not(.hidden)~.bottom-nav button,.riding-board:not(.hidden)~.bottom-nav button.active{background:#020b11;color:#fff}
+@media(max-height:720px) and (orientation:portrait){.riding-speed-block{grid-template-rows:minmax(0,1fr) 62px}.riding-speed-block::before{inset:0 5% auto}.riding-dial-ticks{inset:17px 13% auto}.riding-current-speed{padding-top:21px}.riding-current-copy>strong{font-size:108px}.riding-current-copy>span{margin-bottom:10px;font-size:17px}.riding-speed-stats{padding-top:7px}.riding-speed-stats::after{top:7px}.riding-metric-grid .riding-number{font-size:28px}}
+@media(orientation:landscape) and (max-height:600px){.riding-speed-block{grid-template-rows:minmax(0,1fr) 54px}.riding-speed-block::before{inset:0 6% auto;aspect-ratio:2/1}.riding-dial-ticks{inset:12px 13% auto;aspect-ratio:2/1}.riding-current-speed{padding-top:7px}.riding-current-copy>strong{font-size:clamp(82px,13vw,112px)}.riding-current-copy>span{margin-bottom:9px;font-size:16px}.riding-speed-stats{padding-top:4px}.riding-speed-stats::after{top:4px}.riding-summary strong{font-size:26px}.riding-summary .riding-number{font-size:28px}.riding-metric-grid .riding-number{font-size:24px}.riding-board:not(.hidden)~.bottom-nav{top:auto;bottom:0;height:calc(52px + env(safe-area-inset-bottom));padding:0 0 env(safe-area-inset-bottom)}}
