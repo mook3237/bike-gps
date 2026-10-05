@@ -1526,7 +1526,8 @@ test('orientation changes relayout and refit using the current viewport without 
     portrait:{relayouts:1,fits:2,width:'390px',height:'844px',sameDraft:true,order:['A','C','B']},
     portraitPan:{latitude:37.5,longitude:127.5},
   });
-  assert.doesNotMatch(styles,/@media\(min-width:700px\)\{#app\{max-width:430px/);
+  assert.doesNotMatch(styles,/max-width:430px/);
+  assert.doesNotMatch(styles,/#overlayRoot:has\(\.riding-board:not\(\.hidden\)\)/);
 });
 
 test('map gestures and landscape controls retain portrait interaction parity', async () => {
@@ -2905,7 +2906,13 @@ test('riding board prototype opens from recorder tab and returns to the map with
   assert.equal(vm.runInContext('state.screen',context),'map');
   assert.equal(vm.runInContext("$('#ridingBoard').classList.contains('hidden')",context),true);
   assert.equal(vm.runInContext("$('#mapHeader').classList.contains('hidden')",context),false);
-  assert.match(styles,/--riding-u:/);
+  assert.match(styles,/--riding-u:\s*min\(\s*1,/);
+  assert.doesNotMatch(styles,/--riding-u:[\s\S]{0,300}--viewport-height/);
+  assert.match(styles,/\.riding-board-header,\.riding-board-body\{[^}]*width:100%[^}]*max-width:852px/);
+  assert.match(styles,/\.riding-speed-block\{[^}]*width:100%[^}]*aspect-ratio:852\/640/);
+  assert.match(styles,/\.riding-summary\{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(styles,/\.riding-metric-grid\{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(styles,/\.riding-board\{[^}]*overflow-y:auto/);
   assert.match(styles,/background:#020a18/);
   assert.match(styles,/\.riding-reference-gauge\{/);
   assert.doesNotMatch(styles,/conic-gradient/);
