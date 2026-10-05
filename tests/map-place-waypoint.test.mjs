@@ -2909,7 +2909,7 @@ test('riding board prototype opens from recorder tab and returns to the map with
   assert.match(styles,/--riding-u:\s*calc\(/);
   assert.doesNotMatch(styles,/--riding-u:[\s\S]{0,300}--viewport-height/);
   assert.match(styles,/\.riding-board-header\{[^}]*width:calc\(var\(--riding-u\) \* 852\)[^}]*height:calc\(var\(--riding-u\) \* 112\)[^}]*margin:0 auto/);
-  assert.match(styles,/\.riding-board-body\{[^}]*width:calc\(var\(--riding-u\) \* 852\)[^}]*height:calc\(var\(--riding-u\) \* 1648\)[^}]*align-content:space-between[^}]*overflow:hidden/);
+  assert.match(styles,/\.riding-board-body\{[^}]*width:calc\(var\(--riding-u\) \* 852\)[^}]*height:auto[^}]*grid-template-rows:[^}]*171\.464[^}]*640[^}]*399\.67[^}]*134[^}]*align-content:start[^}]*gap:calc\(var\(--riding-u\) \* 20\)[^}]*overflow:hidden/);
   assert.match(styles,/\.riding-summary\{[^}]*height:calc\(var\(--riding-u\) \* 171\.464\)[^}]*margin-inline:calc\(var\(--riding-u\) \* 20\)/);
   assert.match(styles,/\.riding-summary article\{[^}]*height:calc\(var\(--riding-u\) \* 171\.464\)/);
   assert.match(styles,/\.riding-speed-block\{[^}]*width:calc\(var\(--riding-u\) \* 852\)[^}]*height:calc\(var\(--riding-u\) \* 640\)/);

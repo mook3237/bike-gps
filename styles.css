@@ -183,7 +183,7 @@
 
 .riding-board-body{
   width:calc(var(--riding-u) * 852);
-  height:calc(var(--riding-u) * 1648);
+  height:auto;
   margin:0 auto;
   display:grid;
   grid-template-rows:
@@ -191,7 +191,8 @@
     calc(var(--riding-u) * 640)
     calc(var(--riding-u) * 399.67)
     calc(var(--riding-u) * 134);
-  align-content:space-between;
+  align-content:start;
+  gap:calc(var(--riding-u) * 20);
   overflow:hidden;
 }
 
