@@ -4,6 +4,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 
 const appSource = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+const rideFoundationSource = fs.readFileSync(new URL('../ride-foundation.js', import.meta.url), 'utf8');
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const styles = fs.readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 const vercelConfig = JSON.parse(fs.readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'));
@@ -30,6 +31,8 @@ function loadApp(search = '', deferTimers = false, staticDom = false) {
   const viewportListeners = new Map();
   const pendingTimers = [];
   const cancelledTimers = new Set();
+  let nativeWatchStarts = 0;
+  let nativeWatchSuccess = null;
   let nextTimerId = 1;
   const matchesSelector = (element, selector) => {
     const dataMatch = selector.match(/^\[data-([\w-]+)(?:="([^"]+)")?\]$/);
@@ -114,7 +117,7 @@ function loadApp(search = '', deferTimers = false, staticDom = false) {
     AbortController, URLSearchParams, innerHeight: 800, innerWidth: 390,
     setTimeout(fn) { if (typeof fn !== 'function') return 1; const id=nextTimerId++; if (deferTimers) pendingTimers.push({id,fn}); else fn(); return id; }, clearTimeout(id) { cancelledTimers.add(id); },
     history: { pushState() {}, back() {} },
-    navigator: { geolocation: { getCurrentPosition() {}, watchPosition() { return 1; }, clearWatch() {} } },
+    navigator: { geolocation: { getCurrentPosition() {}, watchPosition(success) { nativeWatchStarts += 1; nativeWatchSuccess = success; return 1; }, clearWatch() {} } },
     fetch: async () => ({ ok: false, json: async () => ({ error: 'test' }) }),
   });
   context.window = {
@@ -130,7 +133,10 @@ function loadApp(search = '', deferTimers = false, staticDom = false) {
   };
   context.dispatchWindowEvent = type => (windowListeners.get(type)||[]).forEach(listener=>listener({type}));
   context.dispatchViewportEvent = type => (viewportListeners.get(type)||[]).forEach(listener=>listener({type}));
+  context.testNativeWatchStarts = () => nativeWatchStarts;
+  context.emitNativePosition = position => nativeWatchSuccess?.(position);
   context.runPendingTimers = () => pendingTimers.splice(0).forEach(timer => { if (!cancelledTimers.has(timer.id)) timer.fn(); });
+  vm.runInContext(rideFoundationSource, context, { filename: 'ride-foundation.js' });
   vm.runInContext(appSource, context, { filename: 'app.js' });
   return context;
 }
@@ -721,15 +727,59 @@ test('the ordinary search landing map-selection button is visible and returns to
 
 test('the deployed shell cannot reuse stale search markup or navigation behavior assets', () => {
   const stylesheet = html.match(/<link\b[^>]*href="([^"]*styles\.css\?v=[^"]+)"/i)?.[1];
-  const script = html.match(/<script\b[^>]*src="([^"]*app\.js\?v=[^"]+)"/i)?.[1];
+  const manifest = html.match(/<link\b[^>]*rel="manifest"[^>]*href="([^"]+)"/i)?.[1];
+  const scripts = ['ride-foundation.js','profile-system.js','app.js'].map(name =>
+    html.match(new RegExp(`<script\\b[^>]*src="([^"]*${name.replace('.', '\\.') }\\?v=([^"]+))"`, 'i'))
+  );
   assert.ok(stylesheet,'styles.css must use a release-specific URL');
-  assert.ok(script,'app.js must use a release-specific URL');
+  assert.equal(manifest,'/manifest.json');
+  assert.ok(scripts.every(Boolean),'all application behavior scripts must use release-specific URLs');
+  assert.equal(new Set(scripts.map(match => match[2])).size,1,'application behavior scripts must use one release version');
   const noStoreSources = new Set((vercelConfig.headers || []).filter(entry =>
     entry.headers?.some(header => header.key.toLowerCase()==='cache-control' && /no-store/i.test(header.value))
   ).map(entry => entry.source));
   assert.ok(noStoreSources.has('/'),'the deployed HTML shell must not be stored');
   assert.ok(noStoreSources.has('/app.js'),'navigation behavior must not be stored under an old release');
+  assert.ok(noStoreSources.has('/profile-system.js'),'profile persistence must not be stored under an old release');
+  assert.ok(noStoreSources.has('/ride-foundation.js'),'shared GPS behavior must not be stored under an old release');
   assert.ok(noStoreSources.has('/styles.css'),'search visibility CSS must not be stored under an old release');
+});
+
+test('current location reuses a recent shared GPS fix without another one-shot request', async () => {
+  const context=loadApp('',false,true);
+  const result=await vm.runInContext(`(async()=>{
+    let panned=null;
+    kakao={maps:{LatLng:class {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}}};
+    state.map={panTo(point){panned=point}};
+    setGpsMarker=()=>{};
+    navigator.geolocation.getCurrentPosition=()=>{throw new Error('unexpected one-shot request')};
+    sharedGpsSource.subscribe('seed',()=>{});
+    emitNativePosition({timestamp:Date.now(),coords:{latitude:37.5,longitude:127.1,accuracy:3,speed:4,heading:90}});
+    sharedGpsSource.unsubscribe('seed');
+    const location=await locate(true);
+    return{location,panned};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    location:{latitude:37.5,longitude:127.1,name:'현재 위치'},
+    panned:{latitude:37.5,longitude:127.1},
+  });
+});
+
+test('current location falls back to getCurrentPosition without a recent shared fix', async () => {
+  const context=loadApp('',false,true);
+  const result=await vm.runInContext(`(async()=>{
+    let requests=0;
+    kakao={maps:{LatLng:class {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}}};
+    state.map={panTo(){}};
+    setGpsMarker=()=>{};
+    navigator.geolocation.getCurrentPosition=success=>{requests++;success({timestamp:Date.now(),coords:{latitude:37.6,longitude:127.2,accuracy:4,speed:null,heading:null}})};
+    const location=await locate(false);
+    return{requests,location};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    requests:1,
+    location:{latitude:37.6,longitude:127.2,name:'현재 위치'},
+  });
 });
 
 test('a main-map address long press keeps the existing departure and destination actions', () => {
@@ -2880,7 +2930,7 @@ test('reroute resets progress before recalculating remaining waypoint positions 
   assert.deepEqual(JSON.parse(JSON.stringify(result.afterPass)),{remaining:[],destination:'destination'});
 });
 
-test('riding board prototype opens from recorder tab and returns to the map with responsive bounded layouts', () => {
+test('riding board opens from recorder tab and returns to the map with responsive bounded layouts', () => {
   const context=loadApp('',false,true);
   const metricCells=[...html.matchAll(/data-riding-metric="([^"]+)"/g)].map(match=>match[1]);
   assert.deepEqual(metricCells,['averageSpeed','maxSpeed','averagePace','bestPace','monthlyDistance','totalDistance']);
@@ -2888,7 +2938,8 @@ test('riding board prototype opens from recorder tab and returns to the map with
   assert.match(html,/id="ridingDistanceValue"/);
   assert.match(html,/id="ridingSpeedValue"/);
   assert.match(html,/id="ridingRecordPrototypeBtn"[\s\S]*기록 시작/);
-  assert.match(appSource,/const RIDING_BOARD_PROTOTYPE_VALUES=Object\.freeze/);
+  assert.doesNotMatch(appSource,/RIDING_BOARD_PROTOTYPE_VALUES/);
+  assert.match(html,/ride-foundation\.js/);
   assert.match(html,/class="riding-speed-block"/);
   assert.match(html,/class="riding-speed-stats"/);
   assert.match(html,/class="riding-reference-gauge"[\s\S]*viewBox="0 0 852 640"/);
@@ -2923,5 +2974,81 @@ test('riding board prototype opens from recorder tab and returns to the map with
   assert.match(styles,/\.riding-board:not\(\.hidden\)~\.bottom-nav\{[^}]*bottom:0/);
   assert.match(styles,/\.riding-board:not\(\.hidden\)~\.bottom-nav\{[^}]*height:calc\(52px \+ env\(safe-area-inset-bottom\)\)/);
   assert.match(appSource,/const RIDING_GAUGE_CX=427,RIDING_GAUGE_CY=350,RIDING_GAUGE_R=335,RIDING_GAUGE_START=151,RIDING_GAUGE_SPAN=238,RIDING_GAUGE_MAX=43\.2;/);
-  assert.match(appSource,/renderRidingGauge\(values\.currentSpeed\)/);
+  assert.match(appSource,/renderRidingGauge\(/);
+});
+
+test('Riding Board uses one shared GPS watcher and opening it does not start recording', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    $('#ridingBoardTabBtn').onclick();
+    emitNativePosition({timestamp:1000,coords:{latitude:0,longitude:0,accuracy:3,speed:10,heading:90}});
+    emitNativePosition({timestamp:3000,coords:{latitude:0,longitude:20/111195,accuracy:3,speed:10,heading:90}});
+    emitNativePosition({timestamp:5000,coords:{latitude:0,longitude:40/111195,accuracy:3,speed:10,heading:90}});
+    const afterBoard={starts:testNativeWatchStarts(),state:state.ride.recordingState,liveSpeed:state.ridingLiveMotion.filteredSpeed,longitude:state.currentLocation.longitude};
+    startWatch();
+    return{afterBoard,afterNavigationStarts:testNativeWatchStarts()};
+  })()`,context);
+  assert.equal(result.afterBoard.starts,1);
+  assert.equal(result.afterBoard.state,'idle');
+  assert.ok(result.afterBoard.liveSpeed>0);
+  assert.ok(result.afterBoard.longitude>0);
+  assert.equal(result.afterNavigationStarts,1);
+});
+
+test('Riding Board recording starts zeroed and survives leaving the board', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    $('#ridingBoardTabBtn').onclick();
+    state.ride.distance=321;state.ride.movingTime=9000;
+    $('#ridingRecordPrototypeBtn').onclick();
+    const started={state:state.ride.recordingState,distance:state.ride.distance,movingTime:state.ride.movingTime};
+    $('#mapTabBtn').onclick();
+    return{started,afterLeave:state.ride.recordingState};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{started:{state:'recording',distance:0,movingTime:0},afterLeave:'recording'});
+});
+
+test('metric long press ignores taps and cancels movement before firing at three seconds', () => {
+  const context=loadApp('',true,true);
+  const result=vm.runInContext(`(()=>{
+    const card=document.createElement('article');let holds=0;
+    bindRidingMetricLongPress(card,()=>holds++);
+    card.dispatch('pointerdown',{pointerId:1,clientX:10,clientY:10});card.dispatch('pointerup',{pointerId:1,clientX:10,clientY:10});runPendingTimers();
+    const afterTap=holds;
+    card.dispatch('pointerdown',{pointerId:2,clientX:10,clientY:10});card.dispatch('pointermove',{pointerId:2,clientX:30,clientY:10});runPendingTimers();
+    const afterMove=holds;
+    card.dispatch('pointerdown',{pointerId:4,clientX:10,clientY:10});ui.ridingBoard.dispatch('scroll');runPendingTimers();
+    const afterScroll=holds;
+    card.dispatch('pointerdown',{pointerId:3,clientX:10,clientY:10});runPendingTimers();
+    return{afterTap,afterMove,afterScroll,afterHold:holds};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{afterTap:0,afterMove:0,afterScroll:0,afterHold:1});
+});
+
+test('metric selection swaps occupied slots and persists the complete unique layout', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    const defaults=defaultRidingMetricLayout();
+    const swapped=applyRidingMetricSelection(defaults,'averageSpeed','maxSpeed');
+    const unchanged=applyRidingMetricSelection(defaults,'averageSpeed','averageSpeed');
+    let stored={dashboard:{ridingBoardMetrics:defaults}},update=null;activeProfileId='profile-a';profileRepository={
+      readSettings(){return stored},
+      updateSettings(id,value){update={id,value};stored=value;return value}
+    };
+    openRidingMetricDialog('averageSpeed');
+    const occupiedDisabled=$('#ridingMetricOptions').innerHTML.includes('disabled');
+    const persisted=saveRidingMetricSelection('averageSpeed','maxSpeed');
+    const reloaded=ridingMetricLayout();
+    return{swapped,unchanged,occupiedDisabled,persisted,update,reloaded};
+  })()`,context);
+  assert.equal(result.swapped.averageSpeed,'maxSpeed');
+  assert.equal(result.swapped.maxSpeed,'averageSpeed');
+  assert.equal(new Set(Object.values(result.swapped)).size,6);
+  assert.deepEqual(new Set(Object.values(result.swapped)),new Set(['averageSpeed','maxSpeed','averagePace','bestPace','monthlyDistance','totalDistance']));
+  assert.equal(result.unchanged,null);
+  assert.equal(result.occupiedDisabled,false);
+  assert.equal(result.persisted,true);
+  assert.equal(result.update.id,'profile-a');
+  assert.deepEqual(result.update.value.dashboard.ridingBoardMetrics,result.swapped);
+  assert.deepEqual(result.reloaded,result.swapped);
 });

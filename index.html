@@ -7,6 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>RideMate</title>
+  <link rel="manifest" href="/manifest.json">
   <link rel="stylesheet" href="/styles.css?v=20261001-profile-iphone">
 </head>
 <body>
@@ -300,6 +301,15 @@
         </div>
       </section>
 
+      <section id="ridingMenu" class="modal-sheet hidden">
+        <div class="modal-grab"></div>
+        <h3>기록 메뉴</h3>
+        <div class="menu-grid">
+          <button id="ridingPauseBtn" type="button"><span>일시정지</span></button>
+        </div>
+        <button id="ridingEndBtn" class="danger-btn" type="button">기록 종료</button>
+      </section>
+
       <section id="searchPanel" class="panel hidden">
         <div class="search-head">
           <button id="searchBack" class="icon-btn">‹</button>
@@ -408,6 +418,14 @@
         </div>
       </section>
 
+      <section id="ridingMetricDialog" class="dialog-backdrop hidden" aria-hidden="true">
+        <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="ridingMetricDialogTitle">
+          <h2 id="ridingMetricDialogTitle">표시 항목 선택</h2>
+          <div id="ridingMetricOptions"></div>
+          <button id="ridingMetricCancel" class="secondary-btn" type="button">취소</button>
+        </div>
+      </section>
+
       <div id="toast" class="toast hidden"></div>
 
       <nav id="bottomNav" class="bottom-nav">
@@ -415,8 +433,9 @@
       </nav>
     </div>
   </main>
+  <script src="/ride-foundation.js?v=20261006-pwa-persistence"></script>
   <script src="/settings-foundation.js?v=20261004-settings"></script>
-  <script src="/profile-system.js?v=20261004-settings"></script>
-  <script src="/app.js?v=20260930-profile"></script>
+  <script src="/profile-system.js?v=20261006-pwa-persistence"></script>
+  <script src="/app.js?v=20261006-pwa-persistence"></script>
 </body>
 </html>

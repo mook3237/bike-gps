@@ -132,6 +132,20 @@
       return clone(ensureStore().profiles);
     }
 
+    function readLastActiveProfileId() {
+      const store = ensureStore();
+      return store.profiles.some(profile => profile.id === store.lastActiveProfileId) ? store.lastActiveProfileId : null;
+    }
+
+    function writeLastActiveProfileId(profileId) {
+      const store = ensureStore();
+      if (!store.profiles.some(profile => profile.id === profileId)) return false;
+      const next = clone(store);
+      next.lastActiveProfileId = profileId;
+      persist(next);
+      return true;
+    }
+
     function getProfileData(profileId) {
       const data = ensureStore().dataByProfileId[profileId];
       if (!data) throw new Error('프로필을 찾을 수 없습니다.');
@@ -180,6 +194,7 @@
       const next = clone(store);
       next.profiles = next.profiles.filter(profile => profile.id !== profileId);
       delete next.dataByProfileId[profileId];
+      if (next.lastActiveProfileId === profileId) delete next.lastActiveProfileId;
       persist(next);
       if (removedProfile.avatar?.type === 'photo') onPhotoRemoved(removedProfile.avatar.photoId);
       return true;
@@ -237,24 +252,28 @@
       return readMyPlaces(profileId);
     }
 
-    function prependRide(profileId, ride) {
+    function prependRide(profileId, ride, options = {}) {
       const store = ensureStore();
       if (!store.dataByProfileId[profileId]) throw new Error('프로필을 찾을 수 없습니다.');
       const next = clone(store);
       const rides = Array.isArray(next.dataByProfileId[profileId].rides) ? next.dataByProfileId[profileId].rides : [];
-      next.dataByProfileId[profileId].rides = [clone(ride), ...rides].slice(0, 100);
+      const storedRide = clone(ride);
+      if (options.retainDetailed !== true) delete storedRide.detailedSamples;
+      next.dataByProfileId[profileId].rides = [storedRide, ...rides];
       persist(next);
       return clone(next.dataByProfileId[profileId].rides);
     }
 
     function readRides(profileId) {
       const data = getProfileData(profileId);
-      return Array.isArray(data.rides) ? data.rides.slice(0, 100) : [];
+      return Array.isArray(data.rides) ? data.rides.slice() : [];
     }
 
     return {
       initialize,
       getProfiles,
+      readLastActiveProfileId,
+      writeLastActiveProfileId,
       getProfileData,
       addProfile,
       updateProfile,
@@ -273,7 +292,7 @@
   function createProfileSession(repository, options = {}) {
     const startMap = options.startMap || (() => Promise.resolve());
     let profiles = repository.getProfiles();
-    let selectedProfileId = null;
+    let selectedProfileId = repository.readLastActiveProfileId();
     let activeProfileId = null;
     let mapBootPromise = null;
 
@@ -301,6 +320,7 @@
         });
       }
       await mapBootPromise;
+      repository.writeLastActiveProfileId(activeProfileId);
       return true;
     }
 

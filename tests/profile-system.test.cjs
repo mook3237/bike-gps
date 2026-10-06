@@ -127,6 +127,30 @@ test('recent searches and rides remain isolated by profile', () => {
   assert.deepEqual(repo.readRides(second.id), [{ distance: 200 }]);
 });
 
+test('new ride records keep permanent summaries and routes without a hard 100-record cap', () => {
+  const storage = memoryStorage();
+  const repo = repository(storage);
+  repo.initialize();
+  for (let index = 0; index < 101; index += 1) {
+    repo.prependRide('profile-dad', {
+      distance: index,
+      route: [{ latitude: 37, longitude: 127 }],
+      detailedSamples: [{ timestamp: index, accuracy: 3 }],
+    });
+  }
+  const rides = repo.readRides('profile-dad');
+  assert.equal(rides.length, 101);
+  assert.deepEqual(rides[0].route, [{ latitude: 37, longitude: 127 }]);
+  assert.equal('detailedSamples' in rides[0], false);
+});
+
+test('full ride samples can be retained explicitly without changing the default policy', () => {
+  const repo = repository(memoryStorage());
+  repo.initialize();
+  repo.prependRide('profile-dad', { distance: 1000, detailedSamples: [{ timestamp: 1 }] }, { retainDetailed: true });
+  assert.deepEqual(repo.readRides('profile-dad')[0].detailedSamples, [{ timestamp: 1 }]);
+});
+
 test('my places persist home, work, and independently named favorites per profile', () => {
   const storage = memoryStorage();
   const repo = repository(storage);
@@ -205,6 +229,43 @@ test('profile session requires an explicit selection and starts the map only onc
   assert.equal(second, true);
   assert.equal(session.getActiveProfileId(), 'profile-dad');
   assert.equal(mapStarts, 1);
+});
+
+test('a successfully activated profile is restored without moving its saved places', async () => {
+  const storage = memoryStorage();
+  const repo = repository(storage);
+  repo.initialize();
+  const second = repo.addProfile('Second');
+  const home = { id: 'home', name: 'Home', latitude: 37.5, longitude: 127 };
+  const work = { id: 'work', name: 'Work', latitude: 37.6, longitude: 127.1 };
+  repo.writeMyPlaces('profile-dad', { home, work: null, favorites: [] });
+  repo.writeMyPlaces(second.id, { home: null, work, favorites: [] });
+  const session = createProfileSession(repo, { startMap: async () => {} });
+
+  session.selectProfile(second.id);
+  await session.activateSelected();
+
+  const restoredRepo = repository(storage);
+  restoredRepo.initialize();
+  const restoredSession = createProfileSession(restoredRepo, { startMap: async () => {} });
+  assert.equal(restoredSession.getSelectedProfileId(), second.id);
+  assert.deepEqual(restoredRepo.readMyPlaces('profile-dad'), { home, work: null, favorites: [] });
+  assert.deepEqual(restoredRepo.readMyPlaces(second.id), { home: null, work, favorites: [] });
+  assert.equal(restoredRepo.getProfiles().length, 2);
+});
+
+test('an invalid remembered profile falls back to no selection', () => {
+  const storage = memoryStorage();
+  const initialRepo = repository(storage);
+  const store = initialRepo.initialize();
+  storage.setItem(PROFILE_STORE_KEY, JSON.stringify({ ...store, lastActiveProfileId: 'missing-profile' }));
+
+  const restoredRepo = repository(storage);
+  restoredRepo.initialize();
+  const session = createProfileSession(restoredRepo, { startMap: async () => {} });
+
+  assert.equal(session.getSelectedProfileId(), null);
+  assert.equal(session.getProfiles().length, 1);
 });
 
 test('deleting a selected profile clears selection and zero-profile sessions cannot activate', async () => {

@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const Ride = require('../ride-foundation.js');
 
 const root = new URL('../', import.meta.url);
 const app = fs.readFileSync(new URL('app.js', root), 'utf8');
@@ -11,6 +15,7 @@ const api = fs.readFileSync(new URL('api/bicycle-route.js', root), 'utf8');
 const lines = app.split(/\r?\n/);
 
 function loadFunctions(names, context = {}) {
+  context.Ride ||= Ride;
   vm.createContext(context);
   for (const name of names) {
     const line = lines.find(value => value.startsWith(`function ${name}(`) || value.startsWith(`async function ${name}(`));
