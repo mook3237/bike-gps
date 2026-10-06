@@ -5,6 +5,7 @@ import vm from 'node:vm';
 
 const appSource = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
 const rideFoundationSource = fs.readFileSync(new URL('../ride-foundation.js', import.meta.url), 'utf8');
+const settingsFoundationSource = fs.readFileSync(new URL('../settings-foundation.js', import.meta.url), 'utf8');
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const styles = fs.readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 const vercelConfig = JSON.parse(fs.readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'));
@@ -137,6 +138,7 @@ function loadApp(search = '', deferTimers = false, staticDom = false) {
   context.emitNativePosition = position => nativeWatchSuccess?.(position);
   context.runPendingTimers = () => pendingTimers.splice(0).forEach(timer => { if (!cancelledTimers.has(timer.id)) timer.fn(); });
   vm.runInContext(rideFoundationSource, context, { filename: 'ride-foundation.js' });
+  vm.runInContext(settingsFoundationSource, context, { filename: 'settings-foundation.js' });
   vm.runInContext(appSource, context, { filename: 'app.js' });
   return context;
 }
@@ -3029,26 +3031,152 @@ test('metric selection swaps occupied slots and persists the complete unique lay
   const context=loadApp('',false,true);
   const result=vm.runInContext(`(()=>{
     const defaults=defaultRidingMetricLayout();
-    const swapped=applyRidingMetricSelection(defaults,'averageSpeed','maxSpeed');
-    const unchanged=applyRidingMetricSelection(defaults,'averageSpeed','averageSpeed');
+    const swapped=applyRidingMetricSelection(defaults,'averagePace','bestPace');
+    const replaced=applyRidingMetricSelection(defaults,'averagePace','movingTime');
+    const unchanged=applyRidingMetricSelection(defaults,'averagePace','averagePace');
     let stored={dashboard:{ridingBoardMetrics:defaults}},update=null;activeProfileId='profile-a';profileRepository={
       readSettings(){return stored},
       updateSettings(id,value){update={id,value};stored=value;return value}
     };
-    openRidingMetricDialog('averageSpeed');
+    openRidingMetricDialog('averagePace');
     const occupiedDisabled=$('#ridingMetricOptions').innerHTML.includes('disabled');
-    const persisted=saveRidingMetricSelection('averageSpeed','maxSpeed');
+    const persisted=saveRidingMetricSelection('averagePace','bestPace');
     const reloaded=ridingMetricLayout();
-    return{swapped,unchanged,occupiedDisabled,persisted,update,reloaded};
+    return{swapped,replaced,unchanged,occupiedDisabled,persisted,update,reloaded};
   })()`,context);
-  assert.equal(result.swapped.averageSpeed,'maxSpeed');
-  assert.equal(result.swapped.maxSpeed,'averageSpeed');
-  assert.equal(new Set(Object.values(result.swapped)).size,6);
-  assert.deepEqual(new Set(Object.values(result.swapped)),new Set(['averageSpeed','maxSpeed','averagePace','bestPace','monthlyDistance','totalDistance']));
+  assert.equal(result.swapped.averagePace,'bestPace');
+  assert.equal(result.swapped.bestPace,'averagePace');
+  assert.equal(result.replaced.averagePace,'movingTime');
+  assert.equal(new Set(Object.values(result.swapped)).size,4);
+  assert.deepEqual(new Set(Object.values(result.swapped)),new Set(['averagePace','bestPace','monthlyDistance','totalDistance']));
   assert.equal(result.unchanged,null);
   assert.equal(result.occupiedDisabled,false);
   assert.equal(result.persisted,true);
   assert.equal(result.update.id,'profile-a');
   assert.deepEqual(result.update.value.dashboard.ridingBoardMetrics,result.swapped);
   assert.deepEqual(result.reloaded,result.swapped);
+});
+
+test('only four lower Riding Board cards are configurable with six supported choices', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    return{metrics:Object.keys(RIDING_METRICS),layout:defaultRidingMetricLayout()};
+  })()`,context);
+  assert.deepEqual([...result.metrics],['averagePace','bestPace','monthlyDistance','totalDistance','movingTime','stoppedTime']);
+  assert.deepEqual(Object.values(result.layout),['averagePace','bestPace','monthlyDistance','totalDistance']);
+  assert.match(appSource,/function wireRidingMetricCards\(\)\{\$\$\('\.riding-metric-grid \[data-riding-metric\]'\)/);
+});
+
+test('Navigation starts or joins the one shared ride without resetting it or double-ingesting fixes', () => {
+  const context=loadApp('',false,true);installConfirmedWaypointFixture(context);
+  const result=vm.runInContext(`(()=>{
+    startRideRecording(1000);state.ride.distance=123;
+    startNavigation();
+    const joined={startedAt:state.ride.startedAt,distance:state.ride.distance};
+    emitNativePosition({timestamp:2000,coords:{latitude:37,longitude:127,accuracy:3,speed:0,heading:0}});
+    return{joined,samples:state.ride.detailedSamples.length,starts:testNativeWatchStarts(),navStarted:state.nav.startedAt};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.joined)),{startedAt:1000,distance:123});
+  assert.equal(result.samples,1);
+  assert.equal(result.starts,1);
+  assert.ok(result.navStarted);
+});
+
+test('automatic Navigation arrival ends guidance but keeps a moving shared ride active', () => {
+  const context=loadApp('',false,true);installConfirmedWaypointFixture(context);
+  const result=vm.runInContext(`(()=>{
+    startNavigation();state.ride.motion.moving=true;finishNavigation(true);
+    return{ride:state.ride.recordingState,watch:state.nav.watchId,screen:state.screen,arrived:state.nav.arrived};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{ride:'recording',watch:null,screen:'map',arrived:true});
+});
+
+test('Navigation arrival integration requires three candidate fixes spanning two seconds', () => {
+  const context=loadApp('',false,true);installConfirmedWaypointFixture(context);
+  const result=vm.runInContext(`(()=>{
+    startNavigation();const route=state.routes[state.selectedRoute],point=state.destination,base=Date.now()-2000;
+    state.ride.motion.moving=false;state.ride.motion.stationaryCandidateSince=base;
+    const first=observeNavigationArrival(route,point,0,{timestamp:base,accuracy:3});
+    const second=observeNavigationArrival(route,point,0,{timestamp:base+1000,accuracy:3});
+    const third=observeNavigationArrival(route,point,0,{timestamp:base+2000,accuracy:3});
+    return{first,second,third,arrived:state.nav.arrived,ride:state.ride.recordingState};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{first:false,second:false,third:true,arrived:true,ride:'recording'});
+});
+
+test('post-arrival uses the shared stationary candidate and finalizes at three seconds unless movement resumes', () => {
+  const context=loadApp('',false,true);installConfirmedWaypointFixture(context);
+  const result=vm.runInContext(`(()=>{
+    startNavigation();finishNavigation(true);state.ride.motion.stationaryCandidateSince=1000;state.ride.motion.stationaryCandidatePosition={latitude:37,longitude:127};state.ride.motion.stationaryCandidateUncertainty=3;
+    maybeFinishRideAfterArrival(3999);const before=state.ride.recordingState;
+    state.ride.motion.stationaryCandidateSince=null;maybeFinishRideAfterArrival(5000);const resumed=state.ride.recordingState;
+    state.ride.motion.stationaryCandidateSince=6000;maybeFinishRideAfterArrival(9000);const after=state.ride.recordingState;
+    return{before,resumed,after,modal:!$('#saveModal').classList.contains('hidden')};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{before:'recording',resumed:'recording',after:'completed',modal:true});
+});
+
+test('manual Navigation End asks whether the shared ride should continue', () => {
+  const context=loadApp('',false,true);installConfirmedWaypointFixture(context);
+  const result=vm.runInContext(`(()=>{
+    startNavigation();requestManualNavigationEnd();
+    const asked=!$('#endNavigationRideModal').classList.contains('hidden');
+    $('#continueRideAfterNavigationBtn').onclick();
+    return{asked,ride:state.ride.recordingState,screen:state.screen,watch:state.nav.watchId};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{asked:true,ride:'recording',screen:'map',watch:null});
+});
+
+test('manual Navigation End can finalize the shared ride through the common save flow', () => {
+  const context=loadApp('',false,true);installConfirmedWaypointFixture(context);
+  const result=vm.runInContext(`(()=>{
+    startNavigation();requestManualNavigationEnd();$('#endRideAfterNavigationBtn').onclick();
+    return{ride:state.ride.recordingState,pending:pendingRideRecord!=null,saveModal:!$('#saveModal').classList.contains('hidden')};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{ride:'completed',pending:true,saveModal:true});
+});
+
+test('ending the shared ride from Riding Board also stops active Navigation guidance', () => {
+  const context=loadApp('',false,true);installConfirmedWaypointFixture(context);
+  const result=vm.runInContext(`(()=>{
+    startNavigation();renderScreen('riding-board',false);finishRideRecording(Date.now(),'riding-board');
+    return{ride:state.ride.recordingState,watch:state.nav.watchId,pending:pendingRideRecord!=null};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{ride:'completed',watch:null,pending:true});
+});
+
+test('Navigation pause and resume use the shared ride pause lifecycle', () => {
+  const context=loadApp('',false,true);installConfirmedWaypointFixture(context);
+  const result=vm.runInContext(`(()=>{
+    startNavigation();setNavigationPaused(true,2000);const paused={nav:state.nav.paused,ride:state.ride.recordingState,at:state.ride.pausedAt};
+    setNavigationPaused(false,5000);return{paused,resumed:{nav:state.nav.paused,ride:state.ride.recordingState,pausedDuration:state.ride.pausedDuration}};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{paused:{nav:true,ride:'paused',at:2000},resumed:{nav:false,ride:'recording',pausedDuration:3000}});
+});
+
+test('shared Save persists once while Dont Save clears temporary data and permanent statistics ignore it', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    let rides=[];activeProfileId='profile-a';profileRepository={readSettings(){return{distanceUnit:'km',dashboard:{}}},readRides(){return rides},prependRide(id,ride){rides.unshift(ride);return rides}};
+    startRideRecording(1000);state.ride.distance=500;finishRideRecording(2000,'riding-board');saveRide();
+    const saved={count:rides.length,total:ridingStoredStats(new Date(2000)).totalDistance};
+    startRideRecording(3000);state.ride.distance=700;finishRideRecording(4000,'riding-board');resetAfterRide();
+    return{saved,afterDiscard:{count:rides.length,total:ridingStoredStats(new Date(4000)).totalDistance,state:state.ride.recordingState,samples:state.ride.detailedSamples.length}};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{saved:{count:1,total:500},afterDiscard:{count:1,total:500,state:'idle',samples:0}});
+});
+
+test('Riding Board unit setting converts display only and keeps canonical ride values', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    activeProfileId='profile-a';profileRepository={readSettings(){return{distanceUnit:'mi',dashboard:{}}},readRides(){return[]}};
+    state.ride.distance=1609.344;state.ride.movingTime=300000;state.ride.maxSpeed=10;
+    const before={distance:state.ride.distance,movingTime:state.ride.movingTime,maxSpeed:state.ride.maxSpeed},values=ridingMetricValues(0).values;
+    renderRidingBoard(0);
+    return{before,after:{distance:state.ride.distance,movingTime:state.ride.movingTime,maxSpeed:state.ride.maxSpeed},values,gaugeUnit:$('.riding-reference-gauge text[y="466"]').textContent};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.before)),JSON.parse(JSON.stringify(result.after)));
+  assert.match(result.values.averageSpeed,/mph$/);
+  assert.match(result.values.averagePace,/min\/mi$/);
+  assert.equal(result.gaugeUnit,'mph');
 });

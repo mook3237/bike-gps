@@ -18,6 +18,14 @@
     return unit === 'mi' ? `${(value * 2.2369362921).toFixed(1)} mph` : `${(value * 3.6).toFixed(1)} km/h`;
   }
 
+  function formatPace(secondsPerKilometer, unit = 'km') {
+    const value = Number(secondsPerKilometer);
+    const suffix = unit === 'mi' ? 'min/mi' : 'min/km';
+    if (!Number.isFinite(value) || value <= 0) return `--:-- ${suffix}`;
+    const seconds = Math.round(unit === 'mi' ? value * METER_PER_MILE / 1000 : value);
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')} ${suffix}`;
+  }
+
   function formatClock(value, preference = 'device', locale, timeZone) {
     const options = { hour: '2-digit', minute: '2-digit', ...(timeZone ? { timeZone } : {}) };
     if (preference === '12h') options.hour12 = true;
@@ -121,5 +129,5 @@
     return { setEnabled, sync, release, isActive: () => Boolean(sentinel) };
   }
 
-  return { formatDistance, formatSpeed, formatClock, createProfilePhotoStore, resizeProfilePhoto, createWakeLockController };
+  return { formatDistance, formatSpeed, formatPace, formatClock, createProfilePhotoStore, resizeProfilePhoto, createWakeLockController };
 });

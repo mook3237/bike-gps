@@ -63,10 +63,10 @@ test('GPS speed is preferred and distance/time is the fallback', () => {
 });
 
 test('active riding time excludes paused duration', () => {
-  const state = { nav: { startedAt: 1000, pausedDuration: 2000, pausedAt: null } };
+  const state = { ride: { startedAt: 1000, endedAt: null, pausedDuration: 2000, pausedAt: null } };
   const { activeRideDuration } = loadFunctions(['activeRideDuration'], { state });
   assert.equal(activeRideDuration(10000), 7000);
-  state.nav.pausedAt = 8000;
+  state.ride.pausedAt = 8000;
   assert.equal(activeRideDuration(10000), 5000);
 });
 

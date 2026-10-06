@@ -306,6 +306,7 @@
         <h3>기록 메뉴</h3>
         <div class="menu-grid">
           <button id="ridingPauseBtn" type="button"><span>일시정지</span></button>
+          <button id="ridingSettingsBtn" type="button"><span>앱 설정</span></button>
         </div>
         <button id="ridingEndBtn" class="danger-btn" type="button">기록 종료</button>
       </section>
@@ -415,6 +416,14 @@
           <p>이번 주행 기록을 저장할까요?</p>
           <button id="saveRideBtn" class="primary-btn">저장하기</button>
           <button id="discardRideBtn" class="secondary-btn">저장하지 않기</button>
+        </div>
+      </section>
+
+      <section id="endNavigationRideModal" class="dialog-backdrop hidden" aria-hidden="true">
+        <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="endNavigationRideTitle">
+          <h2 id="endNavigationRideTitle">주행 기록도 종료하시겠습니까?</h2>
+          <button id="continueRideAfterNavigationBtn" class="secondary-btn" type="button">주행 계속</button>
+          <button id="endRideAfterNavigationBtn" class="danger-btn" type="button">주행 종료</button>
         </div>
       </section>
 

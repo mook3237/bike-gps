@@ -90,7 +90,7 @@ test('photo avatar metadata is normalized and replaced/deleted photo ids are cle
 
 test('display formatters convert values without mutating meter or meter-per-second inputs', () => {
   assert.ok(foundation, 'settings-foundation.js must exist');
-  const { formatDistance, formatSpeed } = foundation;
+  const { formatDistance, formatSpeed, formatPace } = foundation;
   const meters = 1609.344;
   const metersPerSecond = 10;
 
@@ -98,6 +98,9 @@ test('display formatters convert values without mutating meter or meter-per-seco
   assert.equal(formatDistance(meters, 'km'), '1.6 km');
   assert.equal(formatSpeed(metersPerSecond, 'mi'), '22.4 mph');
   assert.equal(formatSpeed(metersPerSecond, 'km'), '36.0 km/h');
+  assert.equal(formatPace(300, 'km'), '5:00 min/km');
+  assert.equal(formatPace(300, 'mi'), '8:03 min/mi');
+  assert.equal(formatPace(null, 'mi'), '--:-- min/mi');
   assert.equal(meters, 1609.344);
   assert.equal(metersPerSecond, 10);
 });

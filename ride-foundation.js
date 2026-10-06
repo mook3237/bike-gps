@@ -32,6 +32,9 @@
       distanceAnchor: null,
       distancePath: 0,
       movingTimePath: 0,
+      stationaryCandidateSince: null,
+      stationaryCandidatePosition: null,
+      stationaryCandidateUncertainty: null,
     };
   }
 
@@ -43,6 +46,9 @@
     motion.distanceAnchor = null;
     motion.distancePath = 0;
     motion.movingTimePath = 0;
+    motion.stationaryCandidateSince = null;
+    motion.stationaryCandidatePosition = null;
+    motion.stationaryCandidateUncertainty = null;
     if (resetPosition) {
       motion.lastPosition = null;
       motion.lastTimestamp = null;
@@ -98,6 +104,24 @@
     motion.speedWindow.push({ position, timestamp, accuracy: Number.isFinite(fix.accuracy) && fix.accuracy > 0 ? fix.accuracy : null });
     while (motion.speedWindow.length > 2 && timestamp - motion.speedWindow[0].timestamp > 6000) motion.speedWindow.shift();
     const evidence = movementWindowEvidence(motion.speedWindow);
+    const uncertainty = Number.isFinite(evidence.uncertainty) ? evidence.uncertainty : Math.max(3, Number(fix.accuracy) || 5);
+
+    if (!motion.lastPosition || distance > uncertainty) {
+      motion.stationaryCandidateSince = null;
+      motion.stationaryCandidatePosition = null;
+      motion.stationaryCandidateUncertainty = null;
+    } else if (motion.stationaryCandidateSince == null) {
+      motion.stationaryCandidateSince = timestamp;
+      motion.stationaryCandidatePosition = position;
+      motion.stationaryCandidateUncertainty = uncertainty;
+    } else {
+      const candidateUncertainty = Math.max(uncertainty, motion.stationaryCandidateUncertainty || 3);
+      if (haversineDistance(motion.stationaryCandidatePosition, position) > candidateUncertainty) {
+        motion.stationaryCandidateSince = null;
+        motion.stationaryCandidatePosition = null;
+        motion.stationaryCandidateUncertainty = null;
+      }
+    }
 
     if (!motion.moving) {
       if (evidence.moving) {
@@ -188,6 +212,20 @@
 
   function startRide(ride, now = Date.now()) {
     Object.assign(ride, createRideSession(), { recordingState: 'recording', startedAt: now });
+    return ride;
+  }
+
+  function ensureRideStarted(ride, now = Date.now()) {
+    if (!ride || !['recording', 'paused'].includes(ride.recordingState)) {
+      startRide(ride, now);
+      return true;
+    }
+    return false;
+  }
+
+  function discardRide(ride) {
+    if (!ride) return null;
+    Object.assign(ride, createRideSession());
     return ride;
   }
 
@@ -291,6 +329,68 @@
     };
   }
 
+  function createNavigationArrivalState() {
+    return {
+      candidateCount: 0,
+      candidateSince: null,
+      candidateQualified: false,
+      approached: false,
+      previousDistance: null,
+      previousUncertainty: null,
+      bestCandidateDistance: Infinity,
+      bestCandidateUncertainty: Infinity,
+      arrived: false,
+    };
+  }
+
+  function evaluateNavigationArrival(detectorState, observation) {
+    const state = { ...createNavigationArrivalState(), ...(detectorState || {}) };
+    if (state.arrived) return { state, arrived: true, candidate: true, reason: 'already-arrived' };
+    const timestamp = Number(observation?.timestamp);
+    const selectedDistance = Math.max(0, Number(observation?.selectedDistance));
+    const routeEndDistance = Math.max(0, Number(observation?.routeEndDistance));
+    const endpointOffset = Math.max(0, Number(observation?.endpointOffset));
+    const remainingRouteDistance = Math.max(0, Number(observation?.remainingRouteDistance));
+    const reportedAccuracy = Number(observation?.accuracy);
+    if (![timestamp, selectedDistance, routeEndDistance, endpointOffset, remainingRouteDistance, reportedAccuracy].every(Number.isFinite)) {
+      return { state, arrived: false, candidate: false, reason: 'invalid-observation' };
+    }
+    const uncertainty = Math.max(3, reportedAccuracy);
+    const targetDistance = Math.min(selectedDistance, routeEndDistance);
+    if (state.previousDistance != null && state.previousDistance - targetDistance > Math.max(uncertainty, state.previousUncertainty || 3)) state.approached = true;
+    state.previousDistance = targetDistance;
+    state.previousUncertainty = uncertainty;
+
+    const physicalCandidate = selectedDistance <= endpointOffset + uncertainty || routeEndDistance <= uncertainty;
+    const routeCandidate = remainingRouteDistance <= endpointOffset + uncertainty * 2;
+    const candidate = physicalCandidate && routeCandidate;
+    if (candidate) {
+      if (!state.candidateCount) state.candidateSince = timestamp;
+      state.candidateCount += 1;
+      if (targetDistance < state.bestCandidateDistance) {
+        state.bestCandidateDistance = targetDistance;
+        state.bestCandidateUncertainty = uncertainty;
+      }
+      if (state.candidateCount >= 3 && timestamp - state.candidateSince >= 2000) state.candidateQualified = true;
+    } else if (!state.candidateQualified) {
+      state.candidateCount = 0;
+      state.candidateSince = null;
+      state.bestCandidateDistance = Infinity;
+      state.bestCandidateUncertainty = Infinity;
+    }
+
+    const stable = state.candidateQualified
+      && observation.moving === false
+      && Number.isFinite(observation.stationaryCandidateSince)
+      && timestamp - observation.stationaryCandidateSince >= 2000;
+    const passed = state.candidateQualified
+      && state.approached
+      && routeCandidate
+      && targetDistance - state.bestCandidateDistance > Math.max(uncertainty, state.bestCandidateUncertainty);
+    state.arrived = stable || passed;
+    return { state, arrived: state.arrived, candidate, reason: stable ? 'stable' : passed ? 'passed' : candidate ? 'candidate' : 'outside' };
+  }
+
   function normalizePosition(position) {
     return {
       latitude: position.coords.latitude,
@@ -347,8 +447,12 @@
     GPS_JUMP_MAX_M,
     calculateBestKilometer,
     createGpsSource,
+    createNavigationArrivalState,
     createMotionState,
     createRideSession,
+    discardRide,
+    ensureRideStarted,
+    evaluateNavigationArrival,
     elapsedRideTime,
     finishRide,
     haversineDistance,
