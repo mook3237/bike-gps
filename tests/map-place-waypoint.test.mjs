@@ -2997,6 +2997,32 @@ test('Riding Board uses one shared GPS watcher and opening it does not start rec
   assert.equal(result.afterNavigationStarts,1);
 });
 
+test('Riding Board interactive overlays stay above the board and suppress only their iOS callouts', () => {
+  const boardRule=[...styles.matchAll(/\.riding-board\{([^}]*)\}/g)].find(match=>match[1].includes('--riding-u'))?.[1]||'';
+  const boardZ=Number(boardRule.match(/z-index:(\d+)/)?.[1]);
+  const overlayZ=Number(styles.match(/#ridingMenu,\s*#ridingMetricDialog,\s*#saveModal\{[^}]*z-index:(\d+)/)?.[1]);
+  assert.ok(overlayZ>boardZ,'Riding Board overlays must stack above the board');
+  assert.match(styles,/#ridingBoardMenu,\s*#ridingBoardMenu \*\{[^}]*-webkit-user-select:none[^}]*user-select:none[^}]*-webkit-touch-callout:none/);
+  assert.match(styles,/\.riding-metric-grid \[data-riding-metric\]\{[^}]*touch-action:pan-y[^}]*-webkit-user-select:none[^}]*user-select:none[^}]*-webkit-touch-callout:none/);
+  assert.match(styles,/\.riding-metric-grid \[data-riding-metric\] \*\{[^}]*-webkit-user-select:none[^}]*user-select:none[^}]*-webkit-touch-callout:none/);
+  const selectionSelectors=[...styles.matchAll(/([^{}]+)\{[^}]*-webkit-user-select:none[^}]*\}/g)].flatMap(match=>match[1].split(',').map(selector=>selector.trim()));
+  assert.equal(selectionSelectors.includes('*'),false);
+});
+
+test('Riding Board hamburger opens its menu and reaches the existing shared App Settings screen', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    $('#ridingBoardTabBtn').onclick();
+    $('#ridingBoardMenu').onclick();
+    const menuOpen=!$('#ridingMenu').classList.contains('hidden');
+    $('#appSettingsScreen').setAttribute=()=>{};
+    history.replaceState=()=>{};
+    $('#ridingSettingsBtn').onclick();
+    return{menuOpen,screen:state.screen,settingsBaseScreen,settingsOpen:!$('#appSettingsScreen').classList.contains('hidden')};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{menuOpen:true,screen:'riding-board',settingsBaseScreen:'riding-board',settingsOpen:true});
+});
+
 test('Riding Board recording starts zeroed and survives leaving the board', () => {
   const context=loadApp('',false,true);
   const result=vm.runInContext(`(()=>{
@@ -3021,10 +3047,30 @@ test('metric long press ignores taps and cancels movement before firing at three
     const afterMove=holds;
     card.dispatch('pointerdown',{pointerId:4,clientX:10,clientY:10});ui.ridingBoard.dispatch('scroll');runPendingTimers();
     const afterScroll=holds;
+    card.dispatch('pointerdown',{pointerId:5,clientX:10,clientY:10});card.dispatch('pointercancel',{pointerId:5});runPendingTimers();
+    const afterPointerCancel=holds;
     card.dispatch('pointerdown',{pointerId:3,clientX:10,clientY:10});runPendingTimers();
-    return{afterTap,afterMove,afterScroll,afterHold:holds};
+    return{afterTap,afterMove,afterScroll,afterPointerCancel,afterHold:holds};
   })()`,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)),{afterTap:0,afterMove:0,afterScroll:0,afterHold:1});
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{afterTap:0,afterMove:0,afterScroll:0,afterPointerCancel:0,afterHold:1});
+});
+
+test('Riding Board Record End keeps its screen through Save and Dont Save', () => {
+  const run=action=>{
+    const context=loadApp('',false,true);
+    return vm.runInContext(`(()=>{
+      let rides=[];activeProfileId='profile-a';profileRepository={readSettings(){return{distanceUnit:'km',dashboard:{}}},readRides(){return rides},prependRide(id,ride){rides.unshift(ride);return rides}};
+      $('#ridingBoardTabBtn').onclick();
+      $('#ridingRecordPrototypeBtn').onclick();
+      $('#ridingRecordPrototypeBtn').onclick();
+      const ended={screen:state.screen,boardVisible:!$('#ridingBoard').classList.contains('hidden'),saveOpen:!$('#saveModal').classList.contains('hidden'),origin:pendingRideOrigin};
+      $('#${action}RideBtn').onclick();
+      return{ended,after:{screen:state.screen,boardVisible:!$('#ridingBoard').classList.contains('hidden'),saveOpen:!$('#saveModal').classList.contains('hidden'),rideState:state.ride.recordingState,saved:rides.length}};
+    })()`,context);
+  };
+  const saved=JSON.parse(JSON.stringify(run('save'))),discarded=JSON.parse(JSON.stringify(run('discard')));
+  assert.deepEqual(saved,{ended:{screen:'riding-board',boardVisible:true,saveOpen:true,origin:'riding-board'},after:{screen:'riding-board',boardVisible:true,saveOpen:false,rideState:'idle',saved:1}});
+  assert.deepEqual(discarded,{ended:{screen:'riding-board',boardVisible:true,saveOpen:true,origin:'riding-board'},after:{screen:'riding-board',boardVisible:true,saveOpen:false,rideState:'idle',saved:0}});
 });
 
 test('metric selection swaps occupied slots and persists the complete unique layout', () => {

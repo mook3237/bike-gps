@@ -123,6 +123,32 @@
   color:#fff;
 }
 
+#ridingMenu,
+#ridingMetricDialog,
+#saveModal{
+  z-index:40;
+}
+
+#ridingBoardMenu,
+#ridingBoardMenu *{
+  -webkit-user-select:none;
+  user-select:none;
+  -webkit-touch-callout:none;
+}
+
+.riding-metric-grid [data-riding-metric]{
+  touch-action:pan-y;
+  -webkit-user-select:none;
+  user-select:none;
+  -webkit-touch-callout:none;
+}
+
+.riding-metric-grid [data-riding-metric] *{
+  -webkit-user-select:none;
+  user-select:none;
+  -webkit-touch-callout:none;
+}
+
 .riding-board-header{
   width:calc(var(--riding-u) * 852);
   height:calc(var(--riding-u) * 112);
