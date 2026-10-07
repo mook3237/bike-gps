@@ -146,7 +146,7 @@
 
 #ridingMenu .riding-menu-drawer{
   position:relative;
-  width:min(78vw,320px);
+  width:min(39vw,160px);
   height:100%;
   padding:calc(env(safe-area-inset-top) + 20px) calc(env(safe-area-inset-right) + 18px) calc(env(safe-area-inset-bottom) + 20px) 18px;
   overflow-y:auto;

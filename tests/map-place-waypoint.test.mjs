@@ -116,7 +116,7 @@ function loadApp(search = '', deferTimers = false, staticDom = false) {
   const context = vm.createContext({
     console, document, localStorage: { getItem() { return null; }, setItem() {} },
     AbortController, URLSearchParams, innerHeight: 800, innerWidth: 390,
-    setTimeout(fn) { if (typeof fn !== 'function') return 1; const id=nextTimerId++; if (deferTimers) pendingTimers.push({id,fn}); else fn(); return id; }, clearTimeout(id) { cancelledTimers.add(id); },
+    setTimeout(fn, delay = 0) { if (typeof fn !== 'function') return 1; const id=nextTimerId++; if (deferTimers) pendingTimers.push({id,fn,delay}); else fn(); return id; }, clearTimeout(id) { cancelledTimers.add(id); },
     history: { pushState() {}, back() {} },
     navigator: { geolocation: { getCurrentPosition() {}, watchPosition(success) { nativeWatchStarts += 1; nativeWatchSuccess = success; return 1; }, clearWatch() {} } },
     fetch: async () => ({ ok: false, json: async () => ({ error: 'test' }) }),
@@ -137,6 +137,7 @@ function loadApp(search = '', deferTimers = false, staticDom = false) {
   context.testNativeWatchStarts = () => nativeWatchStarts;
   context.emitNativePosition = position => nativeWatchSuccess?.(position);
   context.runPendingTimers = () => pendingTimers.splice(0).forEach(timer => { if (!cancelledTimers.has(timer.id)) timer.fn(); });
+  context.testPendingTimerDelays = () => pendingTimers.filter(timer => !cancelledTimers.has(timer.id)).map(timer => timer.delay);
   vm.runInContext(rideFoundationSource, context, { filename: 'ride-foundation.js' });
   vm.runInContext(settingsFoundationSource, context, { filename: 'settings-foundation.js' });
   vm.runInContext(appSource, context, { filename: 'app.js' });
@@ -3005,7 +3006,7 @@ test('Riding Board interactive overlays stay above the board and suppress only t
   assert.ok(overlayZ>boardZ,'Riding Board overlays must stack above the board');
   assert.ok(dialogZ>boardZ,'Riding Board dialogs must stack above the board');
   assert.match(styles,/#ridingMenu\{[^}]*position:fixed[^}]*inset:0[^}]*background:[^;}]*rgba[^}]*z-index:40/);
-  assert.match(styles,/#ridingMenu \.riding-menu-drawer\{[^}]*width:min\(78vw,320px\)[^}]*transform:translateX\(0\)/);
+  assert.match(styles,/#ridingMenu \.riding-menu-drawer\{[^}]*width:min\(39vw,160px\)[^}]*transform:translateX\(0\)/);
   assert.match(styles,/#ridingMenu\.hidden \.riding-menu-drawer\{[^}]*transform:translateX\(100%\)/);
   assert.match(styles,/@media \(prefers-reduced-motion:reduce\)\{[^}]*#ridingMenu[^}]*transition:none/);
   assert.match(styles,/#ridingBoardMenu,\s*#ridingBoardMenu \*\{[^}]*-webkit-user-select:none[^}]*user-select:none[^}]*-webkit-touch-callout:none/);
@@ -3103,7 +3104,7 @@ test('Riding Board recording starts zeroed and survives leaving the board', () =
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{started:{state:'recording',distance:0,movingTime:0},afterLeave:'recording'});
 });
 
-test('metric long press ignores taps and cancels movement before firing at three seconds', () => {
+test('metric long press ignores taps and cancels movement before firing at one second', () => {
   const context=loadApp('',true,true);
   const result=vm.runInContext(`(()=>{
     const card=document.createElement('article');let holds=0;
@@ -3116,10 +3117,10 @@ test('metric long press ignores taps and cancels movement before firing at three
     const afterScroll=holds;
     card.dispatch('pointerdown',{pointerId:5,clientX:10,clientY:10});card.dispatch('pointercancel',{pointerId:5});runPendingTimers();
     const afterPointerCancel=holds;
-    card.dispatch('pointerdown',{pointerId:3,clientX:10,clientY:10});runPendingTimers();
-    return{afterTap,afterMove,afterScroll,afterPointerCancel,afterHold:holds};
+    card.dispatch('pointerdown',{pointerId:3,clientX:10,clientY:10});const holdDelay=testPendingTimerDelays().at(-1);runPendingTimers();
+    return{afterTap,afterMove,afterScroll,afterPointerCancel,holdDelay,afterHold:holds};
   })()`,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)),{afterTap:0,afterMove:0,afterScroll:0,afterPointerCancel:0,afterHold:1});
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{afterTap:0,afterMove:0,afterScroll:0,afterPointerCancel:0,holdDelay:1000,afterHold:1});
 });
 
 test('Riding Board Record End keeps its screen through Save and Dont Save', () => {
