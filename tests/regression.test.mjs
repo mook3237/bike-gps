@@ -66,6 +66,9 @@ test('history restoration rerenders results and place content in the existing SP
     clearSearchMarkers: () => calls.push(['clearSearchMarkers']),
     showMarkers: places => calls.push(['markers', places]),
     drawRoutes: () => calls.push(['drawRoutes']),
+    drawRouteEndpointMarkers: () => calls.push(['routeEndpointMarkers']),
+    restoreNavigationSearchViewport: () => calls.push(['restoreNavigationSearchViewport']),
+    setGpsMarker: () => calls.push(['gpsMarker']),
     renderRouteCards: () => calls.push(['routeCards']),
     startWatch: () => calls.push(['startWatch']),
     updateNavHud: value => calls.push(['navHud', value]),
@@ -85,9 +88,7 @@ test('history restoration rerenders results and place content in the existing SP
   assert.equal(calls.some(call => call[0] === 'routeCards'), true);
   assert.equal(calls.some(call => call[0] === 'startWatch'), true);
   assert.equal(calls.some(call => call[0] === 'navHud'), true);
-  assert.match(appSource, /\$\('#routeBack'\)\.onclick=\(\)=>history\.back\(\)/);
-  assert.match(appSource, /renderScreen\('results',true,\{places,q\}\)/);
-  assert.match(appSource, /renderScreen\('place',true,\{place:p\}\)/);
+  assert.match(appSource, /\$\('#cancelRoutePreviewBtn'\)\.onclick=\(\)=>\{resetRouteToMap\(\);history\.replaceState/);
 });
 
 test('popstate cancels pending work and restores entry-specific content', () => {
@@ -206,7 +207,7 @@ test('bicycle route modes stay parallel, bicycle-only, ordered, and timed', asyn
       assert.doesNotMatch(url, /\/v1\/directions|\/v2\/directions|car/i);
       assert.equal(new URL(url).searchParams.get('via_x'), '127.1,128.1');
     }
-    pending.forEach(resolve => resolve({ok:true,status:200,json:async()=>({route:{properties:{totalDistance:10,totalTime:20}}})}));
+    pending.forEach(resolve => resolve({ok:true,status:200,json:async()=>({route:{properties:{totalDistance:10,totalTime:20},coordinates:[[127,37],[127.1,37.1]]}})}));
     await handling;
     assert.equal(output.status, 200);
     assert.equal(output.body.performance.execution, 'parallel');
@@ -261,11 +262,66 @@ test('bicycle total failure returns timing and never falls back to automobile ro
 
 test('initial, automatic, manual, and navigation preview routing share the bicycle proxy', () => {
   assert.match(appSource, /async function loadRoutes\(\)[^\n]*fetchRoutes\(/);
-  assert.match(appSource, /async function recalculateNavigationRoute\(reason='manual'\)[^\n]*confirmedNavigationWaypoints\(\)[^\n]*fetchRoutes\(state\.currentLocation,state\.destination,waypoints/);
+  assert.match(appSource, /async function recalculateNavigationRoute\(reason='manual'\)[^\n]*confirmedNavigationWaypoints\(\)[^\n]*fetchRoutes\(requestOrigin,state\.destination,waypoints/);
   assert.match(appSource, /async function beginNavigationRoutePreview\(kind,place(?:=null)?\)[^\n]*fetchRoutes\(origin,destination,waypoints/);
   assert.match(appSource, /#navRecalcBtn'\)\.onclick=\(\)=>recalculateNavigationRoute\('manual'\)/);
   assert.match(appSource, /recalculateNavigationRoute\('off-route'\)/);
   assert.doesNotMatch(appSource, /dapi\.kakao\.com\/v\d+\/routing|\/v1\/directions|\/v2\/directions/);
+});
+
+test('reroute first-usable mode does not wait for a slower optional Kakao route', async () => {
+  const originalFetch=globalThis.fetch,originalKey=process.env.KAKAO_REST_API_KEY;
+  process.env.KAKAO_REST_API_KEY='test-key';
+  let resolveSlow;
+  globalThis.fetch=async url=>{
+    const mode=new URL(String(url)).searchParams.get('route_mode');
+    if(mode==='BIKE_ONLY')return new Promise(resolve=>{resolveSlow=()=>resolve({ok:true,status:200,json:async()=>({route:{properties:{totalDistance:30,totalTime:40},coordinates:[[127,37],[127.1,37.1]]}})})});
+    if(mode==='SHORTEST')return{ok:true,status:200,json:async()=>({route:{properties:{totalDistance:20,totalTime:30},coordinates:[[127,37],[127.1,37.1]]}})};
+    return{ok:false,status:404,json:async()=>({})};
+  };
+  try{
+    const handler=await apiHandler('api/bicycle-route.js'),{output,response}=mockResponse();
+    const request=handler({method:'GET',query:{start_x:'127',start_y:'37',end_x:'127.1',end_y:'37.1',first_usable:'1'}},response);
+    const settledEarly=await Promise.race([request.then(()=>true),new Promise(resolve=>setTimeout(()=>resolve(false),0))]);
+    if(!settledEarly)resolveSlow?.();
+    await request;
+    assert.equal(settledEarly,true);
+    assert.equal(output.status,200);
+    assert.equal(output.body.routes.length,1);
+    assert.equal(output.body.routes[0].routeMode,'SHORTEST');
+  }finally{globalThis.fetch=originalFetch;if(originalKey===undefined)delete process.env.KAKAO_REST_API_KEY;else process.env.KAKAO_REST_API_KEY=originalKey}
+});
+
+test('reroute first-usable mode ignores an undrawable response and keeps waiting for a usable route', async () => {
+  const originalFetch=globalThis.fetch,originalKey=process.env.KAKAO_REST_API_KEY;
+  process.env.KAKAO_REST_API_KEY='test-key';
+  globalThis.fetch=async url=>{
+    const mode=new URL(String(url)).searchParams.get('route_mode');
+    if(mode==='BIKE_ONLY')return{ok:true,status:200,json:async()=>({route:{properties:{totalDistance:10,totalTime:20},legs:[]}})};
+    if(mode==='SHORTEST')return{ok:true,status:200,json:async()=>({route:{properties:{totalDistance:20,totalTime:30},coordinates:[[127,37],[127.1,37.1]]}})};
+    return{ok:false,status:404,json:async()=>({})};
+  };
+  try{
+    const handler=await apiHandler('api/bicycle-route.js'),{output,response}=mockResponse();
+    await handler({method:'GET',query:{start_x:'127',start_y:'37',end_x:'127.1',end_y:'37.1',first_usable:'1'}},response);
+    assert.equal(output.status,200);
+    assert.equal(output.body.routes[0].routeMode,'SHORTEST');
+  }finally{globalThis.fetch=originalFetch;if(originalKey===undefined)delete process.env.KAKAO_REST_API_KEY;else process.env.KAKAO_REST_API_KEY=originalKey}
+});
+
+test('Kakao route requests have a bounded abort timeout', async () => {
+  const originalFetch=globalThis.fetch,originalSetTimeout=globalThis.setTimeout,originalClearTimeout=globalThis.clearTimeout,originalKey=process.env.KAKAO_REST_API_KEY;
+  process.env.KAKAO_REST_API_KEY='test-key';
+  const signals=[];
+  globalThis.setTimeout=fn=>{queueMicrotask(fn);return 1};globalThis.clearTimeout=()=>{};
+  globalThis.fetch=(url,options={})=>new Promise((resolve,reject)=>{signals.push(options.signal);options.signal?.addEventListener('abort',()=>reject(new Error('aborted')))});
+  try{
+    const handler=await apiHandler('api/bicycle-route.js'),{output,response}=mockResponse();
+    await handler({method:'GET',query:{start_x:'127',start_y:'37',end_x:'127.1',end_y:'37.1'}},response);
+    assert.equal(output.status,502);
+    assert.equal(signals.length,3);
+    assert.equal(signals.every(signal=>signal?.aborted),true);
+  }finally{globalThis.fetch=originalFetch;globalThis.setTimeout=originalSetTimeout;globalThis.clearTimeout=originalClearTimeout;if(originalKey===undefined)delete process.env.KAKAO_REST_API_KEY;else process.env.KAKAO_REST_API_KEY=originalKey}
 });
 
 test('six: bicycle route API forwards ordered waypoint coordinates', async () => {
@@ -275,7 +331,7 @@ test('six: bicycle route API forwards ordered waypoint coordinates', async () =>
   const urls = [];
   globalThis.fetch = async url => {
     urls.push(String(url));
-    return { ok: true, status: 200, json: async () => ({ route: { properties: { totalDistance: 10, totalTime: 20 } } }) };
+    return { ok: true, status: 200, json: async () => ({ route: { properties: { totalDistance: 10, totalTime: 20 }, coordinates:[[127,37],[127.1,37.1]] } }) };
   };
   try {
     const handler = await apiHandler('api/bicycle-route.js');

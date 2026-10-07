@@ -1,5 +1,5 @@
 export default async function handler(req,res){
- const clock=()=>globalThis.performance?.now?.()??Date.now(),requestReceived=clock(),performance={receivedAt:0,modes:{},kakaoWaitingMs:0,serverProcessingMs:0,responseReadyMs:0,serverTotalMs:0,execution:'parallel'};
+ const clock=()=>globalThis.performance?.now?.()??Date.now(),requestReceived=clock(),firstUsable=req.query?.first_usable==='1',performance={receivedAt:0,modes:{},kakaoWaitingMs:0,serverProcessingMs:0,responseReadyMs:0,serverTotalMs:0,execution:firstUsable?'first-usable':'parallel'};
  const finishPerformance=()=>{performance.responseReadyMs=clock()-requestReceived;performance.serverTotalMs=performance.responseReadyMs;const timings=Object.values(performance.modes);if(timings.length){const firstStart=Math.min(...timings.map(timing=>timing.startMs)),lastEnd=Math.max(...timings.map(timing=>timing.endMs));performance.kakaoWaitingMs=Math.max(0,lastEnd-firstStart)}performance.serverProcessingMs=Math.max(0,performance.serverTotalMs-performance.kakaoWaitingMs);return performance};
  if(req.method!=='GET')return res.status(405).json({error:'Method Not Allowed'});
  const key=process.env.KAKAO_REST_API_KEY;if(!key)return res.status(500).json({error:'KAKAO_REST_API_KEY 환경변수가 없습니다.'});
@@ -8,19 +8,23 @@ export default async function handler(req,res){
  const viaX=String(via_x).split(',').filter(Boolean),viaY=String(via_y).split(',').filter(Boolean);if(viaX.length!==viaY.length||viaX.length>5)return res.status(400).json({error:'경유지는 최대 5개의 X/Y 좌표가 필요합니다.'});
  const viaCoords=viaX.flatMap((x,index)=>[+x,+viaY[index]]);if(!viaCoords.every((value,index)=>Number.isFinite(value)&&Math.abs(value)<=(index%2?90:180)))return res.status(400).json({error:'유효한 경유지 좌표가 필요합니다.'});
  const defs=[['BIKE_ONLY','자전거도로 우선'],['SHORTEST','최단 경로'],['ACCESSIBLE','편안한길']];
- const errors=[];
+ const errors=[],activeRequests=new Map(),KAKAO_TIMEOUT_MS=8000;
+ const hasUsableGeometry=route=>{const points=[];const visit=value=>{if(points.length>1||value==null)return;if(Array.isArray(value)){if(value.length>=4&&value.every(Number.isFinite)){for(let index=0;index+1<value.length&&points.length<2;index+=2)points.push([value[index],value[index+1]])}else if(value.length>=2&&Number.isFinite(value[0])&&Number.isFinite(value[1]))points.push([value[0],value[1]]);else value.forEach(visit)}else if(typeof value==='object')Object.entries(value).forEach(([key,child])=>{if(/coordinates|points|vertexes|path|roads|sections|legs|steps/i.test(key))visit(child)})};visit(route);return points.length>1&&(points[0][0]!==points[1][0]||points[0][1]!==points[1][1])};
  const one=async([mode,label])=>{
-   const started=clock();performance.modes[mode]={startMs:started-requestReceived,endMs:0,durationMs:0};
+   const started=clock(),controller=new AbortController(),timer=setTimeout(()=>controller.abort(),KAKAO_TIMEOUT_MS);activeRequests.set(controller,timer);performance.modes[mode]={startMs:started-requestReceived,endMs:0,durationMs:0};
    try{
      const p=new URLSearchParams({start_x,start_y,end_x,end_y,route_mode:mode,input_coord:'WGS84',output_coord:'WGS84'});if(viaX.length){p.set('via_x',viaX.join(','));p.set('via_y',viaY.join(','));if(v_name)p.set('v_name',String(v_name).split(',').slice(0,5).join(','))}
-     const r=await fetch('https://dapi.kakao.com/v2/routing/bicycle?'+p,{headers:{Authorization:'KakaoAK '+key}});
+     const r=await fetch('https://dapi.kakao.com/v2/routing/bicycle?'+p,{headers:{Authorization:'KakaoAK '+key},signal:controller.signal});
      const d=await r.json().catch(()=>({}));
-     if(!r.ok||!d.route){errors.push({mode,status:r.status,message:d.message||d.msg||'route 없음'});return null}
-     return {routeMode:mode,label,totalDistance:d.route.properties?.totalDistance||d.route.summary?.distance||0,totalTime:d.route.properties?.totalTime||d.route.summary?.duration||0,route:d.route}
-   }catch(e){errors.push({mode,status:502,message:e.message||'경로 API 연결 실패'});return null}
-   finally{const ended=clock(),timing=performance.modes[mode];timing.endMs=ended-requestReceived;timing.durationMs=ended-started}
+     const totalDistance=d.route?.properties?.totalDistance||d.route?.summary?.distance||0;
+     if(!r.ok||!d.route||!(totalDistance>0)||!hasUsableGeometry(d.route)){errors.push({mode,status:r.status,message:d.message||d.msg||'사용 가능한 route 없음'});return null}
+     return {routeMode:mode,label,totalDistance,totalTime:d.route.properties?.totalTime||d.route.summary?.duration||0,route:d.route}
+   }catch(e){errors.push({mode,status:e?.name==='AbortError'?504:502,message:e?.name==='AbortError'?'경로 API 시간 초과':e.message||'경로 API 연결 실패'});return null}
+   finally{clearTimeout(timer);activeRequests.delete(controller);const ended=clock(),timing=performance.modes[mode];timing.endMs=ended-requestReceived;timing.durationMs=ended-started}
  };
- const routes=(await Promise.all(defs.map(one))).filter(Boolean);
+ const pending=defs.map(one);let routes;
+ if(firstUsable){try{const route=await Promise.any(pending.map(request=>request.then(value=>value||Promise.reject(new Error('unusable route')))));routes=[route]}catch{routes=[]}finally{activeRequests.forEach((timer,controller)=>{clearTimeout(timer);controller.abort()});activeRequests.clear()}}
+ else routes=(await Promise.all(pending)).filter(Boolean);
  if(!routes.length)return res.status(502).json({error:'자전거 경로를 찾을 수 없음',details:errors,performance:finishPerformance()});
  res.status(200).json({routes,errors,performance:finishPerformance()});
 }

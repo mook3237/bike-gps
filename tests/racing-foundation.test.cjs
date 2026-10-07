@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const Racing = require('../racing-foundation.js');
+const Ride = require('../ride-foundation.js');
 
 const metersPoint = meters => ({ latitude: 0, longitude: meters / 111195 });
 const raceRoute = [metersPoint(0), metersPoint(100), metersPoint(200)];
@@ -85,4 +86,23 @@ test('saved-ride comparison uses historical time at the current along-route prog
 test('Racing foundation owns no GPS watcher, Ride recorder, motion detector, or independent timer', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'racing-foundation.js'), 'utf8');
   assert.doesNotMatch(source, /watchPosition|geolocation|createRideSession|ingestRideFix|processMotionFix|setInterval|setTimeout/);
+});
+
+test('Navigation and future Racing visuals share one FAST observation while official progress stays authoritative', () => {
+  let starts=0,emit;
+  const source=Ride.createGpsSource({
+    watchPosition(success){starts+=1;emit=success;return 1},
+    clearWatch(){},
+  },undefined,{now:()=>1000});
+  const visual=[];
+  source.subscribe('navigation',(fix,fast)=>visual.push(['navigation',fast]));
+  source.subscribe('racing-visual',(fix,fast)=>visual.push(['racing',fast]));
+  emit({timestamp:1000,coords:{...metersPoint(100),accuracy:3,speed:10,heading:90}});
+
+  const race=Racing.createRaceSession({route:raceRoute,target:Racing.createTargetSpeedTarget(5),currentMovingTime:0});
+  const official=Racing.updateRace(race,{currentProgressDistance:0,currentMovingTime:0});
+  assert.equal(starts,1);
+  assert.strictEqual(visual[0][1],visual[1][1]);
+  assert.equal(visual[0][1].position.longitude,metersPoint(100).longitude);
+  assert.equal(official.currentRouteProgress,0);
 });

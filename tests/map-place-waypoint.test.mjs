@@ -2981,6 +2981,73 @@ test('riding board opens from recorder tab and returns to the map with responsiv
   assert.match(appSource,/renderRidingGauge\(/);
 });
 
+test('a materially stale reroute response is retired and followed once from the latest FAST position without cooldown', async () => {
+  const context=loadApp();installConfirmedWaypointFixture(context);
+  const result=await vm.runInContext(`(async()=>{
+    startNavigation();
+    const oldOrigin=state.currentLocation,moved={id:'moved',name:'Moved',latitude:37.01,longitude:127.2};
+    state.nav.fastObservation={sequence:1,timestamp:1000,receivedAt:1000,position:{latitude:oldOrigin.latitude,longitude:oldOrigin.longitude,accuracy:3},speed:{mps:6,source:'gps',valid:true},heading:{degrees:90,source:'gps'},quality:{fresh:true,monotonic:true,plausiblePosition:true}};
+    const stale={id:'stale',routeMode:'BIKE_ONLY',totalDistance:1500,totalTime:700,_points:[oldOrigin,state.destination],_steps:[]};
+    const fresh={id:'fresh',routeMode:'BIKE_ONLY',totalDistance:1400,totalTime:650,_points:[moved,state.destination],_steps:[]};
+    const requests=[],resolvers=[];
+    fetchRoutes=(origin)=>{requests.push(origin);return new Promise(resolve=>resolvers.push(resolve))};
+    prepareRoutes=routes=>routes;finishRoutePerformance=()=>{};
+    const pending=recalculateNavigationRoute('off-route');
+    state.currentLocation=moved;
+    state.nav.fastObservation={sequence:2,timestamp:2000,receivedAt:2000,position:{latitude:moved.latitude,longitude:moved.longitude,accuracy:3},speed:{mps:6,source:'gps',valid:true},heading:{degrees:90,source:'gps'},quality:{fresh:true,monotonic:true,plausiblePosition:true}};
+    state.nav.lastRecalcAt=Date.now();
+    resolvers[0]([stale]);
+    await Promise.resolve();await Promise.resolve();
+    const staleInstalled=state.routes[state.selectedRoute]?.id==='stale';
+    if(resolvers[1])resolvers[1]([fresh]);
+    await pending;
+    return {requests:requests.map(point=>point.longitude),staleInstalled,route:state.routes[state.selectedRoute]?.id,recalculating:state.nav.recalculating};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{requests:[127,127.2],staleInstalled:false,route:'fresh',recalculating:false});
+});
+
+test('reroute success failure and stale retirement all clear their visible status', async () => {
+  const context=loadApp('',true);installConfirmedWaypointFixture(context);
+  const result=await vm.runInContext(`(async()=>{
+    startNavigation();prepareRoutes=routes=>routes;finishRoutePerformance=()=>{};
+    fetchRoutes=async()=>[makeLifecycleRoute('success')];
+    await recalculateNavigationRoute('manual');const successTerminal=$('#navRouteStatus').textContent;runPendingTimers();const successCleared=$('#navRouteStatus').textContent;
+    fetchRoutes=async()=>{throw new Error('offline')};
+    await recalculateNavigationRoute('manual');const failureTerminal=$('#navRouteStatus').textContent;runPendingTimers();const failureCleared=$('#navRouteStatus').textContent;
+    return {successTerminal,successCleared,failureTerminal,failureCleared,recalculating:state.nav.recalculating};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{successTerminal:'새 경로 적용 완료',successCleared:'',failureTerminal:'재탐색 실패',failureCleared:'',recalculating:false});
+});
+
+test('reroute timeout and superseded response both release status ownership', async () => {
+  const context=loadApp('',true);installConfirmedWaypointFixture(context);
+  const result=await vm.runInContext(`(async()=>{
+    startNavigation();
+    fetch=(url,{signal}={})=>new Promise((resolve,reject)=>signal?.addEventListener('abort',()=>{const error=new Error('aborted');error.name='AbortError';reject(error)}));
+    const timedOut=recalculateNavigationRoute('manual');runPendingTimers();await timedOut;
+    const timeoutTerminal=$('#navRouteStatus').textContent;runPendingTimers();const timeoutCleared=$('#navRouteStatus').textContent;
+    let resolveOld;fetchRoutes=()=>new Promise(resolve=>{resolveOld=resolve});prepareRoutes=routes=>routes;
+    const old=recalculateNavigationRoute('manual');
+    state.routes=[makeLifecycleRoute('replacement')];state.selectedRoute=0;startNavigation();
+    resolveOld([makeLifecycleRoute('old')]);await old;
+    return {timeoutTerminal,timeoutCleared,supersededStatus:$('#navRouteStatus').textContent};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{timeoutTerminal:'재탐색 실패',timeoutCleared:'',supersededStatus:''});
+});
+
+test('a superseded reroute failure cannot release a newer route request lock', async () => {
+  const context=loadApp();installConfirmedWaypointFixture(context);
+  const result=await vm.runInContext(`(async()=>{
+    startNavigation();
+    let rejectOld;fetchRoutes=()=>new Promise((resolve,reject)=>{rejectOld=reject});
+    const old=recalculateNavigationRoute('manual');
+    state.routeSeq++;state.nav.recalculating=true;
+    rejectOld(new Error('old request failed'));await old;
+    return {recalculating:state.nav.recalculating,status:$('#navRouteStatus').textContent};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{recalculating:true,status:''});
+});
+
 test('Riding Board uses one shared GPS watcher and opening it does not start recording', () => {
   const context=loadApp('',false,true);
   const result=vm.runInContext(`(()=>{

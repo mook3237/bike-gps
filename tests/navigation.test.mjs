@@ -52,7 +52,7 @@ test('turn direction falls back to path angle only when guidance has no turn', (
   ];
   assert.match(c.navigationInstruction(steps, 0), /좌회전/);
   steps[0].guidance = '우회전 후 이동';
-  assert.equal(c.navigationInstruction(steps, 0), '우회전 후 이동');
+  assert.equal(c.navigationInstruction(steps, 0), '우회전');
 });
 
 test('GPS speed is preferred and distance/time is the fallback', () => {
@@ -79,7 +79,7 @@ test('off-route thresholds and cooldown are adjustable constants', () => {
 });
 
 test('Navigation has dedicated guidance, speed, follow, reroute and toggle controls', () => {
-  for (const id of ['nextTurnText', 'speedText', 'navLocateBtn', 'navRecalcBtn', 'navInfoToggle', 'navPrimaryLabel', 'navPrimaryValue']) {
+  for (const id of ['nextTurnText', 'speedValue', 'speedUnit', 'navLocateBtn', 'navRecalcBtn', 'navInfoToggle', 'navPrimaryLabel', 'navPrimaryValue']) {
     assert.match(html, new RegExp(`id="${id}"`));
   }
   assert.match(app, /navigation-active/);

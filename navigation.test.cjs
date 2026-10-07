@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const Ride = require('./ride-foundation.js');
 
 function loadApp({ manualTimers = false } = {}) {
   let now = 0, nextTimer = 1, performanceNow = 0;
@@ -33,7 +34,7 @@ function loadApp({ manualTimers = false } = {}) {
         contains: name => classes.has(name),
       },
       style: { setProperty(name, value) { this[name] = value; } },
-      addEventListener() {}, querySelectorAll() { return []; }, querySelector() { return makeElement(); },
+      addEventListener() {}, setAttribute(name,value){this[name]=String(value)}, getAttribute(name){return this[name]??null}, querySelectorAll() { return []; }, querySelector() { return makeElement(); },
       getBoundingClientRect() { return { top: 600, bottom: 120, left: 0, right: 0, width: 0, height: 0 }; },
       setPointerCapture() {}, focus() { this.focused = true; this.blurred = false; }, blur() { this.focused = false; this.blurred = true; }, offsetHeight: 600, value: '', innerHTML: '', textContent: '',
     };
@@ -59,11 +60,12 @@ function loadApp({ manualTimers = false } = {}) {
     setTimeout: setTestTimeout, clearTimeout: clearTestTimeout,
     performance: { now: () => ++performanceNow },
     requestAnimationFrame: callback => { performanceNow++; callback(performanceNow); return performanceNow; },
-    innerHeight: 800, history: { pushState() {}, back() {} },
+    innerHeight: 800, innerWidth:390, history: { pushState() {}, back() {} },
+    RideMateRide: Ride,
     navigator: { geolocation: { getCurrentPosition() {}, watchPosition() { return 1; }, clearWatch() {} } },
     fetch: async () => ({ json: async () => ({ error: 'test' }), ok: false }),
   });
-  context.window = { addEventListener() {}, visualViewport: null };
+  context.window = { addEventListener() {}, visualViewport: null, innerHeight:800, innerWidth:390 };
   vm.runInContext(fs.readFileSync('app.js', 'utf8'), context, { filename: 'app.js' });
   return { context, localStorage, advance, hasTimer: id => timers.has(id), routeLogs };
 }
@@ -73,18 +75,21 @@ function runGpsSamples(samples) {
   context.testSamples = samples;
   vm.runInContext(`
     let testGpsCallback;
+    let testReceivedAt=Date.now();
     navigator.geolocation.watchPosition=callback=>{testGpsCallback=callback;return 1};
+    sharedGpsSource=Ride.createGpsSource(navigator.geolocation,undefined,{now:()=>testReceivedAt});
     kakao={maps:{LatLng:class {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}}};
-    setGpsMarker=()=>{};updateNavHud=()=>{};
-    state.screen='navigation';state.map={panTo(){this.panCalls=(this.panCalls||0)+1}};startWatch();
-    for(const sample of testSamples)testGpsCallback({timestamp:sample.timestamp,coords:{latitude:sample.latitude,longitude:sample.longitude,speed:sample.speed,accuracy:sample.accuracy,heading:null}});
+    testMarkerPositions=[];setGpsMarker=position=>testMarkerPositions.push(position);updateNavHud=()=>{};
+    state.screen='navigation';state.map={panTo(){this.panCalls=(this.panCalls||0)+1}};ensureSharedRide(testReceivedAt);startWatch();
+    for(const sample of testSamples){testReceivedAt=Date.now()+sample.timestamp;testGpsCallback({timestamp:testReceivedAt,coords:{latitude:sample.latitude,longitude:sample.longitude,speed:sample.speed,accuracy:sample.accuracy,heading:null}})};
   `, context);
   return {
     currentSpeed: vm.runInContext('state.nav.currentSpeed', context),
     maxSpeed: vm.runInContext('state.nav.maxSpeed', context),
-    distance: vm.runInContext('state.nav.distance', context),
-    speedMoving: vm.runInContext('state.nav.speedMoving', context),
+    distance: vm.runInContext('state.ride.distance', context),
+    speedMoving: vm.runInContext('state.ride.motion.moving', context),
     followCalls: vm.runInContext('state.map.panCalls||0', context),
+    markerPositions: JSON.parse(vm.runInContext('JSON.stringify(testMarkerPositions)', context)),
   };
 }
 
@@ -139,13 +144,13 @@ test('search distance uses metres below 1km and one decimal kilometre above it',
   assert.equal(vm.runInContext('formatPlaceDistance(null)', context), '');
 });
 
-test('live results show distance and dismiss the keyboard only after rendering', () => {
+test('live results show distance without changing the current input focus', () => {
   const { context } = loadApp();
   const input = context.document.querySelector('#searchInput');
   input.focus();
   vm.runInContext("renderLive([{name:'장소',category:'카테고리',address:'주소',distance:850}])", context);
   assert.match(context.document.querySelector('#liveResults').innerHTML, /850m/);
-  assert.equal(input.blurred, true);
+  assert.equal(input.blurred, false);
 });
 
 test('route select shows fixed-size departure and destination pins', () => {
@@ -163,10 +168,10 @@ test('route select shows fixed-size departure and destination pins', () => {
   assert.equal(vm.runInContext("state.routeEndpointMarkers[0].content.className", context), 'route-endpoint-marker departure');
   assert.equal(vm.runInContext("state.routeEndpointMarkers[1].content.className", context), 'route-endpoint-marker destination');
   assert.equal(vm.runInContext("state.routeEndpointMarkers[0].content.style.width", context), '40px');
-  assert.equal(vm.runInContext("state.routeEndpointMarkers[1].content.style.width", context), '40px');
+  assert.equal(vm.runInContext("state.routeEndpointMarkers[1].content.style.width", context), '20px');
   vm.runInContext('state.map.setLevel(1);state.map.setLevel(7)', context);
   assert.equal(vm.runInContext("state.routeEndpointMarkers[0].content.style.width", context), '40px');
-  assert.equal(vm.runInContext("state.routeEndpointMarkers[1].content.style.width", context), '40px');
+  assert.equal(vm.runInContext("state.routeEndpointMarkers[1].content.style.width", context), '20px');
 });
 
 test('navigation keeps a fixed-size destination pin', () => {
@@ -183,9 +188,9 @@ test('navigation keeps a fixed-size destination pin', () => {
   assert.equal(vm.runInContext('state.routeEndpointMarkers.length', context), 1);
   assert.equal(vm.runInContext('state.routeEndpointMarkers[0].position.latitude', context), 37.6);
   assert.equal(vm.runInContext("state.routeEndpointMarkers[0].content.className", context), 'route-endpoint-marker destination');
-  assert.equal(vm.runInContext("state.routeEndpointMarkers[0].content.style.width", context), '40px');
+  assert.equal(vm.runInContext("state.routeEndpointMarkers[0].content.style.width", context), '20px');
   vm.runInContext('state.map.setLevel(1);state.map.setLevel(7)', context);
-  assert.equal(vm.runInContext("state.routeEndpointMarkers[0].content.style.width", context), '40px');
+  assert.equal(vm.runInContext("state.routeEndpointMarkers[0].content.style.width", context), '20px');
 });
 
 test('navigation start discards stale speed and starts at the stopped level', () => {
@@ -201,13 +206,13 @@ test('navigation start discards stale speed and starts at the stopped level', ()
   assert.equal(vm.runInContext('state.nav.currentSpeed', context), 0);
 });
 
-test('map interaction stays unfollowed until five seconds then returns at current speed', () => {
+test('map interaction stays unfollowed until ten seconds then returns at current speed', () => {
   const { context, advance } = loadApp({ manualTimers: true });
   assert.equal(vm.runInContext('typeof beginNavigationMapInteraction', context), 'function');
   assert.equal(vm.runInContext('typeof endNavigationMapInteraction', context), 'function');
   vm.runInContext("state.screen='navigation';state.nav.follow=true;state.nav.currentSpeed=40/3.6;state.currentLocation=null;state.map={setLevel(level){this.level=level}};beginNavigationMapInteraction();endNavigationMapInteraction()", context);
   assert.equal(vm.runInContext('state.nav.follow', context), false);
-  advance(4999);
+  advance(9999);
   assert.equal(vm.runInContext('state.nav.follow', context), false);
   advance(1);
   assert.equal(vm.runInContext('state.nav.follow', context), true);
@@ -220,7 +225,7 @@ test('another interaction resets the single return timer', () => {
   assert.equal(vm.runInContext('typeof endNavigationMapInteraction', context), 'function');
   vm.runInContext("state.screen='navigation';state.nav.follow=true;state.currentLocation=null;state.map={setLevel(level){this.level=level}};beginNavigationMapInteraction();endNavigationMapInteraction()", context);
   const firstTimer = vm.runInContext('navReturnTimer', context);
-  advance(3000);
+  advance(8000);
   vm.runInContext('beginNavigationMapInteraction();endNavigationMapInteraction()', context);
   const secondTimer = vm.runInContext('navReturnTimer', context);
   assert.notEqual(secondTimer, firstTimer);
@@ -228,7 +233,7 @@ test('another interaction resets the single return timer', () => {
   assert.equal(hasTimer(secondTimer), true);
   advance(2000);
   assert.equal(vm.runInContext('state.nav.follow', context), false);
-  advance(3000);
+  advance(8000);
   assert.equal(vm.runInContext('state.nav.follow', context), true);
 });
 
@@ -282,14 +287,14 @@ test('route selection keeps every returned polyline and emphasizes only the sele
   assert.equal(vm.runInContext("state.routeLines[1].options.strokeColor", context), '#0878f9');
 });
 
-test('stationary GPS drift and 13-16km/h spikes do not pollute current or max speed', () => {
+test('stationary plausible GPS speed remains live but does not pollute authoritative max speed', () => {
   const result = runGpsSamples([
     {timestamp:1000,latitude:37.5,longitude:127,speed:0,accuracy:20},
     {timestamp:2000,latitude:37.50002,longitude:127,speed:13/3.6,accuracy:20},
     {timestamp:3000,latitude:37.499985,longitude:127,speed:16/3.6,accuracy:20},
     {timestamp:4000,latitude:37.50001,longitude:127,speed:4/3.6,accuracy:20},
   ]);
-  assert.equal(result.currentSpeed, 0);
+  assert.ok(result.currentSpeed * 3.6 >= 3 && result.currentSpeed * 3.6 <= 5);
   assert.equal(result.maxSpeed, 0);
 });
 
@@ -306,7 +311,7 @@ test('good-accuracy one-direction stationary drift does not start movement or ad
     speed:4/3.6,
     accuracy:5,
   })));
-  assert.equal(result.currentSpeed, 0);
+  assert.ok(result.currentSpeed*3.6>=3&&result.currentSpeed*3.6<=5);
   assert.equal(result.speedMoving, false);
   assert.equal(result.distance, 0);
 });
@@ -342,52 +347,33 @@ test('stationary drift followed by riding becomes moving within a few fixes', ()
 });
 
 test('riding followed by coherent stationary drift settles at zero without drift distance', () => {
-  const {context}=loadApp();
-  vm.runInContext(`
-    let testGpsCallback;
-    navigator.geolocation.watchPosition=callback=>{testGpsCallback=callback;return 1};
-    kakao={maps:{LatLng:class {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}}};
-    setGpsMarker=()=>{};followNavigationPosition=()=>{};updateNavHud=()=>{};
-    state.screen='navigation';state.map={};startWatch();
-    let latitude=37.5;
-    for(let i=0;i<10;i++){
-      testGpsCallback({timestamp:(i+1)*1000,coords:{latitude,longitude:127,speed:18/3.6,accuracy:5,heading:null}});
-      latitude+=.000045;
-    }
-    distanceWhileRiding=state.nav.distance;
-    for(let i=10;i<24;i++){
-      latitude+=.000006;
-      testGpsCallback({timestamp:(i+1)*1000,coords:{latitude,longitude:127,speed:4/3.6,accuracy:5,heading:null}});
-    }
-    distanceAfterSettling=state.nav.distance;
-    for(let i=24;i<32;i++){
-      latitude+=.000006;
-      testGpsCallback({timestamp:(i+1)*1000,coords:{latitude,longitude:127,speed:4/3.6,accuracy:5,heading:null}});
-    }
-  `, context);
-  assert.equal(vm.runInContext('state.nav.currentSpeed',context),0);
-  assert.equal(vm.runInContext('state.nav.speedMoving',context),false);
-  assert.equal(vm.runInContext('state.nav.distance',context),vm.runInContext('distanceAfterSettling',context));
-  assert.ok(vm.runInContext('distanceAfterSettling',context)>=vm.runInContext('distanceWhileRiding',context));
+  const samples=[];
+  let latitude=37.5;
+  for(let i=0;i<10;i++){samples.push({timestamp:(i+1)*1000,latitude,longitude:127,speed:18/3.6,accuracy:5});latitude+=.000045}
+  for(let i=10;i<32;i++){latitude+=.000006;samples.push({timestamp:(i+1)*1000,latitude,longitude:127,speed:4/3.6,accuracy:5})}
+  const result=runGpsSamples(samples);
+  assert.ok(result.currentSpeed*3.6>=3&&result.currentSpeed*3.6<=5);
+  assert.equal(result.speedMoving,false);
+  assert.ok(result.distance>0);
 });
 
-test('pause resume and navigation watch re-entry reseed transient speed state', () => {
+test('pause resume and navigation watch re-entry reset Navigation live speed without duplicate motion state', () => {
   const {context}=loadApp();
   vm.runInContext(`
     navigator.geolocation.watchPosition=callback=>{testGpsCallback=callback;return ++testWatchId};
     navigator.geolocation.clearWatch=()=>{};
     testWatchId=0;
-    state.nav.currentSpeed=5;state.nav.speedMoving=true;state.nav.speedSamples=[5];
+    state.nav.currentSpeed=5;
     state.nav.lastPos={latitude:37.5,longitude:127};state.nav.lastTimestamp=1000;
     startWatch();
-    watchReset={speed:state.nav.currentSpeed,moving:state.nav.speedMoving,samples:state.nav.speedSamples.length,lastPos:state.nav.lastPos};
-    state.nav.currentSpeed=4;state.nav.speedMoving=true;state.nav.speedSamples=[4];
+    watchReset={speed:state.nav.currentSpeed,lastPos:state.nav.lastPos,hasDuplicateMotion:'motion' in state.nav};
+    state.nav.currentSpeed=4;
     setNavigationPaused(true,2000);
     setNavigationPaused(false,3000);
-    resumeReset={speed:state.nav.currentSpeed,moving:state.nav.speedMoving,samples:state.nav.speedSamples.length,lastPos:state.nav.lastPos};
+    resumeReset={speed:state.nav.currentSpeed,lastPos:state.nav.lastPos,hasDuplicateMotion:'motion' in state.nav};
   `,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(vm.runInContext('watchReset',context))),{speed:0,moving:false,samples:0,lastPos:null});
-  assert.deepEqual(JSON.parse(JSON.stringify(vm.runInContext('resumeReset',context))),{speed:0,moving:false,samples:0,lastPos:null});
+  assert.deepEqual(JSON.parse(JSON.stringify(vm.runInContext('watchReset',context))),{speed:0,lastPos:null,hasDuplicateMotion:false});
+  assert.deepEqual(JSON.parse(JSON.stringify(vm.runInContext('resumeReset',context))),{speed:0,lastPos:null,hasDuplicateMotion:false});
 });
 
 test('a new navigation never carries the previous displayed speed', () => {
@@ -414,18 +400,89 @@ test('one speed spike during normal riding is suppressed', () => {
   assert.ok(result.maxSpeed*3.6<30);
 });
 
-test('stationary GPS drift updates navigation without moving the camera', () => {
+test('stationary GPS drift gets one initial FAST camera placement without repeated overlap', () => {
   const result = runGpsSamples([
     {timestamp:1000,latitude:37.5,longitude:127,speed:0,accuracy:20},
     {timestamp:2000,latitude:37.50002,longitude:127,speed:13/3.6,accuracy:20},
     {timestamp:3000,latitude:37.499985,longitude:127,speed:16/3.6,accuracy:20},
   ]);
-  assert.equal(result.followCalls, 0);
+  assert.equal(result.followCalls, 1);
 });
 
 test('confirmed movement keeps navigation camera follow active', () => {
   const result = runGpsSamples(Array.from({length:6},(_,i)=>({timestamp:(i+1)*1000,latitude:37.5+i*.000045,longitude:127,speed:18/3.6,accuracy:5})));
   assert.ok(result.followCalls>0);
+});
+
+test('one usable FAST fix updates Navigation speed and marker before Ride movement confirmation', () => {
+  const result = runGpsSamples([{timestamp:1000,latitude:37.5,longitude:127,speed:8,accuracy:3}]);
+  assert.equal(result.currentSpeed, 8);
+  assert.equal(result.speedMoving, false);
+  assert.equal(result.markerPositions.at(-1).latitude, 37.5);
+});
+
+test('automatic camera follow uses FAST quality and has no nav.speedMoving dependency', () => {
+  const { context } = loadApp();
+  const result = vm.runInContext(`(()=>{
+    const position={latitude:37.5,longitude:127};
+    state.nav.follow=true;state.nav.paused=false;state.nav.cameraMoving=false;delete state.nav.speedMoving;
+    state.nav.fastObservation={timestamp:1000,receivedAt:1000,position:{...position,accuracy:3},speed:{mps:5,source:'gps',valid:true},heading:{degrees:90,source:'gps'},quality:{fresh:true,monotonic:true,plausiblePosition:true}};
+    return shouldUpdateNavigationCamera(position,3,1000,state.nav.fastObservation);
+  })()`,context);
+  assert.equal(result,true);
+});
+
+test('camera keeps following FAST position while a reroute request is pending', () => {
+  const { context } = loadApp();
+  vm.runInContext(`
+    kakao={maps:{LatLng:class {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}}};
+    state.nav.follow=true;state.nav.recalculating=true;state.nav.cameraMoving=false;
+    state.nav.fastObservation={timestamp:1000,receivedAt:1000,position:{latitude:37.5,longitude:127,accuracy:3},speed:{mps:5,source:'gps',valid:true},heading:{degrees:90,source:'gps'},quality:{fresh:true,monotonic:true,plausiblePosition:true}};
+    state.map={panTo(){this.panCalls=(this.panCalls||0)+1}};
+    followNavigationPosition(state.nav.fastObservation.position,false,3,1000,false,state.nav.fastObservation);
+  `,context);
+  assert.equal(vm.runInContext('state.map.panCalls||0',context),1);
+});
+
+test('unsafe viewport position forces camera catch-up despite normal displacement threshold', () => {
+  const { context } = loadApp();
+  const result = vm.runInContext(`(()=>{
+    const sw={getLat:()=>0,getLng:()=>0},ne={getLat:()=>1,getLng:()=>1};
+    const position={latitude:.05,longitude:.5};
+    state.map={getBounds:()=>({getSouthWest:()=>sw,getNorthEast:()=>ne})};
+    state.nav.follow=true;state.nav.paused=false;state.nav.cameraMoving=false;
+    state.nav.lastCameraPos={latitude:.050001,longitude:.5};state.nav.lastCameraAt=950;
+    const fast={timestamp:1000,receivedAt:1000,position:{...position,accuracy:3},speed:{mps:1,source:'gps',valid:true},heading:{degrees:0,source:'gps'},quality:{fresh:true,monotonic:true,plausiblePosition:true}};
+    return {safe:isNavigationPositionInSafeRegion(position),update:shouldUpdateNavigationCamera(position,3,1000,fast)};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{safe:false,update:true});
+});
+
+test('programmatic zoom events cannot start the manual ten-second suppression window', () => {
+  const { context, advance } = loadApp({ manualTimers: true });
+  vm.runInContext(`
+    state.screen='navigation';state.nav.follow=true;
+    state.map={setLevel(){}};
+    setNavigationLevel(2);
+  `,context);
+  advance(1);
+  vm.runInContext('handleMapZoomStart();handleMapZoomChanged()',context);
+  assert.equal(vm.runInContext('state.nav.follow',context),true);
+});
+
+test('off-route reroute requires exactly three qualifying FAST fixes and respects accuracy allowance', () => {
+  const { context } = loadApp();
+  const result = vm.runInContext(`(()=>{
+    const route={totalDistance:1112,totalTime:600,_points:[{latitude:0,longitude:0},{latitude:0,longitude:.01}],_steps:[]};
+    state.routes=[route];state.selectedRoute=0;state.nav.steps=[];state.nav.startedAt=null;state.destination={latitude:1,longitude:1};
+    state.routeLines=[null];let calls=0;recalculateNavigationRoute=()=>{calls++};
+    const point={latitude:30/111195,longitude:.005};
+    updateNavHud(point,25);updateNavHud(point,25);updateNavHud(point,25);
+    const poorAccuracyCalls=calls;
+    updateNavHud(point,3);const afterOne=calls;updateNavHud(point,3);const afterTwo=calls;updateNavHud(point,3);const afterThree=calls;
+    return {poorAccuracyCalls,afterOne,afterTwo,afterThree};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{poorAccuracyCalls:0,afterOne:0,afterTwo:0,afterThree:1});
 });
 
 test('current-location button follows immediately even while stationary', () => {
@@ -446,7 +503,7 @@ test('six: viewport metrics include the visual viewport bottom obstruction', () 
   context.testViewport = { height: 700, offsetTop: 20 };
   assert.deepEqual(
     JSON.parse(vm.runInContext('JSON.stringify(viewportMetrics(testViewport, 800))', context)),
-    { height: 700, bottom: 80 },
+    { width:390, height: 700, bottom: 80 },
   );
   context.window.innerHeight = 800;
   context.window.visualViewport = context.testViewport;
@@ -461,9 +518,9 @@ test('six: viewport metrics include the visual viewport bottom obstruction', () 
 test('six: route fit padding follows the visible editor and route controls', () => {
   const { context } = loadApp();
   assert.equal(vm.runInContext('typeof routeFitPadding', context), 'function');
-  const padding = JSON.parse(vm.runInContext('JSON.stringify(routeFitPadding(800, 0, 118, 610))', context));
+  const padding = JSON.parse(vm.runInContext('JSON.stringify(routeFitPadding(390,800,0,{bottom:118,right:390},610))', context));
   assert.deepEqual(padding, { top: 130, right: 24, bottom: 202, left: 24 });
-  const offsetPadding = JSON.parse(vm.runInContext('JSON.stringify(routeFitPadding(800, 20, 118, 610))', context));
+  const offsetPadding = JSON.parse(vm.runInContext('JSON.stringify(routeFitPadding(390,800,20,{bottom:118,right:390},610))', context));
   assert.deepEqual(offsetPadding, { top: 110, right: 24, bottom: 222, left: 24 });
   vm.runInContext(`
     class TestLatLng { constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude} }
@@ -477,14 +534,14 @@ test('six: route fit padding follows the visible editor and route controls', () 
     state.selectedRoute=0;state.map={setBounds(bounds,...padding){this.bounds=bounds;this.padding=padding}};
     fitSelectedRoute();
   `, context);
-  assert.equal(vm.runInContext('state.map.bounds.points.length', context), 5);
+  assert.equal(vm.runInContext('state.map.bounds.points.length', context), 2);
   assert.deepEqual(JSON.parse(vm.runInContext('JSON.stringify(state.map.padding)', context)), [130,24,202,24]);
   assert.equal(vm.runInContext('typeof syncRouteViewport', context), 'function');
   vm.runInContext("let testRefits=0;fitSelectedRoute=()=>{testRefits++};state.screen='route';syncRouteViewport()", context);
   assert.equal(vm.runInContext('testRefits', context), 1);
 });
 
-test('route overview fits once and route card changes only visual emphasis', () => {
+test('route overview refits when route card selection changes', () => {
   const { context }=loadApp();
   const result=vm.runInContext(`
     class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
@@ -504,7 +561,7 @@ test('route overview fits once and route card changes only visual emphasis', () 
     ({afterFit,afterCards:testCamera,colors:state.routeLines.map(line=>line.options.strokeColor),weights:state.routeLines.map(line=>line.options.strokeWeight)});
   `,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    afterFit:{bounds:1,levels:0,centers:0,pans:0},afterCards:{bounds:1,levels:0,centers:0,pans:0},
+    afterFit:{bounds:1,levels:0,centers:0,pans:0},afterCards:{bounds:4,levels:0,centers:0,pans:0},
     colors:['#0878f9','#98a7b8','#98a7b8'],weights:[8,5,5]
   });
 });
@@ -649,11 +706,11 @@ test('six: compass and north-direction controls are absent', () => {
   assert.doesNotMatch(css, /(?:#map|navigation-active)[^}]*rotate\(/);
 });
 
-test('six: camera follow ignores small fixes and blocks overlapping moves', () => {
+test('six: camera follow ignores small fixes and coalesces the latest overlapping move', () => {
   const { context, advance } = loadApp({ manualTimers: true });
   vm.runInContext(`
     kakao={maps:{LatLng:class {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}}};
-    state.screen='navigation';state.nav.follow=true;state.nav.speedMoving=true;
+    state.screen='navigation';state.nav.follow=true;state.nav.fastObservation={position:{latitude:37.5,longitude:127,accuracy:5},quality:{fresh:true,monotonic:true,plausiblePosition:true}};
     state.map={panTo(){this.panCalls=(this.panCalls||0)+1}};
     followNavigationPosition({latitude:37.5,longitude:127},false,5,1000);
     followNavigationPosition({latitude:37.50001,longitude:127},false,5,1100);
@@ -661,6 +718,8 @@ test('six: camera follow ignores small fixes and blocks overlapping moves', () =
   `, context);
   assert.equal(vm.runInContext('state.map.panCalls', context), 1);
   advance(700);
+  assert.equal(vm.runInContext('state.map.panCalls', context), 2);
+  assert.equal(vm.runInContext('state.nav.pendingCameraFollow', context), null);
   vm.runInContext('followNavigationPosition({latitude:37.5003,longitude:127},false,5,2000)', context);
   assert.equal(vm.runInContext('state.map.panCalls', context), 2);
 

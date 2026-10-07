@@ -5,6 +5,8 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function createRideFoundationApi() {
   const GPS_JUMP_MAX_M = 200;
   const GHOST_DATA_VERSION = 1;
+  const FAST_FRESH_MAX_AGE_MS = 3000;
+  const FAST_MAX_PLAUSIBLE_SPEED_MPS = 60;
 
   function haversineDistance(a, b) {
     if (!a || !b) return 0;
@@ -20,6 +22,91 @@
   function resolveSpeed(fix, distance, elapsedMs) {
     if (Number.isFinite(fix?.speed) && fix.speed >= 0) return fix.speed;
     return elapsedMs > 0 && distance >= 0 ? distance / (elapsedMs / 1000) : 0;
+  }
+
+  function createFastObservationState() {
+    return {
+      sequence: 0,
+      lastPosition: null,
+      lastTimestamp: null,
+      lastAccuracy: null,
+      lastHeading: null,
+    };
+  }
+
+  function fastBearing(a, b) {
+    const radians = Math.PI / 180;
+    const latitude1 = a.latitude * radians;
+    const latitude2 = b.latitude * radians;
+    const longitude = (b.longitude - a.longitude) * radians;
+    const y = Math.sin(longitude) * Math.cos(latitude2);
+    const x = Math.cos(latitude1) * Math.sin(latitude2)
+      - Math.sin(latitude1) * Math.cos(latitude2) * Math.cos(longitude);
+    return (Math.atan2(y, x) / radians + 360) % 360;
+  }
+
+  function processFastObservation(state, fix, receivedAt = Date.now()) {
+    const timestamp = Number.isFinite(fix?.timestamp) ? fix.timestamp : receivedAt;
+    const position = {
+      latitude: fix?.latitude,
+      longitude: fix?.longitude,
+      accuracy: Number.isFinite(fix?.accuracy) && fix.accuracy > 0 ? fix.accuracy : 0,
+    };
+    const ageMs = Math.max(0, receivedAt - timestamp);
+    const fresh = ageMs <= FAST_FRESH_MAX_AGE_MS;
+    const monotonic = state.lastTimestamp == null || timestamp >= state.lastTimestamp;
+    const elapsedMs = state.lastTimestamp == null ? 0 : timestamp - state.lastTimestamp;
+    const distance = state.lastPosition ? haversineDistance(state.lastPosition, position) : 0;
+    const uncertainty = Math.max(10, position.accuracy || 0, state.lastAccuracy || 0);
+    const plausibleDistance = state.lastPosition == null
+      || elapsedMs > 0 && distance <= FAST_MAX_PLAUSIBLE_SPEED_MPS * (elapsedMs / 1000) + uncertainty * 2
+      || elapsedMs === 0 && distance <= uncertainty;
+    const plausiblePosition = monotonic && plausibleDistance;
+
+    let speedMps = 0;
+    let speedSource = 'position-derived';
+    let speedValid = false;
+    if (Number.isFinite(fix?.speed) && fix.speed >= 0 && fix.speed <= FAST_MAX_PLAUSIBLE_SPEED_MPS) {
+      speedMps = fix.speed;
+      speedSource = 'gps';
+      speedValid = true;
+    } else if (state.lastPosition && elapsedMs > 0 && fresh && plausiblePosition) {
+      speedMps = distance / (elapsedMs / 1000);
+      speedValid = speedMps <= FAST_MAX_PLAUSIBLE_SPEED_MPS;
+      if (!speedValid) speedMps = 0;
+    }
+
+    let headingDegrees = null;
+    let headingSource = 'unavailable';
+    if (Number.isFinite(fix?.heading) && fix.heading >= 0 && fix.heading < 360) {
+      headingDegrees = fix.heading;
+      headingSource = 'gps';
+    } else if (state.lastPosition && plausiblePosition && distance > 2) {
+      headingDegrees = fastBearing(state.lastPosition, position);
+      headingSource = 'position-derived';
+    } else if (Number.isFinite(state.lastHeading)) {
+      headingDegrees = state.lastHeading;
+      headingSource = 'retained';
+    }
+
+    state.sequence += 1;
+    const observation = {
+      sequence: state.sequence,
+      timestamp,
+      receivedAt,
+      ageMs,
+      position,
+      speed: { mps: Math.max(0, speedMps), source: speedSource, valid: speedValid },
+      heading: { degrees: headingDegrees, source: headingSource },
+      quality: { fresh, monotonic, plausiblePosition },
+    };
+    if (fresh && plausiblePosition) {
+      state.lastPosition = { latitude: position.latitude, longitude: position.longitude };
+      state.lastTimestamp = timestamp;
+      state.lastAccuracy = position.accuracy;
+      if (Number.isFinite(headingDegrees)) state.lastHeading = headingDegrees;
+    }
+    return observation;
   }
 
   function createMotionState() {
@@ -433,10 +520,13 @@
     };
   }
 
-  function createGpsSource(geolocation, watchOptions = { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }) {
+  function createGpsSource(geolocation, watchOptions = { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }, runtime = {}) {
     const consumers = new Map();
+    const fastState = createFastObservationState();
+    const now = typeof runtime.now === 'function' ? runtime.now : Date.now;
     let watchId = null;
     let latest = null;
+    let latestFast = null;
     let status = 'idle';
     function notifyStatus(next, error = null) {
       status = next;
@@ -449,8 +539,9 @@
         const fix = normalizePosition(position);
         if (!Number.isFinite(fix.latitude) || !Number.isFinite(fix.longitude)) return;
         latest = fix;
+        latestFast = processFastObservation(fastState, fix, now());
         notifyStatus('ready');
-        consumers.forEach(consumer => consumer.onFix(latest));
+        consumers.forEach(consumer => consumer.onFix(latest, latestFast));
       }, error => {
         notifyStatus(error?.code === 1 ? 'denied' : 'error', error);
       }, watchOptions);
@@ -459,7 +550,15 @@
       const consumer = typeof onFix === 'function' ? { onFix, onStatus } : onFix;
       consumers.set(key, consumer);
       consumer.onStatus?.(status);
-      if (latest) consumer.onFix(latest);
+      if (latest) {
+        const replayAge = Math.max(0, now() - latestFast.timestamp);
+        const replayFast = {
+          ...latestFast,
+          ageMs: replayAge,
+          quality: { ...latestFast.quality, fresh: replayAge <= FAST_FRESH_MAX_AGE_MS },
+        };
+        consumer.onFix(latest, replayFast);
+      }
       ensureWatch();
       return () => unsubscribe(key);
     }
@@ -471,13 +570,14 @@
         notifyStatus('idle');
       }
     }
-    return { subscribe, unsubscribe, getLatest: () => latest, getStatus: () => status, getWatchId: () => watchId };
+    return { subscribe, unsubscribe, getLatest: () => latest, getLatestFast: () => latestFast, getStatus: () => status, getWatchId: () => watchId };
   }
 
   return {
     GHOST_DATA_VERSION,
     GPS_JUMP_MAX_M,
     calculateBestKilometer,
+    createFastObservationState,
     createGpsSource,
     createNavigationArrivalState,
     createMotionState,
@@ -492,6 +592,7 @@
     movementWindowEvidence,
     pauseRide,
     permanentRideRecord,
+    processFastObservation,
     processMotionFix,
     resetMotionState,
     resolveSpeed,
