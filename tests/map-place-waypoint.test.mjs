@@ -3000,8 +3000,14 @@ test('Riding Board uses one shared GPS watcher and opening it does not start rec
 test('Riding Board interactive overlays stay above the board and suppress only their iOS callouts', () => {
   const boardRule=[...styles.matchAll(/\.riding-board\{([^}]*)\}/g)].find(match=>match[1].includes('--riding-u'))?.[1]||'';
   const boardZ=Number(boardRule.match(/z-index:(\d+)/)?.[1]);
-  const overlayZ=Number(styles.match(/#ridingMenu,\s*#ridingMetricDialog,\s*#saveModal\{[^}]*z-index:(\d+)/)?.[1]);
+  const overlayZ=Number(styles.match(/#ridingMenu\{[^}]*z-index:(\d+)/)?.[1]);
+  const dialogZ=Number(styles.match(/#ridingMetricDialog,\s*#saveModal\{[^}]*z-index:(\d+)/)?.[1]);
   assert.ok(overlayZ>boardZ,'Riding Board overlays must stack above the board');
+  assert.ok(dialogZ>boardZ,'Riding Board dialogs must stack above the board');
+  assert.match(styles,/#ridingMenu\{[^}]*position:fixed[^}]*inset:0[^}]*background:[^;}]*rgba[^}]*z-index:40/);
+  assert.match(styles,/#ridingMenu \.riding-menu-drawer\{[^}]*width:min\(78vw,320px\)[^}]*transform:translateX\(0\)/);
+  assert.match(styles,/#ridingMenu\.hidden \.riding-menu-drawer\{[^}]*transform:translateX\(100%\)/);
+  assert.match(styles,/@media \(prefers-reduced-motion:reduce\)\{[^}]*#ridingMenu[^}]*transition:none/);
   assert.match(styles,/#ridingBoardMenu,\s*#ridingBoardMenu \*\{[^}]*-webkit-user-select:none[^}]*user-select:none[^}]*-webkit-touch-callout:none/);
   assert.match(styles,/\.riding-metric-grid \[data-riding-metric\]\{[^}]*touch-action:pan-y[^}]*-webkit-user-select:none[^}]*user-select:none[^}]*-webkit-touch-callout:none/);
   assert.match(styles,/\.riding-metric-grid \[data-riding-metric\] \*\{[^}]*-webkit-user-select:none[^}]*user-select:none[^}]*-webkit-touch-callout:none/);
@@ -3013,14 +3019,75 @@ test('Riding Board hamburger opens its menu and reaches the existing shared App 
   const context=loadApp('',false,true);
   const result=vm.runInContext(`(()=>{
     $('#ridingBoardTabBtn').onclick();
+    let entry={screen:'riding-board'},pushes=0,backs=0;
+    history={get state(){return entry},pushState(next){entry=next;pushes++},replaceState(next){entry=next},back(){backs++;entry={screen:'riding-board'};handleHistoryPopState({state:entry})}};
     $('#ridingBoardMenu').onclick();
     const menuOpen=!$('#ridingMenu').classList.contains('hidden');
     $('#appSettingsScreen').setAttribute=()=>{};
-    history.replaceState=()=>{};
     $('#ridingSettingsBtn').onclick();
-    return{menuOpen,screen:state.screen,settingsBaseScreen,settingsOpen:!$('#appSettingsScreen').classList.contains('hidden')};
+    return{menuOpen,menuClosed:$('#ridingMenu').classList.contains('hidden'),screen:state.screen,settingsBaseScreen,settingsOpen:!$('#appSettingsScreen').classList.contains('hidden'),pushes,backs};
   })()`,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)),{menuOpen:true,screen:'riding-board',settingsBaseScreen:'riding-board',settingsOpen:true});
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{menuOpen:true,menuClosed:true,screen:'riding-board',settingsBaseScreen:'riding-board',settingsOpen:true,pushes:1,backs:1});
+});
+
+test('Riding Board drawer closes cleanly across repeated toggles and system Back', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    $('#ridingBoardTabBtn').onclick();
+    const entries=[{screen:'riding-board'}];let index=0,pushes=0,backs=0;
+    history={
+      get state(){return entries[index]},
+      pushState(entry){entries.splice(index+1);entries.push(entry);index++;pushes++},
+      replaceState(entry){entries[index]=entry},
+      back(){if(index>0)index--;backs++;handleHistoryPopState({state:entries[index]})}
+    };
+    const cycle=()=>{$('#ridingBoardMenu').onclick();const opened=!$('#ridingMenu').classList.contains('hidden');$('#ridingBoardMenu').onclick();return{opened,closed:$('#ridingMenu').classList.contains('hidden'),index,entries:entries.length}};
+    const first=cycle(),second=cycle();
+    $('#ridingBoardMenu').onclick();
+    history.back();
+    return{first,second,final:{closed:$('#ridingMenu').classList.contains('hidden'),screen:state.screen,index,entries:entries.length,drawerState:history.state.ridingMenu||false},pushes,backs};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    first:{opened:true,closed:true,index:0,entries:2},
+    second:{opened:true,closed:true,index:0,entries:2},
+    final:{closed:true,screen:'riding-board',index:0,entries:2,drawerState:false},
+    pushes:3,backs:3,
+  });
+});
+
+test('Riding Board drawer backdrop closes without activating the board underneath', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    $('#ridingBoardTabBtn').onclick();
+    let entry={screen:'riding-board'};
+    history={get state(){return entry},pushState(next){entry=next},back(){entry={screen:'riding-board'};handleHistoryPopState({state:entry})}};
+    let prevented=0,stopped=0;
+    $('#ridingBoardMenu').onclick();
+    $('#ridingMenu').onclick({target:$('#ridingMenu'),preventDefault(){prevented++},stopPropagation(){stopped++}});
+    return{closed:$('#ridingMenu').classList.contains('hidden'),ride:state.ride.recordingState,prevented,stopped};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{closed:true,ride:'idle',prevented:1,stopped:1});
+});
+
+test('Riding Board drawer actions close first and preserve Pause Continue and End Ride behavior', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    $('#ridingBoardTabBtn').onclick();
+    let entry={screen:'riding-board'};
+    history={get state(){return entry},pushState(next){entry=next},back(){entry={screen:'riding-board'};handleHistoryPopState({state:entry})}};
+    $('#ridingRecordPrototypeBtn').onclick();
+    $('#ridingBoardMenu').onclick();$('#ridingPauseBtn').onclick();
+    const paused={menuClosed:$('#ridingMenu').classList.contains('hidden'),ride:state.ride.recordingState};
+    $('#ridingBoardMenu').onclick();$('#ridingPauseBtn').onclick();
+    const resumed={menuClosed:$('#ridingMenu').classList.contains('hidden'),ride:state.ride.recordingState};
+    $('#ridingBoardMenu').onclick();$('#ridingEndBtn').onclick();
+    return{paused,resumed,ended:{menuClosed:$('#ridingMenu').classList.contains('hidden'),ride:state.ride.recordingState,screen:state.screen,saveOpen:!$('#saveModal').classList.contains('hidden')}};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    paused:{menuClosed:true,ride:'paused'},
+    resumed:{menuClosed:true,ride:'recording'},
+    ended:{menuClosed:true,ride:'completed',screen:'riding-board',saveOpen:true},
+  });
 });
 
 test('Riding Board recording starts zeroed and survives leaving the board', () => {

@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>RideMate</title>
   <link rel="manifest" href="/manifest.json">
-  <link rel="stylesheet" href="/styles.css?v=20261007-riding-ios-overlays">
+  <link rel="stylesheet" href="/styles.css?v=20261007-riding-side-menu">
 </head>
 <body>
   <section id="profileScreen" aria-label="RideMate 프로필 선택">
@@ -301,14 +301,15 @@
         </div>
       </section>
 
-      <section id="ridingMenu" class="modal-sheet hidden">
-        <div class="modal-grab"></div>
-        <h3>기록 메뉴</h3>
-        <div class="menu-grid">
-          <button id="ridingPauseBtn" type="button"><span>일시정지</span></button>
-          <button id="ridingSettingsBtn" type="button"><span>앱 설정</span></button>
+      <section id="ridingMenu" class="riding-menu-layer hidden" aria-hidden="true">
+        <div class="riding-menu-drawer" role="dialog" aria-modal="true" aria-labelledby="ridingMenuTitle">
+          <h3 id="ridingMenuTitle">기록 메뉴</h3>
+          <div class="menu-grid">
+            <button id="ridingPauseBtn" type="button"><span>일시정지</span></button>
+            <button id="ridingSettingsBtn" type="button"><span>앱 설정</span></button>
+          </div>
+          <button id="ridingEndBtn" class="danger-btn" type="button">기록 종료</button>
         </div>
-        <button id="ridingEndBtn" class="danger-btn" type="button">기록 종료</button>
       </section>
 
       <section id="searchPanel" class="panel hidden">
@@ -445,6 +446,6 @@
   <script src="/ride-foundation.js?v=becbe719"></script>
   <script src="/settings-foundation.js?v=becbe719"></script>
   <script src="/profile-system.js?v=20261006-pwa-persistence"></script>
-  <script src="/app.js?v=becbe719"></script>
+  <script src="/app.js?v=20261007-riding-side-menu"></script>
 </body>
 </html>
