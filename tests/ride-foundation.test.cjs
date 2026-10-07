@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  GHOST_DATA_VERSION,
   calculateBestKilometer,
   createNavigationArrivalState,
   createGpsSource,
@@ -12,6 +13,7 @@ const {
   finishRide,
   ingestRideFix,
   pauseRide,
+  permanentRideRecord,
   rideMetrics,
   resumeRide,
   startRide,
@@ -110,6 +112,39 @@ test('final ride separates permanent summary, simplified route, and temporary sa
   assert.ok(Array.isArray(completed.detailedSamples));
   assert.ok(completed.detailedSamples.length >= 3);
   assert.equal(ride.recordingState, 'completed');
+});
+
+test('permanent ride keeps a versioned monotonic Ghost route without raw detailed samples', () => {
+  const ride = createRideSession();
+  startRide(ride, 0);
+  [
+    pointAtMeters(0, 0),
+    pointAtMeters(20, 2000),
+    pointAtMeters(40, 4000),
+    pointAtMeters(40, 6000, 0),
+    pointAtMeters(40, 8000, 0),
+    pointAtMeters(40, 10000, 0),
+  ].forEach(fix => ingestRideFix(ride, fix));
+
+  const record = permanentRideRecord(finishRide(ride, 11000));
+
+  assert.equal(record.ghostDataVersion, GHOST_DATA_VERSION);
+  assert.equal('detailedSamples' in record, false);
+  assert.ok(record.route.length >= 2);
+  for (const sample of record.route) {
+    assert.equal(Number.isFinite(sample.latitude), true);
+    assert.equal(Number.isFinite(sample.longitude), true);
+    assert.equal(Number.isFinite(sample.timestamp), true);
+    assert.equal(Number.isFinite(sample.distance), true);
+    assert.equal(Number.isFinite(sample.movingTime), true);
+    assert.equal(Number.isFinite(sample.filteredSpeed), true);
+    assert.equal(typeof sample.moving, 'boolean');
+  }
+  for (let index = 1; index < record.route.length; index += 1) {
+    assert.ok(record.route[index].distance >= record.route[index - 1].distance);
+    assert.ok(record.route[index].movingTime >= record.route[index - 1].movingTime);
+  }
+  assert.ok(record.route.some(sample => sample.moving === false));
 });
 
 test('one shared ride starts once and later features join without resetting it', () => {

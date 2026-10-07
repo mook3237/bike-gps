@@ -728,10 +728,10 @@ test('the ordinary search landing map-selection button is visible and returns to
   assert.equal(vm.runInContext('state.navigationSearch',context),false);
 });
 
-test('the deployed shell cannot reuse stale search markup or navigation behavior assets', () => {
+test('the deployed shell cannot reuse stale application foundation assets', () => {
   const stylesheet = html.match(/<link\b[^>]*href="([^"]*styles\.css\?v=[^"]+)"/i)?.[1];
   const manifest = html.match(/<link\b[^>]*rel="manifest"[^>]*href="([^"]+)"/i)?.[1];
-  const scripts = ['ride-foundation.js','profile-system.js','app.js'].map(name =>
+  const scripts = ['ride-foundation.js','racing-foundation.js','settings-foundation.js','profile-system.js','app.js'].map(name =>
     html.match(new RegExp(`<script\\b[^>]*src="([^"]*${name.replace('.', '\\.') }\\?v=([^"]+))"`, 'i'))
   );
   assert.ok(stylesheet,'styles.css must use a release-specific URL');
@@ -745,6 +745,7 @@ test('the deployed shell cannot reuse stale search markup or navigation behavior
   assert.ok(noStoreSources.has('/app.js'),'navigation behavior must not be stored under an old release');
   assert.ok(noStoreSources.has('/profile-system.js'),'profile persistence must not be stored under an old release');
   assert.ok(noStoreSources.has('/ride-foundation.js'),'shared GPS behavior must not be stored under an old release');
+  assert.ok(noStoreSources.has('/racing-foundation.js'),'Racing behavior must not be stored under an old release');
   assert.ok(noStoreSources.has('/styles.css'),'search visibility CSS must not be stored under an old release');
 });
 
@@ -3278,6 +3279,26 @@ test('shared Save persists once while Dont Save clears temporary data and perman
     return{saved,afterDiscard:{count:rides.length,total:ridingStoredStats(new Date(4000)).totalDistance,state:state.ride.recordingState,samples:state.ride.detailedSamples.length}};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{saved:{count:1,total:500},afterDiscard:{count:1,total:500,state:'idle',samples:0}});
+});
+
+test('shared Save permanently keeps the Ghost route contract but not raw detailed samples', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    let rides=[];activeProfileId='profile-a';profileRepository={readSettings(){return{distanceUnit:'km',dashboard:{}}},readRides(){return rides},prependRide(id,ride){rides.unshift(JSON.parse(JSON.stringify(ride)));return rides}};
+    startRideRecording(0);
+    [
+      {latitude:0,longitude:0,timestamp:0,speed:10,accuracy:3},
+      {latitude:0,longitude:20/111195,timestamp:2000,speed:10,accuracy:3},
+      {latitude:0,longitude:40/111195,timestamp:4000,speed:10,accuracy:3}
+    ].forEach(fix=>Ride.ingestRideFix(state.ride,fix));
+    finishRideRecording(5000,'riding-board');saveRide();
+    const saved=rides[0];
+    return{version:saved.ghostDataVersion,hasDetailed:'detailedSamples' in saved,route:saved.route};
+  })()`,context);
+  assert.equal(result.version,1);
+  assert.equal(result.hasDetailed,false);
+  assert.ok(result.route.length>=2);
+  assert.deepEqual(Object.keys(result.route[0]).sort(),['distance','filteredSpeed','latitude','longitude','moving','movingTime','timestamp']);
 });
 
 test('Riding Board unit setting converts display only and keeps canonical ride values', () => {

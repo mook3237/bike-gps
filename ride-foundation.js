@@ -4,6 +4,7 @@
   if (root) root.RideMateRide = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function createRideFoundationApi() {
   const GPS_JUMP_MAX_M = 200;
+  const GHOST_DATA_VERSION = 1;
 
   function haversineDistance(a, b) {
     if (!a || !b) return 0;
@@ -231,6 +232,12 @@
 
   function pauseRide(ride, now = Date.now()) {
     if (ride.recordingState !== 'recording') return false;
+    if (ride.motion.lastPosition) appendRideRouteSample(ride, {
+      position: ride.motion.lastPosition,
+      timestamp: now,
+      speed: 0,
+      moving: false,
+    });
     ride.recordingState = 'paused';
     ride.pausedAt = now;
     ride.currentSpeed = 0;
@@ -254,6 +261,28 @@
     return Math.max(0, end - ride.startedAt - ride.pausedDuration - activePause);
   }
 
+  function appendRideRouteSample(ride, result) {
+    const previous = ride.routePoints.at(-1);
+    const sample = {
+      latitude: result.position.latitude,
+      longitude: result.position.longitude,
+      timestamp: result.timestamp,
+      distance: Math.max(previous?.distance || 0, ride.distance),
+      movingTime: Math.max(previous?.movingTime || 0, ride.movingTime),
+      filteredSpeed: Number.isFinite(result.speed) ? Math.max(0, result.speed) : 0,
+      moving: result.moving === true,
+    };
+    if (previous
+      && previous.distance === sample.distance
+      && previous.movingTime === sample.movingTime
+      && previous.moving === sample.moving) {
+      Object.assign(previous, sample);
+      return previous;
+    }
+    ride.routePoints.push(sample);
+    return sample;
+  }
+
   function ingestRideFix(ride, fix) {
     if (!ride || ride.recordingState === 'idle' || ride.recordingState === 'completed') return null;
     const timestamp = Math.max(ride.startedAt, Number.isFinite(fix.timestamp) ? fix.timestamp : Date.now());
@@ -261,6 +290,7 @@
       ride.detailedSamples.push({ ...fix, timestamp, recordingState: 'paused', moving: false, acceptedDistance: 0 });
       return null;
     }
+    const wasMoving = ride.motion.moving;
     const result = processMotionFix(ride.motion, { ...fix, timestamp });
     ride.currentSpeed = result.speed;
     if (result.moving) ride.maxSpeed = Math.max(ride.maxSpeed, result.speed);
@@ -268,9 +298,9 @@
       ride.distance += result.acceptedDistance;
       ride.movingTime += result.acceptedMovingTime;
       ride.distanceHistory.push({ distance: ride.distance, movingTime: ride.movingTime });
-      ride.routePoints.push({ latitude: result.position.latitude, longitude: result.position.longitude, timestamp: result.timestamp, distance: ride.distance });
-    } else if (!ride.routePoints.length) {
-      ride.routePoints.push({ latitude: result.position.latitude, longitude: result.position.longitude, timestamp: result.timestamp, distance: 0 });
+      appendRideRouteSample(ride, result);
+    } else if (!ride.routePoints.length || wasMoving !== result.moving) {
+      appendRideRouteSample(ride, result);
     }
     ride.detailedSamples.push({ ...fix, timestamp, filteredSpeed: result.speed, moving: result.moving, acceptedDistance: result.acceptedDistance, acceptedMovingTime: result.acceptedMovingTime });
     return result;
@@ -324,6 +354,7 @@
     if (!completedRide) return null;
     return {
       ...completedRide.summary,
+      ghostDataVersion: GHOST_DATA_VERSION,
       route: completedRide.route.map(point => ({ ...point })),
       ...(retainDetailed ? { detailedSamples: completedRide.detailedSamples.map(sample => ({ ...sample })) } : {}),
     };
@@ -444,6 +475,7 @@
   }
 
   return {
+    GHOST_DATA_VERSION,
     GPS_JUMP_MAX_M,
     calculateBestKilometer,
     createGpsSource,

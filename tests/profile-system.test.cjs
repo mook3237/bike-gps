@@ -151,6 +151,27 @@ test('full ride samples can be retained explicitly without changing the default 
   assert.deepEqual(repo.readRides('profile-dad')[0].detailedSamples, [{ timestamp: 1 }]);
 });
 
+test('profile ride persistence preserves a Ghost-compatible enriched route', () => {
+  const repo = repository(memoryStorage());
+  repo.initialize();
+  const record = {
+    ghostDataVersion: 1,
+    distance: 20,
+    route: [
+      { latitude: 37, longitude: 127, timestamp: 1000, distance: 0, movingTime: 0, filteredSpeed: 0, moving: false },
+      { latitude: 37.0001, longitude: 127.0001, timestamp: 3000, distance: 20, movingTime: 2000, filteredSpeed: 10, moving: true },
+    ],
+    detailedSamples: [{ latitude: 37, longitude: 127, timestamp: 1000 }],
+  };
+
+  repo.prependRide('profile-dad', record);
+  const saved = repo.readRides('profile-dad')[0];
+
+  assert.equal(saved.ghostDataVersion, 1);
+  assert.deepEqual(saved.route, record.route);
+  assert.equal('detailedSamples' in saved, false);
+});
+
 test('my places persist home, work, and independently named favorites per profile', () => {
   const storage = memoryStorage();
   const repo = repository(storage);
