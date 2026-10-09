@@ -2445,16 +2445,19 @@ test('route exits reset route state for cancel, popstate, and the next place sel
   assert.deepEqual(JSON.parse(JSON.stringify(result.nextPlace)),{screen:'place',selectedPlace:'X',destination:null,waypoints:[],routes:0,selectedRoute:null});
 });
 
-test('alternate-route preview cancel returns to the clean main map', async () => {
+test('alternate-route Cancel restores active navigation without resetting GPS HUD or speech state', async () => {
   const context=loadApp();
   installNavigationFlowEnvironment(context);
-  vm.runInContext(`testOriginalRoutes=state.routes;testOriginalWaypoints=state.waypoints;testOriginalDestination=state.destination;testOriginalSteps=state.nav.steps;testOriginalRoute=state.routes[0]` ,context);
+  vm.runInContext(`
+    testOriginalNav=state.nav;testOriginalRoutes=state.routes;testOriginalWaypoints=state.waypoints;testOriginalDestination=state.destination;testOriginalSteps=state.nav.steps;testOriginalRoute=state.routes[0];
+    state.nav.speechRouteRevision=7;state.nav.lastSpokenStepKey='7:0';
+  `,context);
   const alternate=context.document.querySelectorAll('[data-nav-action]').find(button=>button.dataset.navAction==='alternate-route');
   await alternate.onclick();
   vm.runInContext(`testLatest={id:'latest',name:'Latest',latitude:37.0004,longitude:127.0003};state.currentLocation=testLatest`,context);
   context.document.querySelector('#cancelRoutePreviewBtn').onclick();
-  const result=vm.runInContext(`({screen:state.screen,routes:state.routes.length,routeLines:state.routeLines.length,markers:state.routeEndpointMarkers.length,waypoints:state.waypoints.length,destination:state.destination,selectedRoute:state.selectedRoute,sameLive:state.currentLocation===testLatest,draft:state.navigationRouteDraft})`,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'map',routes:0,routeLines:0,markers:0,waypoints:0,destination:null,selectedRoute:null,sameLive:true,draft:null});
+  const result=vm.runInContext(`({screen:state.screen,sameNav:state.nav===testOriginalNav,sameRoutes:state.routes===testOriginalRoutes,sameRoute:state.routes[0]===testOriginalRoute,sameWaypoints:state.waypoints===testOriginalWaypoints,sameDestination:state.destination===testOriginalDestination,sameSteps:state.nav.steps===testOriginalSteps,progress:state.nav.progressDistance,currentStep:state.nav.currentStep,watch:state.nav.watchId,speechRevision:state.nav.speechRouteRevision,lastSpoken:state.nav.lastSpokenStepKey,sameLive:state.currentLocation===testLatest,draft:state.navigationRouteDraft})`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'navigation',sameNav:true,sameRoutes:true,sameRoute:true,sameWaypoints:true,sameDestination:true,sameSteps:true,progress:300,currentStep:0,watch:88,speechRevision:7,lastSpoken:'7:0',sameLive:true,draft:null});
   assert.equal(context.testWatchStarts,0);
 });
 

@@ -93,6 +93,185 @@ function runGpsSamples(samples) {
   };
 }
 
+function prepareNavigationFixture(context, points, steps, { duplicateStepGeometry = false } = {}) {
+  const vertexes = points.flatMap(point => [point.longitude, point.latitude]);
+  context.routeFixture = {
+    totalDistance: 1000,
+    totalTime: 600,
+    route: {
+      sections: [{ roads: [{ vertexes }] }],
+      legs: [{
+        steps: steps.map(step => ({
+          properties: {
+            x: step.point.longitude,
+            y: step.point.latitude,
+            guidance: step.guidance || '',
+            distance: step.distance || 0,
+          },
+          ...(duplicateStepGeometry ? { path: { vertexes } } : {}),
+        })),
+      }],
+    },
+  };
+  return JSON.parse(vm.runInContext('JSON.stringify(prepareRoutes([routeFixture])[0])', context));
+}
+
+function cardinalTurn(directionIn, directionOut) {
+  const anchor = { latitude: 37, longitude: 127 };
+  const scale = 0.001;
+  return [
+    { latitude: anchor.latitude - directionIn[0] * scale, longitude: anchor.longitude - directionIn[1] * scale },
+    anchor,
+    { latitude: anchor.latitude + directionOut[0] * scale, longitude: anchor.longitude + directionOut[1] * scale },
+  ];
+}
+
+test('route maneuver resolves all cardinal turns from travel direction', () => {
+  const directions = { north: [1, 0], east: [0, 1], south: [-1, 0], west: [0, -1] };
+  const cases = [
+    ['east', 'north', '좌회전'], ['south', 'west', '우회전'],
+    ['north', 'east', '우회전'], ['west', 'south', '좌회전'],
+    ['east', 'south', '우회전'], ['south', 'east', '좌회전'],
+    ['north', 'west', '좌회전'], ['west', 'north', '우회전'],
+    ['north', 'south', '유턴'], ['east', 'west', '유턴'],
+    ['south', 'north', '유턴'], ['west', 'east', '유턴'],
+  ];
+  for (const [incoming, outgoing, expected] of cases) {
+    const { context } = loadApp();
+    const points = cardinalTurn(directions[incoming], directions[outgoing]);
+    const route = prepareNavigationFixture(context, points, [{ point: points[1] }]);
+    context.testSteps = route._steps;
+    assert.equal(vm.runInContext('navigationInstruction(testSteps,0)', context), expected, `${incoming} -> ${outgoing}`);
+  }
+});
+
+test('route maneuver is independent of map orientation', () => {
+  const { context } = loadApp();
+  const points = cardinalTurn([0, 1], [1, 0]);
+  const route = prepareNavigationFixture(context, points, [{ point: points[1] }]);
+  context.testSteps = route._steps;
+  vm.runInContext('state.map={getHeading:()=>0}', context);
+  const northUp = vm.runInContext('navigationInstruction(testSteps,0)', context);
+  vm.runInContext('state.map={getHeading:()=>237}', context);
+  assert.equal(vm.runInContext('navigationInstruction(testSteps,0)', context), northUp);
+  assert.equal(northUp, '좌회전');
+});
+
+test('route maneuver preserves opposite turns only 15m apart', () => {
+  const { context } = loadApp();
+  const points = [
+    { latitude: 37, longitude: 127 },
+    { latitude: 37, longitude: 127.0003 },
+    { latitude: 37.000135, longitude: 127.0003 },
+    { latitude: 37.000135, longitude: 127.0006 },
+  ];
+  const route = prepareNavigationFixture(context, points, [
+    { point: points[1] },
+    { point: points[2] },
+  ]);
+  context.testSteps = route._steps;
+  assert.equal(route._steps.length, 2);
+  assert.equal(vm.runInContext('navigationInstruction(testSteps,0)', context), '좌회전');
+  assert.equal(vm.runInContext('navigationInstruction(testSteps,1)', context), '우회전');
+  assert.ok(route._steps[1]._endAlong - route._steps[0]._endAlong > 14);
+  assert.ok(route._steps[1]._endAlong - route._steps[0]._endAlong < 16);
+});
+
+test('route preparation uses one Kakao geometry representation and restores step travel order', () => {
+  const { context } = loadApp();
+  const points = [
+    { latitude: 37, longitude: 127 },
+    { latitude: 37, longitude: 127.0003 },
+    { latitude: 37.000135, longitude: 127.0003 },
+    { latitude: 37.000135, longitude: 127.0006 },
+  ];
+  const route = prepareNavigationFixture(context, points, [
+    { point: points[2] },
+    { point: points[1] },
+  ], { duplicateStepGeometry: true });
+  context.testSteps = route._steps;
+  assert.equal(route._points.length, points.length);
+  assert.ok(route._steps[0]._endAlong < route._steps[1]._endAlong);
+  assert.equal(vm.runInContext('navigationInstruction(testSteps,0)', context), '좌회전');
+  assert.equal(vm.runInContext('navigationInstruction(testSteps,1)', context), '우회전');
+});
+
+test('a later maneuver at a repeated coordinate stays at its matching step path occurrence', () => {
+  const { context } = loadApp();
+  context.routeFixture = {
+    totalDistance: 9000,
+    totalTime: 3600,
+    route: { legs: [{ steps: [
+      { properties: { x: 127, y: 36.9996, guidance: '직진' }, path: { points: [[127,36.9996],[127,37],[126.97,37]] } },
+      { properties: { x: 126.97, y: 37, guidance: '직진' }, path: { points: [[126.97,37],[126.97,37.01]] } },
+      { properties: { x: 126.97, y: 37.01, guidance: '직진' }, path: { points: [[126.97,37.01],[127,37]] } },
+      { properties: { x: 127, y: 37, guidance: '좌회전 후 이동' }, path: { points: [[127,37],[127,37.001]] } },
+    ] }] },
+  };
+  const route = JSON.parse(vm.runInContext('JSON.stringify(prepareRoutes([routeFixture])[0])', context));
+  context.testSteps = route._steps;
+  const leftIndex = route._steps.findIndex(step => step._structuredManeuver === '좌회전');
+  const nextIndex = route._steps.findIndex(step => step._endAlong >= 1);
+  assert.ok(route._steps[leftIndex]._endAlong > 6000, `later LEFT collapsed to ${route._steps[leftIndex]._endAlong}m`);
+  assert.ok(route._steps[nextIndex]._endAlong - 1 > 2000, `HUD selected a ${route._steps[nextIndex]._endAlong - 1}m immediate maneuver`);
+  assert.equal(vm.runInContext(`navigationInstruction(testSteps,${leftIndex})`, context), '좌회전');
+});
+
+test('ordered step progress disambiguates two identical repeated path sequences', () => {
+  const { context } = loadApp();
+  context.routeFixture = {
+    totalDistance: 9000,
+    totalTime: 3600,
+    route: { legs: [{ steps: [
+      { properties: { x: 127, y: 36.9996, guidance: '직진' }, path: { points: [[127,36.9996],[127,37],[126.999,37],[126.97,37.01],[127,37]] } },
+      { properties: { x: 127, y: 37, guidance: '좌회전 후 이동' }, path: { points: [[127,37],[126.999,37]] } },
+    ] }] },
+  };
+  const route = JSON.parse(vm.runInContext('JSON.stringify(prepareRoutes([routeFixture])[0])', context));
+  const left = route._steps.find(step => step._structuredManeuver === '좌회전');
+  assert.ok(left._endAlong > 5000, `identical later path collapsed to ${left._endAlong}m`);
+});
+
+test('ordered step progress disambiguates a repeated fallback maneuver point', () => {
+  const { context } = loadApp();
+  context.routeFixture = {
+    totalDistance: 9000,
+    totalTime: 3600,
+    route: { legs: [{ steps: [
+      { properties: { x: 127, y: 36.9996, guidance: '직진' }, path: { points: [[127,36.9996],[127,37],[126.999,37],[126.97,37.01],[127,37]] } },
+      { properties: { x: 127, y: 37, guidance: '좌회전 후 이동' } },
+    ] }] },
+  };
+  const route = JSON.parse(vm.runInContext('JSON.stringify(prepareRoutes([routeFixture])[0])', context));
+  const left = route._steps.find(step => step._structuredManeuver === '좌회전');
+  assert.ok(left._endAlong > 5000, `fallback maneuver collapsed to ${left._endAlong}m`);
+});
+
+test('forward route projection does not jump to a nearby later parallel segment', () => {
+  const { context } = loadApp();
+  context.testPoints = [
+    { latitude: 37, longitude: 127 },
+    { latitude: 37, longitude: 127.002 },
+    { latitude: 37.0001, longitude: 127.002 },
+    { latitude: 37.0001, longitude: 127 },
+  ];
+  const projection = vm.runInContext("projectOnRoute(testPoints,{latitude:37.00009,longitude:127.0005},{previousAlong:40,accuracy:15})", context);
+  assert.ok(projection.alongDistance < 200, `unexpected later-segment progress ${projection.alongDistance}`);
+  const accurateProjection = vm.runInContext("projectOnRoute(testPoints,{latitude:37.00009,longitude:127.0005},{previousAlong:40,accuracy:5})", context);
+  assert.ok(accurateProjection.alongDistance < 200, `5m accuracy jumped to later progress ${accurateProjection.alongDistance}`);
+});
+
+test('structured maneuver conflict is retained and geometry controls left or right', () => {
+  const { context } = loadApp();
+  const points = cardinalTurn([0, 1], [1, 0]);
+  const route = prepareNavigationFixture(context, points, [{ point: points[1], guidance: '우회전' }]);
+  context.testSteps = route._steps;
+  assert.equal(route._steps[0]._structuredManeuver, '우회전');
+  assert.equal(route._steps[0]._geometryManeuver, '좌회전');
+  assert.equal(route._steps[0]._maneuverConflict, true);
+  assert.equal(vm.runInContext('navigationInstruction(testSteps,0)', context), '좌회전');
+});
+
 test('turn guidance exposes only the compact maneuver', () => {
   const { context } = loadApp();
   const result = vm.runInContext("navigationInstruction([{guidance:'260m 후 신도봉사거리까지 좌회전 후 359m 이동',points:[]}],0)", context);
