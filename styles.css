@@ -573,3 +573,150 @@
 .riding-board:not(.hidden)~.bottom-nav button.active::after{
   content:none;
 }
+
+/* RideMate map overlays reuse the Riding Board visual language. */
+.nav-overlay,
+.racing-overlay{
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Apple SD Gothic Neo","Noto Sans KR","Segoe UI",sans-serif;
+}
+
+.turn-card,
+.nav-hud{
+  border:1px solid #163253;
+  background:rgba(2,10,24,.86);
+  color:#fff;
+  box-shadow:0 5px 22px rgba(2,10,24,.34);
+  backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
+}
+
+.turn-icon{color:#2cf0ff;text-shadow:0 0 12px rgba(44,240,255,.32)}
+.turn-card span{color:#fff}
+.turn-card small,.nav-hud small{color:#6db8ea;font-weight:700}
+.turn-card b,.nav-hud b{color:#fff;font-weight:800;font-variant-numeric:tabular-nums}
+.nav-info-toggle{color:#fff}
+.nav-tools button,
+.nav-recalc-btn,
+.nav-menu-btn,
+.navigation-active .map-controls button{
+  border:1px solid #163253;
+  background:rgba(2,10,24,.86);
+  color:#7cc4f2;
+  box-shadow:0 3px 14px rgba(2,10,24,.34);
+}
+
+.speed-pill{
+  min-width:0;
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:none;
+  text-align:left;
+  color:#fff;
+  text-shadow:0 2px 5px rgba(2,10,24,.92),0 0 12px rgba(2,10,24,.72);
+}
+
+.speed-pill b{font-size:42px;line-height:.9;font-weight:800;letter-spacing:-1.5px;font-variant-numeric:tabular-nums}
+.speed-pill small{margin-top:6px;color:#7cc4f2;font-size:12px;line-height:1;font-weight:700}
+.gps-arrow{background:#0a84ff;border-color:#fff;box-shadow:0 0 16px rgba(44,240,255,.65)}
+.route-card.active{border-color:#0a84ff;background:#f5faff}
+
+.racing-overlay{
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  overflow:hidden;
+}
+
+.racing-comparison{
+  position:absolute;
+  top:calc(env(safe-area-inset-top) + 16px);
+  left:50%;
+  transform:translateX(-50%);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:9px;
+  width:max-content;
+  max-width:calc(100vw - 32px);
+  text-align:center;
+}
+
+.racing-comparison-value{
+  color:#fff;
+  font-size:30px;
+  line-height:1;
+  font-weight:800;
+  letter-spacing:-1px;
+  white-space:nowrap;
+  font-variant-numeric:tabular-nums;
+  text-shadow:0 2px 6px rgba(2,10,24,.95),0 0 14px rgba(2,10,24,.78);
+}
+
+.racing-comparison-value.ahead{color:#19d3a7}
+.racing-comparison-value.behind{color:#ffb454}
+.racing-comparison-value.even{color:#2cf0ff}
+.racing-comparison-value.waiting{color:#dbe8f3;font-size:18px;letter-spacing:0}
+
+.racing-display-toggle{
+  display:grid;
+  grid-template-columns:repeat(2,1fr);
+  padding:2px;
+  border:1px solid #163253;
+  border-radius:999px;
+  background:rgba(2,10,24,.8);
+  box-shadow:0 2px 8px rgba(2,10,24,.28);
+  pointer-events:auto;
+}
+
+.racing-display-toggle button{
+  min-width:48px;
+  height:28px;
+  padding:0 10px;
+  border:0;
+  border-radius:999px;
+  background:transparent;
+  color:#6db8ea;
+  font-size:12px;
+  font-weight:800;
+}
+
+.racing-display-toggle button.active{background:#0a84ff;color:#fff}
+
+.racing-speed-readout{
+  position:absolute;
+  left:18px;
+  bottom:calc(env(safe-area-inset-bottom) + 74px);
+  color:#fff;
+  text-align:left;
+  text-shadow:0 2px 5px rgba(2,10,24,.92),0 0 12px rgba(2,10,24,.72);
+}
+
+.racing-speed-readout b,
+.racing-speed-readout small{display:block}
+.racing-speed-readout b{font-size:46px;line-height:.9;font-weight:800;letter-spacing:-1.5px;font-variant-numeric:tabular-nums}
+.racing-speed-readout small{margin-top:7px;color:#7cc4f2;font-size:12px;line-height:1;font-weight:700}
+
+.gps-racer{
+  width:28px;
+  height:28px;
+  border:4px solid #fff;
+  border-radius:50%;
+  background:#19d3a7;
+  box-shadow:0 0 16px rgba(25,211,167,.72);
+}
+
+.racing-active .map-controls button{
+  border:1px solid #163253;
+  background:rgba(2,10,24,.86);
+  color:#7cc4f2;
+  box-shadow:0 3px 14px rgba(2,10,24,.34);
+}
+
+.racing-active .bottom-nav{
+  border-top-color:#14304f;
+  background:rgba(8,24,46,.94);
+}
+
+.racing-active .bottom-nav button{background:transparent;color:#7f93ab}
+.racing-active .bottom-nav button.active{color:#19d3a7}

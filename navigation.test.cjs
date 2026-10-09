@@ -272,6 +272,69 @@ test('structured maneuver conflict is retained and geometry controls left or rig
   assert.equal(vm.runInContext('navigationInstruction(testSteps,0)', context), '좌회전');
 });
 
+test('voice announces genuine turns only when route progress crosses 300m and 50m once', () => {
+  const { context } = loadApp();
+  const spoken = vm.runInContext(`(()=>{
+    testSpoken=[];SpeechSynthesisUtterance=function(text){this.text=text};window.SpeechSynthesisUtterance=SpeechSynthesisUtterance;
+    window.speechSynthesis={cancel(){},speak(utterance){testSpoken.push(utterance.text)}};
+    state.nav.steps=[
+      {_endAlong:500,_resolvedManeuver:'직진'},
+      {_endAlong:1000,_resolvedManeuver:'좌회전'},
+    ];
+    updateNavigationVoice(state.nav.steps,650);
+    updateNavigationVoice(state.nav.steps,710);
+    updateNavigationVoice(state.nav.steps,720);
+    updateNavigationVoice(state.nav.steps,945);
+    updateNavigationVoice(state.nav.steps,955);
+    updateNavigationVoice(state.nav.steps,960);
+    return testSpoken;
+  })()`, context);
+  assert.deepEqual(JSON.parse(JSON.stringify(spoken)),[
+    '300미터 앞에서 좌회전입니다.',
+    '잠시 후 좌회전입니다.',
+  ]);
+});
+
+test('voice skips a late 300m stage at navigation start but still catches a 55m to 45m crossing', () => {
+  const { context } = loadApp();
+  const spoken = vm.runInContext(`(()=>{
+    testSpoken=[];SpeechSynthesisUtterance=function(text){this.text=text};window.SpeechSynthesisUtterance=SpeechSynthesisUtterance;
+    window.speechSynthesis={cancel(){},speak(utterance){testSpoken.push(utterance.text)}};
+    state.nav.steps=[{_endAlong:1000,_resolvedManeuver:'우회전'}];
+    updateNavigationVoice(state.nav.steps,750);
+    updateNavigationVoice(state.nav.steps,945);
+    updateNavigationVoice(state.nav.steps,955);
+    return testSpoken;
+  })()`, context);
+  assert.deepEqual(JSON.parse(JSON.stringify(spoken)),['잠시 후 우회전입니다.']);
+});
+
+test('voice groups consecutive turns within 50m and suppresses separate guidance for the included turn', () => {
+  const { context } = loadApp();
+  const spoken = vm.runInContext(`(()=>{
+    testSpoken=[];SpeechSynthesisUtterance=function(text){this.text=text};window.SpeechSynthesisUtterance=SpeechSynthesisUtterance;
+    window.speechSynthesis={cancel(){},speak(utterance){testSpoken.push(utterance.text)}};
+    state.nav.steps=[
+      {_endAlong:1000,_resolvedManeuver:'좌회전'},
+      {_endAlong:1045,_resolvedManeuver:'우회전'},
+      {_endAlong:1100,_resolvedManeuver:'좌회전'},
+    ];
+    updateNavigationVoice(state.nav.steps,650);
+    updateNavigationVoice(state.nav.steps,710);
+    updateNavigationVoice(state.nav.steps,945);
+    updateNavigationVoice(state.nav.steps,955);
+    updateNavigationVoice(state.nav.steps,996);
+    updateNavigationVoice(state.nav.steps,1046);
+    updateNavigationVoice(state.nav.steps,1051);
+    return testSpoken;
+  })()`, context);
+  assert.deepEqual(JSON.parse(JSON.stringify(spoken)),[
+    '300미터 앞에서 좌회전한 후, 45미터 앞에서 우회전입니다.',
+    '잠시 후 좌회전한 후, 45미터 앞에서 우회전입니다.',
+    '잠시 후 좌회전입니다.',
+  ]);
+});
+
 test('turn guidance exposes only the compact maneuver', () => {
   const { context } = loadApp();
   const result = vm.runInContext("navigationInstruction([{guidance:'260m 후 신도봉사거리까지 좌회전 후 359m 이동',points:[]}],0)", context);

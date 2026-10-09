@@ -391,6 +391,19 @@
         </div>
       </section>
 
+      <section id="racingOverlay" class="racing-overlay hidden" aria-label="레이싱 지도">
+        <div class="racing-comparison" aria-live="polite">
+          <strong id="racingComparisonValue" class="racing-comparison-value">레이싱 데이터 대기 중</strong>
+          <div class="racing-display-toggle" role="group" aria-label="레이싱 비교 표시">
+            <button id="racingDistanceModeBtn" type="button" class="active" aria-pressed="true">거리</button>
+            <button id="racingTimeModeBtn" type="button" aria-pressed="false">시간</button>
+          </div>
+        </div>
+        <div class="racing-speed-readout" aria-label="현재 속도">
+          <b id="racingSpeedValue">--</b><small id="racingSpeedUnit">km/h</small>
+        </div>
+      </section>
+
       <section id="navMenu" class="modal-sheet hidden">
         <div class="modal-grab"></div>
         <h3>주행 메뉴</h3>
@@ -439,7 +452,7 @@
       <div id="toast" class="toast hidden"></div>
 
       <nav id="bottomNav" class="bottom-nav">
-        <button id="mapTabBtn" class="active" data-bottom-screen="map">지도</button><button>레이싱</button><button id="ridingBoardTabBtn" data-bottom-screen="riding-board">기록계</button>
+        <button id="mapTabBtn" class="active" data-bottom-screen="map">지도</button><button id="racingTabBtn" data-bottom-screen="racing">레이싱</button><button id="ridingBoardTabBtn" data-bottom-screen="riding-board">기록계</button>
       </nav>
     </div>
   </main>
