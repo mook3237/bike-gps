@@ -1127,17 +1127,20 @@ test('Racing map shows only valid comparison data and switches distance or time 
   const result=vm.runInContext(`(()=>{
     state.map={relayout(){}};state.currentLocation=null;
     renderScreen('racing',false);
-    const waiting={screen:state.screen,overlay:!$('#racingOverlay').classList.contains('hidden'),navigation:!$('#navOverlay').classList.contains('hidden'),comparison:$('#racingComparisonValue').textContent,speed:$('#racingSpeedValue').textContent};
+    const waiting={screen:state.screen,overlay:!$('#racingOverlay').classList.contains('hidden'),navigation:!$('#navOverlay').classList.contains('hidden'),comparison:$('#racingComparisonValue').textContent,comparisonHidden:$('#racingComparisonValue').classList.contains('hidden'),speed:$('#racingSpeedValue').textContent,zoomHidden:$('.zoom-controls').classList.contains('hidden'),menuVisible:!$('#mapHeader').classList.contains('hidden')};
     state.racingSnapshot={distanceDifference:120,timeDifference:-18000};
     state.ride.recordingState='recording';state.ride.currentSpeed=7.5;
     renderRacingHud();const distance=$('#racingComparisonValue').textContent;
-    $('#racingTimeModeBtn').onclick();
+    const setting=$('#racingDisplayModeSetting');setting.value='time';setting.onchange({target:setting});
     return{waiting,distance,time:$('#racingComparisonValue').textContent,speed:$('#racingSpeedValue').textContent,mode:state.racingDisplayMode};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    waiting:{screen:'racing',overlay:true,navigation:false,comparison:'레이싱 데이터 대기 중',speed:'--'},
+    waiting:{screen:'racing',overlay:true,navigation:false,comparison:'',comparisonHidden:true,speed:'--',zoomHidden:true,menuVisible:true},
     distance:'120m 앞섬',time:'18초 뒤처짐',speed:'27',mode:'time',
   });
+  assert.match(html,/data-menu-item="racing-settings"[^>]*>[\s\S]*?레이싱 모드 설정/);
+  assert.match(html,/id="racingDisplayModeSetting"[\s\S]*?<option value="distance">거리<\/option>[\s\S]*?<option value="time">시간<\/option>/);
+  assert.doesNotMatch(html,/id="racingDistanceModeBtn"|id="racingTimeModeBtn"|레이싱 데이터 대기 중/);
 });
 
 test('empty search shows structured recent rows and typed search uses only matching recent candidates', () => {
@@ -3085,6 +3088,33 @@ test('Riding Board uses one shared GPS watcher and opening it does not start rec
   assert.ok(result.afterBoard.liveSpeed>0);
   assert.ok(result.afterBoard.longitude>0);
   assert.equal(result.afterNavigationStarts,1);
+});
+
+test('genuine map movement activates empty Navigation without recording and manual exit blocks the same movement', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    class TestLatLng{constructor(latitude,longitude){Object.assign(this,{latitude,longitude})}}
+    class TestPoint{constructor(x,y){Object.assign(this,{x,y})}}
+    class TestOverlay{constructor(options){Object.assign(this,options)}setPosition(position){this.position=position}setMap(map){this.map=map}}
+    kakao={maps:{LatLng:TestLatLng,Point:TestPoint,CustomOverlay:TestOverlay}};
+    testPans=[];state.map={getLevel:()=>4,setLevel(){},relayout(){},panTo(point){testPans.push(point)}};
+    renderScreen('map',false);
+    const emit=(timestamp,meters,speed=10)=>emitNativePosition({timestamp,coords:{latitude:0,longitude:meters/111195,accuracy:3,speed,heading:90}});
+    emit(1000,0);emit(3000,20);emit(5000,40);
+    const activated={screen:state.screen,empty:state.nav.empty,recording:state.ride.recordingState,speed:$('#speedValue').textContent,watchStarts:testNativeWatchStarts(),followed:testPans.length>0,turnHidden:document.body.classList.contains('empty-navigation-active')};
+    emit(7000,40,0);emit(9000,40,0);emit(11000,40,0);
+    const stoppedScreen=state.screen;
+    emit(13000,60);emit(15000,80);
+    finishNavigation(false);
+    emit(17000,100);
+    const afterExit={screen:state.screen,blocked:state.emptyNavigationAutoBlocked,recording:state.ride.recordingState,watchStarts:testNativeWatchStarts()};
+    return{activated,stoppedScreen,afterExit};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    activated:{screen:'navigation',empty:true,recording:'idle',speed:'36',watchStarts:1,followed:true,turnHidden:true},
+    stoppedScreen:'navigation',
+    afterExit:{screen:'map',blocked:true,recording:'idle',watchStarts:1},
+  });
 });
 
 test('Riding Board interactive overlays stay above the board and suppress only their iOS callouts', () => {

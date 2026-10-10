@@ -636,7 +636,6 @@
   display:flex;
   flex-direction:column;
   align-items:center;
-  gap:9px;
   width:max-content;
   max-width:calc(100vw - 32px);
   text-align:center;
@@ -656,32 +655,6 @@
 .racing-comparison-value.ahead{color:#19d3a7}
 .racing-comparison-value.behind{color:#ffb454}
 .racing-comparison-value.even{color:#2cf0ff}
-.racing-comparison-value.waiting{color:#dbe8f3;font-size:18px;letter-spacing:0}
-
-.racing-display-toggle{
-  display:grid;
-  grid-template-columns:repeat(2,1fr);
-  padding:2px;
-  border:1px solid #163253;
-  border-radius:999px;
-  background:rgba(2,10,24,.8);
-  box-shadow:0 2px 8px rgba(2,10,24,.28);
-  pointer-events:auto;
-}
-
-.racing-display-toggle button{
-  min-width:48px;
-  height:28px;
-  padding:0 10px;
-  border:0;
-  border-radius:999px;
-  background:transparent;
-  color:#6db8ea;
-  font-size:12px;
-  font-weight:800;
-}
-
-.racing-display-toggle button.active{background:#0a84ff;color:#fff}
 
 .racing-speed-readout{
   position:absolute;
@@ -696,6 +669,13 @@
 .racing-speed-readout small{display:block}
 .racing-speed-readout b{font-size:46px;line-height:.9;font-weight:800;letter-spacing:-1.5px;font-variant-numeric:tabular-nums}
 .racing-speed-readout small{margin-top:7px;color:#7cc4f2;font-size:12px;line-height:1;font-weight:700}
+.map-active:not(.racing-active) .search-entry,.map-active:not(.racing-active) #menuBtn,.map-active:not(.racing-active) .map-controls button{border:1px solid #163253;background:rgba(2,10,24,.88);color:#fff;box-shadow:0 3px 14px rgba(2,10,24,.34);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.map-active:not(.racing-active) .search-entry{color:#fff;font-weight:800}.map-active:not(.racing-active) .search-entry span,.map-active:not(.racing-active) #menuBtn,.map-active:not(.racing-active) .map-controls button{color:#7cc4f2}
+.map-active:not(.racing-active) .bottom-nav{border-top-color:#14304f;background:rgba(8,24,46,.94)}.map-active:not(.racing-active) .bottom-nav button{background:transparent;color:#7f93ab}.map-active:not(.racing-active) .bottom-nav button.active{color:#2cf0ff}
+.racing-active #mapHeader{left:auto}.racing-active #searchEntry{display:none}.racing-active #menuBtn{border:1px solid #163253;background:rgba(2,10,24,.86);color:#7cc4f2;box-shadow:0 3px 14px rgba(2,10,24,.34)}
+.racing-active .zoom-controls{display:none!important}.racing-settings-title{margin-top:18px!important;padding-top:14px;border-top:1px solid #edf1f5}
+.empty-navigation-active .turn-card,.empty-navigation-active .nav-route-status,.empty-navigation-active #navSearchBtn,.empty-navigation-active .nav-recalc-btn,.empty-navigation-active .nav-info-toggle,.empty-navigation-active #navMenu [data-nav-action="recalc"],.empty-navigation-active #navMenu [data-nav-action="pause"],.empty-navigation-active #navMenu [data-nav-action="add-route"],.empty-navigation-active #navMenu [data-nav-action="alternate-route"]{display:none!important}
+.empty-navigation-active .nav-hud{left:auto;width:58px;grid-template-columns:1fr;background:transparent;border:0;box-shadow:none;padding:8px}
 
 .gps-racer{
   width:28px;
