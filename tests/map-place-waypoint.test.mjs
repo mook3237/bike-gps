@@ -6,6 +6,7 @@ import vm from 'node:vm';
 const appSource = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
 const rideFoundationSource = fs.readFileSync(new URL('../ride-foundation.js', import.meta.url), 'utf8');
 const racingFoundationSource = fs.readFileSync(new URL('../racing-foundation.js', import.meta.url), 'utf8');
+const profileSystemSource = fs.readFileSync(new URL('../profile-system.js', import.meta.url), 'utf8');
 const settingsFoundationSource = fs.readFileSync(new URL('../settings-foundation.js', import.meta.url), 'utf8');
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const styles = fs.readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
@@ -141,6 +142,7 @@ function loadApp(search = '', deferTimers = false, staticDom = false) {
   context.testPendingTimerDelays = () => pendingTimers.filter(timer => !cancelledTimers.has(timer.id)).map(timer => timer.delay);
   vm.runInContext(rideFoundationSource, context, { filename: 'ride-foundation.js' });
   vm.runInContext(racingFoundationSource, context, { filename: 'racing-foundation.js' });
+  vm.runInContext(profileSystemSource, context, { filename: 'profile-system.js' });
   vm.runInContext(settingsFoundationSource, context, { filename: 'settings-foundation.js' });
   vm.runInContext(appSource, context, { filename: 'app.js' });
   return context;
@@ -1158,8 +1160,11 @@ test('Racing starts explicitly after countdown and connects shared GPS updates t
       {latitude:0,longitude:.001,timestamp:20000,distance:111.2,movingTime:20000,filteredSpeed:5.56,moving:true},
     ];
     const savedRide={name:'Test route',ghostDataVersion:1,distance:111.2,route};
+    const recordStorage=new Map(),storage={getItem(key){return recordStorage.get(key)??null},setItem(key,value){recordStorage.set(key,value)}};
+    profileRepository=RideMateProfiles.createProfileRepository(storage,{createId:()=> 'profile-a',now:()=> '2026-10-11T00:00:00.000Z'});
+    profileRepository.initialize();
     activeProfileId='profile-a';
-    profileRepository={readRides(){return[savedRide]},readSettings(){return{distanceUnit:'km'}}};
+    profileRepository.prependRide(activeProfileId,savedRide);
     renderScreen('racing',false);
     renderRacingSettings();
     const before={phase:state.racingPhase,snapshot:state.racingSnapshot,watchers:testNativeWatchStarts()};
@@ -1186,11 +1191,18 @@ test('Racing starts explicitly after countdown and connects shared GPS updates t
     emitNativePosition({coords:{latitude:0,longitude:.00056,accuracy:3,speed:5,heading:90},timestamp:base+16000});
     const resumed={moving:state.ride.motion.moving,movingTimeAdvanced:state.ride.movingTime>movingTime,snapshotChanged:JSON.stringify(state.racingSnapshot)!==JSON.stringify(movingSnapshot)};
     finishRacingSession();
+    const savePrompt={visible:!$('#racingSaveModal').classList.contains('hidden'),hasRoute:pendingRacingRecord?.route?.length>1};
+    $('#saveRacingRecordBtn').onclick();
+    const racingSaved={rides:profileRepository.readRides(activeProfileId).length,racing:profileRepository.readRacing(activeProfileId).length,modalHidden:$('#racingSaveModal').classList.contains('hidden')};
+    pendingRacingRecord=profileRepository.readRacing(activeProfileId)[0];$('#saveRacingAsRideBtn').onclick();
+    const ridingSaved={rides:profileRepository.readRides(activeProfileId).length,racing:profileRepository.readRacing(activeProfileId).length};
+    renderRecords('riding');const ridingList={title:$('#recordsTitle').textContent,hasRecord:$('#recordsList').innerHTML.includes('km')};
+    renderRecords('racing');const racingList={title:$('#recordsTitle').textContent,hasRecord:$('#recordsList').innerHTML.includes('km')};
     $('#racingOpponentType').value='saved';$('#racingOpponentType').onchange({target:$('#racingOpponentType')});
     $('#racingStartBtn').onclick();runPendingTimers();runPendingTimers();runPendingTimers();
     const saved={phase:state.racingPhase,type:state.racingSession?.target?.type,watchers:testNativeWatchStarts()};
     renderScreen('map',false);
-    return{before,countdown,active,live,stopped,resumed,saved,after:{phase:state.racingPhase,session:state.racingSession,snapshot:state.racingSnapshot}};
+    return{before,countdown,active,live,stopped,resumed,savePrompt,racingSaved,ridingSaved,ridingList,racingList,saved,after:{phase:state.racingPhase,session:state.racingSession,snapshot:state.racingSnapshot}};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
     before:{phase:'idle',snapshot:null,watchers:0},
@@ -1199,9 +1211,17 @@ test('Racing starts explicitly after countdown and connects shared GPS updates t
     live:{snapshot:true,gap:20,hud:'20m 앞섬'},
     stopped:{moving:false,movingTime:4000,elapsedAdvanced:true,snapshotFrozen:true},
     resumed:{moving:true,movingTimeAdvanced:true,snapshotChanged:true},
-    saved:{phase:'active',type:'SAVED_RIDE',watchers:1},
+    savePrompt:{visible:true,hasRoute:true},
+    racingSaved:{rides:1,racing:1,modalHidden:true},
+    ridingSaved:{rides:2,racing:1},
+    ridingList:{title:'라이딩 기록',hasRecord:true},
+    racingList:{title:'레이싱 기록',hasRecord:true},
+    saved:{phase:'active',type:'SAVED_RIDE',watchers:2},
     after:{phase:'idle',session:null,snapshot:null},
   });
+  assert.match(html,/data-menu-item="riding-records"[^>]*>[\s\S]*?라이딩 기록/);
+  assert.match(html,/data-menu-item="racing-records"[^>]*>[\s\S]*?레이싱 기록/);
+  assert.match(html,/id="saveRacingAsRideBtn"[\s\S]*?id="saveRacingRecordBtn"[\s\S]*?id="discardRacingRecordBtn"/);
 });
 
 test('empty search shows structured recent rows and typed search uses only matching recent candidates', () => {

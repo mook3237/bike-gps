@@ -269,6 +269,21 @@
       return Array.isArray(data.rides) ? data.rides.slice() : [];
     }
 
+    function prependRacing(profileId, record) {
+      const store = ensureStore();
+      if (!store.dataByProfileId[profileId]) throw new Error('프로필을 찾을 수 없습니다.');
+      const next = clone(store);
+      const racing = Array.isArray(next.dataByProfileId[profileId].racing) ? next.dataByProfileId[profileId].racing : [];
+      next.dataByProfileId[profileId].racing = [clone(record), ...racing];
+      persist(next);
+      return clone(next.dataByProfileId[profileId].racing);
+    }
+
+    function readRacing(profileId) {
+      const data = getProfileData(profileId);
+      return Array.isArray(data.racing) ? data.racing.slice() : [];
+    }
+
     return {
       initialize,
       getProfiles,
@@ -286,6 +301,8 @@
       writeMyPlaces,
       prependRide,
       readRides,
+      prependRacing,
+      readRacing,
     };
   }
 
