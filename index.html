@@ -149,10 +149,11 @@
           <label class="app-setting-row"><span><strong>시계 형식</strong><small>도착 예정 시간 표시</small></span><select data-setting="clockFormat"><option value="device">기기 설정</option><option value="12h">12시간</option><option value="24h">24시간</option></select></label>
           <h2 class="racing-settings-title">레이싱 모드 설정</h2>
           <label class="app-setting-row"><span><strong>비교 표시</strong><small>레이싱 중 표시할 격차 기준</small></span><select id="racingDisplayModeSetting"><option value="distance">거리</option><option value="time">시간</option></select></label>
-          <label class="app-setting-row"><span><strong>경로</strong><small>저장된 GPS 주행 경로</small></span><select id="racingRouteSelect"></select></label>
+          <div class="app-setting-row racing-course-row"><span><strong>코스</strong><small id="racingCourseValue">선택된 코스 없음</small></span><button id="racingCourseSelectBtn" type="button">목적지 선택</button></div>
           <label class="app-setting-row"><span><strong>상대</strong><small>가상 라이더 유형</small></span><select id="racingOpponentType"><option value="speed">일정 속도</option><option value="saved">선택한 개인 기록</option></select></label>
           <label id="racingSpeedSettingRow" class="app-setting-row"><span><strong>상대 속도</strong><small>km/h</small></span><input id="racingTargetSpeed" type="number" inputmode="decimal" min="1" step="0.1"></label>
-          <p id="racingSavedOpponentNote" class="racing-saved-opponent-note hidden">선택한 경로의 저장 기록을 상대로 사용합니다.</p>
+          <label id="racingSavedOpponentRow" class="app-setting-row hidden"><span><strong>레이싱 기록</strong><small>선택한 기록의 원래 코스만 사용</small></span><select id="racingOpponentRecordSelect"></select></label>
+          <p id="racingSavedOpponentNote" class="racing-saved-opponent-note hidden">레이싱 기록 메뉴에서 선택한 동일 코스로만 도전할 수 있습니다.</p>
           <button id="racingStartBtn" class="primary-btn racing-start-btn" type="button">레이싱 시작</button>
         </main>
       </section>
@@ -456,6 +457,24 @@
           <button id="saveRacingAsRideBtn" class="primary-btn" type="button">라이딩 기록으로 저장</button>
           <button id="saveRacingRecordBtn" class="secondary-btn" type="button">레이싱 기록으로 저장</button>
           <button id="discardRacingRecordBtn" class="secondary-btn" type="button">저장하지 않기</button>
+        </div>
+      </section>
+
+      <section id="racingTripTypeDialog" class="dialog-backdrop hidden" aria-hidden="true">
+        <div class="dialog racing-course-dialog" role="dialog" aria-modal="true" aria-labelledby="racingTripTypeTitle">
+          <h2 id="racingTripTypeTitle">레이싱 코스 선택</h2>
+          <div class="racing-course-options">
+            <button id="racingOneWayBtn" class="primary-btn" type="button"><strong>편도</strong><small>선택한 목적지까지</small></button>
+            <button id="racingRoundTripBtn" class="secondary-btn" type="button"><strong>왕복</strong><small>복귀 목적지 추가</small></button>
+          </div>
+        </div>
+      </section>
+
+      <section id="racingReturnDialog" class="dialog-backdrop hidden" aria-hidden="true">
+        <div class="dialog racing-course-dialog" role="dialog" aria-modal="true" aria-labelledby="racingReturnTitle">
+          <h2 id="racingReturnTitle">복귀 목적지</h2>
+          <button id="racingReturnCurrentBtn" class="primary-btn" type="button">현재 위치</button>
+          <button id="racingReturnOtherBtn" class="secondary-btn" type="button">다른 목적지 설정</button>
         </div>
       </section>
 

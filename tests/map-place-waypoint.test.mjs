@@ -52,6 +52,7 @@ function loadApp(search = '', deferTimers = false, staticDom = false) {
     const listenerOptions = new Map();
     const children = [];
     let htmlValue = '';
+    let textValue = '';
     const element = {
       id: initial.id || '', dataset: {...(initial.dataset || {})}, onclick: null,
       classList: {
@@ -73,8 +74,12 @@ function loadApp(search = '', deferTimers = false, staticDom = false) {
       querySelector(selector) { return children.find(child => matchesSelector(child, selector)) || makeElement({classes:[]}); },
       setPointerCapture() {}, releasePointerCapture() {}, focus() {}, blur() {},
       getBoundingClientRect() { return {top: 100, right: 300, bottom: 200, left: 0, width: 300, height: 100}; },
-      offsetHeight: 600, value: '', textContent: '',
+      offsetHeight: 600, value: '',
     };
+    Object.defineProperty(element, 'textContent', {
+      get() { return textValue; },
+      set(value) { textValue = value == null ? '' : String(value); },
+    });
     Object.defineProperty(element, 'innerHTML', {
       get() { return htmlValue; },
       set(value) {
@@ -3041,6 +3046,7 @@ test('reroute resets progress before recalculating remaining waypoint positions 
 
 test('riding board opens from recorder tab and returns to the map with responsive bounded layouts', () => {
   const context=loadApp('',false,true);
+  const ridingBoardHtml=html.slice(html.indexOf('<section id="ridingBoard"'),html.indexOf('<section id="searchPanel"'));
   const metricCells=[...html.matchAll(/data-riding-metric="([^"]+)"/g)].map(match=>match[1]);
   assert.deepEqual(metricCells,['averageSpeed','maxSpeed','averagePace','bestPace','monthlyDistance','totalDistance']);
   assert.match(html,/id="ridingTimeValue"/);
@@ -3055,7 +3061,7 @@ test('riding board opens from recorder tab and returns to the map with responsiv
   assert.match(html,/id="ridingGaugeTrack"/);
   assert.match(html,/id="ridingGaugeProgress"/);
   assert.match(html,/id="ridingGaugeTicks"/);
-  assert.doesNotMatch(html,/현재 속도/);
+  assert.doesNotMatch(ridingBoardHtml,/현재 속도/);
 
   vm.runInContext(`state.currentLocation=null;$('#ridingBoardTabBtn').onclick()`,context);
   assert.equal(vm.runInContext('state.screen',context),'riding-board');
@@ -3513,4 +3519,53 @@ test('Riding Board unit setting converts display only and keeps canonical ride v
   assert.match(result.values.averageSpeed,/mph$/);
   assert.match(result.values.averagePace,/min\/mi$/);
   assert.equal(result.gaugeUnit,'mph');
+});
+
+test('Racing course selection joins return routes and saved replay enforces the recorded start', async () => {
+  const context=loadApp('',true,true);
+  const result=await vm.runInContext(`(async()=>{
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    class TestBounds {constructor(){this.points=[]}extend(point){this.points.push(point)}isEmpty(){return this.points.length===0}}
+    class TestPolyline {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setOptions(options){Object.assign(this,options)}setZIndex(value){this.zIndex=value}}
+    class TestOverlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setPosition(position){this.position=position}}
+    kakao={maps:{LatLng:TestLatLng,LatLngBounds:TestBounds,Polyline:TestPolyline,CustomOverlay:TestOverlay}};
+    state.map={getLevel:()=>4,getCenter:()=>({}),setBounds(){},relayout(){},panTo(){}};
+    openAppSettings=()=>{testSettingsOpened=true};closeRecordsScreen=()=>true;
+    const origin={name:'출발',latitude:37,longitude:126.999},turn={name:'목적지',latitude:37,longitude:127},returnDestination={name:'복귀',latitude:37,longitude:127.001};
+    const outbound={label:'출발 경로',routeMode:'BIKE_ONLY',totalDistance:111,totalTime:60,_points:[origin,turn],_steps:[]};
+    state.routes=[outbound];state.selectedRoute=0;state.racingCourseSetup={stage:'outbound',origin,destination:turn};
+    const tripShown=showRacingTripType();
+    const oneWayApplied=chooseOneWayRacingCourse();
+    const oneWay={source:state.racingCourse.source,points:state.racingCourse.route.length,name:state.racingCourse.name};
+    state.racingCourseSetup={stage:'return-choice',origin,destination:turn,outboundRoute:outbound};
+    fetch=async()=>({ok:true,json:async()=>({routes:[
+      {label:'다른 모드',routeMode:'SHORTEST',totalDistance:120,totalTime:65,route:{legs:[{steps:[{properties:{distance:120,time:65},path:{points:[[127,37],[127.0011,37]]}}]}]}},
+      {label:'같은 모드',routeMode:'BIKE_ONLY',totalDistance:111,totalTime:60,route:{legs:[{steps:[{properties:{distance:111,time:60},path:{points:[[127,37],[127.001,37]]}}]}]}}
+    ]})});
+    const roundApplied=await loadRacingReturnRoute(returnDestination);
+    const round={mode:state.racingCourse.routeMode,points:state.racingCourse.route.map(point=>[point.latitude,point.longitude]),distance:state.racingCourse.distance};
+    const savedRoute=[
+      {latitude:37,longitude:127,timestamp:0,distance:0,movingTime:0,filteredSpeed:0,moving:false},
+      {latitude:37,longitude:127.001,timestamp:20000,distance:88.8,movingTime:20000,filteredSpeed:4.44,moving:true}
+    ];
+    const saved={name:'기록 코스',ghostDataVersion:1,distance:88.8,movingTime:20000,route:savedRoute};
+    const invalid={name:'불완전 기록',ghostDataVersion:1,distance:88.8,route:savedRoute.map(({latitude,longitude})=>({latitude,longitude}))};
+    activeProfileId='profile-a';profileRepository={readSettings(){return{distanceUnit:'km'}},readRacing(){return[saved,invalid]}};
+    testToast='';toast=message=>{testToast=message};
+    const challenge=challengeRacingRecord(0),shownRoute=state.racingCourse.route.map(point=>[point.latitude,point.longitude]);
+    const invalidChallenge=challengeRacingRecord(1),invalidMessage=testToast;
+    const fast=(longitude,heading=90,accuracy=3)=>({timestamp:1000,position:{latitude:37,longitude,accuracy},heading:{degrees:heading},quality:{fresh:true,monotonic:true,plausiblePosition:true}});
+    const near=replayStartEligibility(savedRoute,fast(127.00001)),before=replayStartEligibility(savedRoute,fast(126.9999)),past=replayStartEligibility(savedRoute,fast(127.0001));
+    state.racingPhase='armed';state.racingArmedStart={...before.start,route:savedRoute,target:Racing.createSavedRideTarget(saved),startedRide:false};
+    const jitterStarted=maybeStartArmedRacing(fast(127.00001),{moving:true});
+    const crossingStarted=maybeStartArmedRacing(fast(127.00005),{moving:true});
+    return{tripShown,oneWayApplied,oneWay,roundApplied,round,challenge,shownRoute,invalidChallenge,invalidMessage,eligibility:{near:near.allowed,before:before.allowed,past:past.allowed,pastMessage:past.reason},jitterStarted,crossingStarted,phase:state.racingPhase,courseSource:state.racingCourse.source,opponentIndex:state.racingOpponentRecordIndex,settingsOpened:testSettingsOpened};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    tripShown:true,oneWayApplied:true,oneWay:{source:'new',points:2,name:'편도 · 목적지'},
+    roundApplied:true,round:{mode:'BIKE_ONLY',points:[[37,126.999],[37,127],[37,127.001]],distance:222},
+    challenge:true,shownRoute:[[37,127],[37,127.001]],invalidChallenge:false,invalidMessage:'GPS 경로 또는 시간 정보가 부족해 이 기록에 도전할 수 없습니다.',
+    eligibility:{near:true,before:true,past:false,pastMessage:'기록 시작 위치보다 앞에 있어 기록을 시작할 수 없습니다.'},
+    jitterStarted:false,crossingStarted:true,phase:'active',courseSource:'saved',opponentIndex:0,settingsOpened:true,
+  });
 });
