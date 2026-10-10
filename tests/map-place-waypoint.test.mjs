@@ -5,6 +5,7 @@ import vm from 'node:vm';
 
 const appSource = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
 const rideFoundationSource = fs.readFileSync(new URL('../ride-foundation.js', import.meta.url), 'utf8');
+const racingFoundationSource = fs.readFileSync(new URL('../racing-foundation.js', import.meta.url), 'utf8');
 const settingsFoundationSource = fs.readFileSync(new URL('../settings-foundation.js', import.meta.url), 'utf8');
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const styles = fs.readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
@@ -139,6 +140,7 @@ function loadApp(search = '', deferTimers = false, staticDom = false) {
   context.runPendingTimers = () => pendingTimers.splice(0).forEach(timer => { if (!cancelledTimers.has(timer.id)) timer.fn(); });
   context.testPendingTimerDelays = () => pendingTimers.filter(timer => !cancelledTimers.has(timer.id)).map(timer => timer.delay);
   vm.runInContext(rideFoundationSource, context, { filename: 'ride-foundation.js' });
+  vm.runInContext(racingFoundationSource, context, { filename: 'racing-foundation.js' });
   vm.runInContext(settingsFoundationSource, context, { filename: 'settings-foundation.js' });
   vm.runInContext(appSource, context, { filename: 'app.js' });
   return context;
@@ -1141,6 +1143,65 @@ test('Racing map shows only valid comparison data and switches distance or time 
   assert.match(html,/data-menu-item="racing-settings"[^>]*>[\s\S]*?레이싱 모드 설정/);
   assert.match(html,/id="racingDisplayModeSetting"[\s\S]*?<option value="distance">거리<\/option>[\s\S]*?<option value="time">시간<\/option>/);
   assert.doesNotMatch(html,/id="racingDistanceModeBtn"|id="racingTimeModeBtn"|레이싱 데이터 대기 중/);
+});
+
+test('Racing starts explicitly after countdown and connects shared GPS updates to the HUD', () => {
+  const context=loadApp('',true,true);
+  const result=vm.runInContext(`(()=>{
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    class TestOverlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setPosition(position){this.position=position}}
+    kakao={maps:{LatLng:TestLatLng,CustomOverlay:TestOverlay}};
+    state.map={relayout(){}};
+    const route=[
+      {latitude:0,longitude:0,timestamp:0,distance:0,movingTime:0,filteredSpeed:0,moving:false},
+      {latitude:0,longitude:.0005,timestamp:10000,distance:55.6,movingTime:10000,filteredSpeed:5.56,moving:true},
+      {latitude:0,longitude:.001,timestamp:20000,distance:111.2,movingTime:20000,filteredSpeed:5.56,moving:true},
+    ];
+    const savedRide={name:'Test route',ghostDataVersion:1,distance:111.2,route};
+    activeProfileId='profile-a';
+    profileRepository={readRides(){return[savedRide]},readSettings(){return{distanceUnit:'km'}}};
+    renderScreen('racing',false);
+    renderRacingSettings();
+    const before={phase:state.racingPhase,snapshot:state.racingSnapshot,watchers:testNativeWatchStarts()};
+    $('#racingRouteSelect').value='0';$('#racingRouteSelect').onchange({target:$('#racingRouteSelect')});
+    $('#racingOpponentType').value='speed';$('#racingOpponentType').onchange({target:$('#racingOpponentType')});
+    $('#racingTargetSpeed').value='18';$('#racingTargetSpeed').oninput({target:$('#racingTargetSpeed')});
+    $('#racingStartBtn').onclick();
+    const countdown={phase:state.racingPhase,text:$('#racingCountdown').textContent,snapshot:state.racingSnapshot};
+    runPendingTimers();runPendingTimers();runPendingTimers();
+    const active={phase:state.racingPhase,type:state.racingSession?.target?.type,watchers:testNativeWatchStarts()};
+    const base=Date.now();
+    emitNativePosition({coords:{latitude:0,longitude:0,accuracy:3,speed:5,heading:90},timestamp:base});
+    emitNativePosition({coords:{latitude:0,longitude:.00018,accuracy:3,speed:5,heading:90},timestamp:base+2000});
+    emitNativePosition({coords:{latitude:0,longitude:.00036,accuracy:3,speed:5,heading:90},timestamp:base+4000});
+    const live={snapshot:!!state.racingSnapshot,gap:Math.round(state.racingSnapshot?.distanceDifference),hud:$('#racingComparisonValue').textContent};
+    const movingTime=state.ride.movingTime,elapsedTime=Ride.rideMetrics(state.ride,base+4000).elapsedTime;
+    const movingSnapshot={...state.racingSnapshot};
+    emitNativePosition({coords:{latitude:0,longitude:.00036,accuracy:3,speed:0,heading:90},timestamp:base+6000});
+    emitNativePosition({coords:{latitude:0,longitude:.00036,accuracy:3,speed:0,heading:90},timestamp:base+8000});
+    emitNativePosition({coords:{latitude:0,longitude:.00036,accuracy:3,speed:0,heading:90},timestamp:base+10000});
+    emitNativePosition({coords:{latitude:0,longitude:.00037,accuracy:3,speed:0,heading:90},timestamp:base+12000});
+    emitNativePosition({coords:{latitude:0,longitude:.00038,accuracy:3,speed:0,heading:90},timestamp:base+14000});
+    const stopped={moving:state.ride.motion.moving,movingTime:state.ride.movingTime,elapsedAdvanced:Ride.rideMetrics(state.ride,base+14000).elapsedTime>elapsedTime,snapshotFrozen:JSON.stringify(state.racingSnapshot)===JSON.stringify(movingSnapshot)};
+    emitNativePosition({coords:{latitude:0,longitude:.00056,accuracy:3,speed:5,heading:90},timestamp:base+16000});
+    const resumed={moving:state.ride.motion.moving,movingTimeAdvanced:state.ride.movingTime>movingTime,snapshotChanged:JSON.stringify(state.racingSnapshot)!==JSON.stringify(movingSnapshot)};
+    finishRacingSession();
+    $('#racingOpponentType').value='saved';$('#racingOpponentType').onchange({target:$('#racingOpponentType')});
+    $('#racingStartBtn').onclick();runPendingTimers();runPendingTimers();runPendingTimers();
+    const saved={phase:state.racingPhase,type:state.racingSession?.target?.type,watchers:testNativeWatchStarts()};
+    renderScreen('map',false);
+    return{before,countdown,active,live,stopped,resumed,saved,after:{phase:state.racingPhase,session:state.racingSession,snapshot:state.racingSnapshot}};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    before:{phase:'idle',snapshot:null,watchers:0},
+    countdown:{phase:'countdown',text:'3',snapshot:null},
+    active:{phase:'active',type:'TARGET_SPEED',watchers:1},
+    live:{snapshot:true,gap:20,hud:'20m 앞섬'},
+    stopped:{moving:false,movingTime:4000,elapsedAdvanced:true,snapshotFrozen:true},
+    resumed:{moving:true,movingTimeAdvanced:true,snapshotChanged:true},
+    saved:{phase:'active',type:'SAVED_RIDE',watchers:1},
+    after:{phase:'idle',session:null,snapshot:null},
+  });
 });
 
 test('empty search shows structured recent rows and typed search uses only matching recent candidates', () => {
