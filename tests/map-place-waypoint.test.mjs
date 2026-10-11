@@ -1155,7 +1155,7 @@ test('Racing map shows only valid comparison data and switches distance or time 
   assert.doesNotMatch(html,/id="racingDistanceModeBtn"|id="racingTimeModeBtn"|레이싱 데이터 대기 중/);
 });
 
-test('Racing setup stays touchable, starts countdown, and settings cards use half natural height', () => {
+test('Racing setup stays touchable, starts countdown, and settings screens remain separate', () => {
   assert.match(styles,/\.racing-setup-panel\{[^}]*pointer-events:auto/);
   assert.doesNotMatch(styles,/\.racing-active #mapHeader\{[^}]*left:auto/);
   assert.match(html,/id="appSettingsScreen"[\s\S]*?id="appSettingsBack"[\s\S]*?<\/section>[\s\S]*?id="racingSettingsScreen"[\s\S]*?id="racingSettingsBack"[\s\S]*?id="racingDisplayModeSetting"/);
@@ -1166,8 +1166,6 @@ test('Racing setup stays touchable, starts countdown, and settings cards use hal
     $('#appSettingsScreen').setAttribute=()=>{};
     $('#racingSettingsScreen').setAttribute=()=>{};
     const panel=$('#racingSetupPanel');
-    panel.scrollHeight=240;
-    applyHalfHeightCard(panel);
     state.screen='racing';
     state.racingCourse={name:'테스트 코스',route:[{latitude:37,longitude:127},{latitude:37.001,longitude:127.001}]};
     renderRacingSetupControls();
@@ -1182,9 +1180,10 @@ test('Racing setup stays touchable, starts countdown, and settings cards use hal
     const retained=setting.value;
     closeRacingSettings(true);openAppSettings();
     const appOnly=!$('#appSettingsScreen').classList.contains('hidden')&&$('#racingSettingsScreen').classList.contains('hidden');
-    return{height:panel.style.getPropertyValue('height'),speed:state.racingTargetSpeedKmh,phase:state.racingPhase,countdown:$('#racingCountdown').textContent,racingOnly,retained,appOnly};
+    return{height:panel.style.getPropertyValue('height'),speed:state.racingTargetSpeedKmh,phase:state.racingPhase,countdown:$('#racingCountdown').textContent,setupHidden:panel.classList.contains('hidden'),racingOnly,retained,appOnly};
   })()`,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)),{height:'120px',speed:24.5,phase:'countdown',countdown:'3',racingOnly:true,retained:'time',appOnly:true});
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{height:'',speed:24.5,phase:'countdown',countdown:'3',setupHidden:true,racingOnly:true,retained:'time',appOnly:true});
+  assert.doesNotMatch(appSource,/applyHalfHeightCard|applyHalfHeightDialog/);
 });
 
 test('Racing starts explicitly after countdown and connects shared GPS updates to the HUD', () => {
@@ -1727,7 +1726,55 @@ test('orientation changes relayout and refit using the current viewport without 
   assert.doesNotMatch(styles,/#overlayRoot:has\(\.riding-board:not\(\.hidden\)\)/);
 });
 
-test('map gestures and landscape controls retain portrait interaction parity', async () => {
+test('screen transitions isolate Racing overlays, retire stale course responses, and refresh viewport metrics', async () => {
+  const context=loadApp('',false,true);
+  const result=await vm.runInContext(`(async()=>{
+    let releaseRoute;
+    let relayouts=0;
+    state.map={relayout(){relayouts++},setBounds(){}};
+    state.currentLocation=null;
+    state.racingCourseSetup={stage:'trip-type',origin:{latitude:37,longitude:127},destination:{name:'도착',latitude:37.01,longitude:127.01}};
+    renderScreen('racing',false);showRacingTripType(false);
+    const racingDialogVisible=!$('#racingTripTypeDialog').classList.contains('hidden');
+    state.racingCourseSetup.stage='route-alternatives';
+    fetchRoutes=()=>new Promise(resolve=>{releaseRoute=resolve});
+    const pending=loadRacingCourseAlternatives(null);
+    window.visualViewport.height=500;
+    renderScreen('map',false);
+    state.editingEndpoint=null;
+    renderScreen('search',false);
+    const ordinarySearchRacingClass=document.body.classList.contains('racing-active');
+    renderScreen('map',false);
+    releaseRoute([{id:'late',routeMode:'BIKE_ONLY',totalDistance:100,totalTime:60,route:{legs:[{steps:[{properties:{x:127,y:37,distance:100,time:60},path:{points:[[127,37],[127.01,37.01]]}}]}]}}]);
+    await pending;
+    state.racingCourseSetup.stage='trip-type';
+    $('#racingTabBtn').onclick();
+    const resumedTripDialog=!$('#racingTripTypeDialog').classList.contains('hidden');
+    renderScreen('map',false);
+    return{
+      racingDialogVisible,
+      racingClass:document.body.classList.contains('racing-active'),
+      ordinarySearchRacingClass,
+      resumedTripDialog,
+      tripHidden:$('#racingTripTypeDialog').classList.contains('hidden'),
+      returnHidden:$('#racingReturnDialog').classList.contains('hidden'),
+      navMenuHidden:$('#navMenu').classList.contains('hidden'),
+      setupPreserved:!!state.racingCourseSetup,
+      staleRouteApplied:state.routes.some(route=>route.id==='late'),
+      viewportHeight:document.documentElement.style.getPropertyValue('--viewport-height'),
+    };
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    racingDialogVisible:true,racingClass:false,ordinarySearchRacingClass:false,resumedTripDialog:true,tripHidden:true,returnHidden:true,navMenuHidden:true,
+    setupPreserved:true,staleRouteApplied:false,viewportHeight:'500px',
+  });
+  assert.match(styles,/\.main-menu-drawer\{[^}]*width:min\(42vw,170px\)/);
+  assert.match(styles,/#navMenu\{[^}]*width:50%/);
+  assert.match(styles,/#ridingMenu \.riding-menu-drawer\{[^}]*width:min\(39vw,160px\)/);
+  assert.match(styles,/\.icon-btn\{[^}]*width:44px[^}]*height:44px/);
+});
+
+test('map gestures retain portrait interaction parity without separate zoom buttons', async () => {
   const context=loadApp('',false,true);
   const result=await vm.runInContext(`(async()=>{
     testMapOptions={};
@@ -1737,25 +1784,25 @@ test('map gestures and landscape controls retain portrait interaction parity', a
     kakao={maps:{LatLng:TestLatLng,Map:TestMap,event:{addListener(){}},services:{Places:TestPlaces}}};loadKakao=async()=>{};locate=async()=>{};const originalRenderScreen=renderScreen;renderScreen=()=>{};await initMap();renderScreen=originalRenderScreen;
     const map=$('#map'),pointerTypes=['pointerdown','pointermove','pointerup','pointercancel'];
     const visibility={};
-    for(const screen of ['map','route','route-points','navigation']){renderScreen(screen,false);visibility[screen]={zoom:!$('.zoom-controls').classList.contains('hidden'),mapControls:!$('#mapControls').classList.contains('hidden'),currentLocation:screen==='navigation'?!$('#navLocateBtn').classList.contains('hidden'):!$('.right-controls').classList.contains('hidden'),mapActive:document.body.classList.contains('map-active')}}
-    const controls=['#zoomIn','#zoomOut','#locateBtn','#navLocateBtn','#swapBtn','#startNavBtn','#cancelRoutePreviewBtn'].map(selector=>({selector,wired:typeof $(selector).onclick==='function'}));
+    for(const screen of ['map','route','route-points','navigation']){renderScreen(screen,false);visibility[screen]={mapControls:!$('#mapControls').classList.contains('hidden'),currentLocation:screen==='navigation'?!$('#navLocateBtn').classList.contains('hidden'):!$('.right-controls').classList.contains('hidden'),mapActive:document.body.classList.contains('map-active')}}
+    const controls=['#locateBtn','#navLocateBtn','#swapBtn','#startNavBtn','#cancelRoutePreviewBtn'].map(selector=>({selector,wired:typeof $(selector).onclick==='function'}));
     return{mapOptions:testMapOptions,passive:pointerTypes.every(type=>map.getEventListenerOptions(type)?.passive===true),controls,visibility};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result.mapOptions)),{draggable:true,zoomable:true});
   assert.equal(result.passive,true);
   assert.equal(result.controls.every(control=>control.wired),true);
   assert.deepEqual(JSON.parse(JSON.stringify(result.visibility)),{
-    map:{zoom:true,mapControls:true,currentLocation:true,mapActive:true},
-    route:{zoom:false,mapControls:true,currentLocation:true,mapActive:false},
-    'route-points':{zoom:false,mapControls:true,currentLocation:true,mapActive:false},
-    navigation:{zoom:true,mapControls:true,currentLocation:true,mapActive:false},
+    map:{mapControls:true,currentLocation:true,mapActive:true},
+    route:{mapControls:true,currentLocation:true,mapActive:false},
+    'route-points':{mapControls:true,currentLocation:true,mapActive:false},
+    navigation:{mapControls:true,currentLocation:true,mapActive:false},
   });
+  assert.doesNotMatch(html,/id="zoomIn"|id="zoomOut"/);
   assert.match(styles,/#map\{[^}]*touch-action:auto/);
   assert.match(styles,/\.map-controls\{[^}]*pointer-events:none/);
   assert.match(styles,/\.map-controls button\{[^}]*pointer-events:auto/);
   assert.match(styles,/\.hidden\{display:none!important\}/);
   assert.match(styles,/@media\(orientation:landscape\) and \(max-height:600px\)/);
-  assert.match(styles,/\.map-active \.zoom-controls\{[^}]*top:auto[^}]*right:auto[^}]*bottom:calc\(66px \+ env\(safe-area-inset-bottom\) \+ var\(--viewport-bottom,0px\)\)[^}]*left:calc\(14px \+ env\(safe-area-inset-left\)\)[^}]*flex-direction:column/);
   assert.match(styles,/\.map-active \.right-controls\{[^}]*top:auto[^}]*right:calc\(14px \+ env\(safe-area-inset-right\)\)[^}]*bottom:calc\(66px \+ env\(safe-area-inset-bottom\) \+ var\(--viewport-bottom,0px\)\)/);
   assert.match(styles,/\.bottom-nav\{[^}]*height:calc\(52px \+ env\(safe-area-inset-bottom\)\)/);
   assert.match(styles,/\.bottom-nav button\{[^}]*min-height:44px/);
