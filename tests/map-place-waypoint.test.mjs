@@ -32,6 +32,7 @@ function loadApp(search = '', deferTimers = false, staticDom = false) {
   const elements = new Map();
   const windowListeners = new Map();
   const viewportListeners = new Map();
+  const documentListeners = new Map();
   const pendingTimers = [];
   const cancelledTimers = new Set();
   let nativeWatchStarts = 0;
@@ -73,7 +74,8 @@ function loadApp(search = '', deferTimers = false, staticDom = false) {
       querySelectorAll(selector) { return children.filter(child => matchesSelector(child, selector)); },
       querySelector(selector) { return children.find(child => matchesSelector(child, selector)) || makeElement({classes:[]}); },
       setPointerCapture() {}, releasePointerCapture() {}, focus() {}, blur() {},
-      getBoundingClientRect() { return {top: 100, right: 300, bottom: 200, left: 0, width: 300, height: 100}; },
+      boundingRect: initial.boundingRect || {top: 100, right: 300, bottom: 200, left: 0, width: 300, height: 100},
+      getBoundingClientRect() { return this.boundingRect; },
       offsetHeight: 600, value: '',
     };
     Object.defineProperty(element, 'textContent', {
@@ -118,7 +120,7 @@ function loadApp(search = '', deferTimers = false, staticDom = false) {
     },
     querySelectorAll(selector) { return selector === '[data-nav-action]' ? navActions : []; },
     createElement() { return makeElement(); },
-    addEventListener() {}, body: makeElement(), documentElement: makeElement(),
+    addEventListener(type, listener) { const list=documentListeners.get(type)||[]; list.push(listener); documentListeners.set(type,list); }, body: makeElement(), documentElement: makeElement(), activeElement:null,
   };
   const context = vm.createContext({
     console, document, localStorage: { getItem() { return null; }, setItem() {} },
@@ -141,6 +143,7 @@ function loadApp(search = '', deferTimers = false, staticDom = false) {
   };
   context.dispatchWindowEvent = type => (windowListeners.get(type)||[]).forEach(listener=>listener({type}));
   context.dispatchViewportEvent = type => (viewportListeners.get(type)||[]).forEach(listener=>listener({type}));
+  context.dispatchDocumentEvent = (type, target) => (documentListeners.get(type)||[]).forEach(listener=>listener({type,target}));
   context.testNativeWatchStarts = () => nativeWatchStarts;
   context.emitNativePosition = position => nativeWatchSuccess?.(position);
   context.runPendingTimers = () => pendingTimers.splice(0).forEach(timer => { if (!cancelledTimers.has(timer.id)) timer.fn(); });
@@ -1184,6 +1187,61 @@ test('Racing setup stays touchable, starts countdown, and settings screens remai
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{height:'',speed:24.5,phase:'countdown',countdown:'3',setupHidden:true,racingOnly:true,retained:'time',appOnly:true});
   assert.doesNotMatch(appSource,/applyHalfHeightCard|applyHalfHeightDialog/);
+});
+
+test('Racing speed clears variable bottom panels and restores its normal position', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    window.visualViewport.height=800;window.visualViewport.offsetTop=0;
+    const cards=$('#routeCards'),setup=$('#racingSetupPanel');
+    cards.classList.remove('hidden');cards.boundingRect={top:610,right:378,bottom:710,left:12,width:366,height:100};
+    setup.classList.add('hidden');syncMapSpeedClearance();
+    const routeClearance=document.documentElement.style.getPropertyValue('--map-speed-clearance');
+    cards.classList.add('hidden');setup.classList.remove('hidden');setup.boundingRect={top:520,right:360,bottom:700,left:30,width:330,height:180};syncMapSpeedClearance();
+    const setupClearance=document.documentElement.style.getPropertyValue('--map-speed-clearance');
+    setup.classList.add('hidden');syncMapSpeedClearance();
+    return{routeClearance,setupClearance,restored:document.documentElement.style.getPropertyValue('--map-speed-clearance')};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{routeClearance:'200px',setupClearance:'290px',restored:'0px'});
+  assert.match(styles,/\.racing-speed-readout\{[^}]*bottom:max\([^}]*var\(--map-speed-clearance,0px\)/);
+});
+
+test('Racing speed input follows the iOS visual viewport without shrinking the map layout', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    window.visualViewport.height=800;window.visualViewport.offsetTop=0;syncViewportMetrics();
+    const input=$('#racingTargetSpeed');
+    dispatchDocumentEvent('focusin',input);
+    window.visualViewport.height=420;window.visualViewport.offsetTop=80;dispatchViewportEvent('resize');
+    const open={height:document.documentElement.style.getPropertyValue('--viewport-height'),inset:document.documentElement.style.getPropertyValue('--keyboard-inset'),visible:document.documentElement.style.getPropertyValue('--racing-visible-height'),className:document.body.classList.contains('racing-keyboard-open')};
+    dispatchDocumentEvent('focusout',input);window.visualViewport.height=800;window.visualViewport.offsetTop=0;dispatchViewportEvent('resize');
+    return{open,closed:{height:document.documentElement.style.getPropertyValue('--viewport-height'),inset:document.documentElement.style.getPropertyValue('--keyboard-inset'),className:document.body.classList.contains('racing-keyboard-open')}};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    open:{height:'800px',inset:'300px',visible:'420px',className:true},
+    closed:{height:'800px',inset:'0px',className:false},
+  });
+  assert.match(styles,/\.racing-setup-panel\{[^}]*var\(--keyboard-inset,0px\)[^}]*var\(--racing-visible-height,100dvh\)/);
+});
+
+test('Racing diagnostics are disabled by default and report live target state only when enabled', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    testLogs=[];let enabled=false;
+    console={debug(...values){testLogs.push(values)}};
+    localStorage={getItem(key){return enabled&&key==='ridemate_racing_diagnostics'?'1':null}};
+    state.racingPhase='active';state.racingTargetSpeedKmh=24;state.racingCapture={movingTime:1000};state.ride.movingTime=6000;
+    state.racingSnapshot={targetRouteProgress:40,targetPosition:{latitude:37.1,longitude:127.1}};
+    const values={fix:{timestamp:1234,speed:4.5,accuracy:6},fast:{receivedAt:1250,position:{accuracy:6},speed:{rawMps:4.5}},movement:{moving:true},snapshotUpdated:true,markerUpdated:true};
+    reportRacingDiagnostic('gps',values);const disabledCount=testLogs.length;
+    enabled=true;reportRacingDiagnostic('gps',values);
+    return{disabledCount,enabledCount:testLogs.length,prefix:testLogs[0]?.[0],stage:testLogs[0]?.[1],data:testLogs[0]?.[2]};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    disabledCount:0,enabledCount:1,prefix:'[RideMate Racing]',stage:'gps',data:{gpsTimestamp:1234,gpsReceivedAt:1250,gpsSpeed:4.5,gpsAccuracy:6,moving:true,movingTime:5000,targetSpeedKmh:24,targetRouteProgress:40,targetPosition:{latitude:37.1,longitude:127.1},snapshotUpdated:true,markerUpdated:true},
+  });
+  assert.match(appSource,/reportRacingDiagnostic\('start'/);
+  assert.match(appSource,/reportRacingDiagnostic\('gps'/);
 });
 
 test('Racing starts explicitly after countdown and connects shared GPS updates to the HUD', () => {
