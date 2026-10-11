@@ -100,6 +100,7 @@
               <button type="button" data-menu-item="riding-records"><strong>라이딩 기록</strong></button>
               <button type="button" data-menu-item="racing-records"><strong>과거 기록과 레이싱</strong></button>
               <button type="button" class="racing-menu-settings hidden" data-menu-item="racing-settings"><strong>레이싱 모드 설정</strong></button>
+              <button type="button" class="racing-menu-end hidden" data-menu-item="racing-end"><strong>레이싱 종료</strong></button>
               <button type="button" data-menu-item="app-settings"><strong>앱 설정</strong></button>
             </nav>
             <div class="main-menu-divider"></div>
@@ -168,6 +169,7 @@
         </header>
         <main class="app-settings-content">
           <div id="recordsList"></div>
+          <section id="recordDetail" class="record-detail hidden" aria-live="polite"></section>
         </main>
       </section>
 
@@ -443,28 +445,25 @@
         <button id="endNavBtn" class="danger-btn">안내 종료</button>
       </section>
 
-      <section id="saveModal" class="dialog-backdrop hidden">
-        <div class="dialog">
-          <h2>주행을 종료했습니다</h2>
-          <div class="ride-summary">
-            <div><small>이동거리</small><b id="summaryDistance">0.0 km</b></div>
-            <div><small>주행시간</small><b id="summaryDuration">0분</b></div>
-            <div><small>평균속도</small><b id="summaryAverageSpeed">0.0 km/h</b></div>
-            <div><small>최고속도</small><b id="summaryMaxSpeed">0.0 km/h</b></div>
+      <section id="rideResultModal" class="dialog-backdrop ride-result-backdrop hidden" aria-hidden="true">
+        <div class="ride-result-sheet" role="dialog" aria-modal="true" aria-labelledby="rideResultTitle">
+          <header class="ride-result-header"><span>RIDE MATE</span><h2 id="rideResultTitle">주행 결과</h2><p id="rideResultCourse"></p></header>
+          <div id="rideResultBadge" class="ride-result-badge hidden"></div>
+          <section id="rideResultComparison" class="ride-result-comparison hidden"></section>
+          <section class="ride-result-stats" aria-label="주행 통계">
+            <div><small>주행 거리</small><b id="resultDistance">--</b></div>
+            <div><small>평균 속도</small><b id="resultAverageSpeed">--</b></div>
+            <div><small>최고 속도</small><b id="resultMaxSpeed">--</b></div>
+            <div><small>이동 시간</small><b id="resultMovingTime">--</b></div>
+          </section>
+          <section id="rideResultOpponent" class="ride-result-opponent hidden"></section>
+          <section id="rideResultCourseInfo" class="ride-result-course-info"></section>
+          <p id="rideResultPrompt" class="ride-result-prompt">현재 기록을 저장하시겠습니까?</p>
+          <div class="ride-result-actions">
+            <button id="saveResultRacingBtn" class="ride-result-action primary-btn" type="button"><b>레이싱 기록 저장</b><small>유효한 최초 기록 또는 최고 기록을 GPS 경로와 함께 저장합니다.</small></button>
+            <button id="saveResultRideBtn" class="ride-result-action secondary-btn" type="button"><b>일반 기록 저장</b><small>주행 요약만 저장하며 GPS 경로는 저장하지 않습니다.</small></button>
+            <button id="discardResultBtn" class="ride-result-action secondary-btn" type="button"><b>저장 안 함</b><small>이번 주행을 저장하지 않고 종료합니다.</small></button>
           </div>
-          <p>이번 주행 기록을 저장할까요?</p>
-          <button id="saveRideBtn" class="primary-btn">저장하기</button>
-          <button id="discardRideBtn" class="secondary-btn">저장하지 않기</button>
-        </div>
-      </section>
-
-      <section id="racingSaveModal" class="dialog-backdrop hidden" aria-hidden="true">
-        <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="racingSaveTitle">
-          <h2 id="racingSaveTitle">레이싱을 종료했습니다</h2>
-          <p>이번 기록을 어떻게 저장할까요?</p>
-          <button id="saveRacingAsRideBtn" class="primary-btn" type="button">라이딩 기록으로 저장</button>
-          <button id="saveRacingRecordBtn" class="secondary-btn" type="button">레이싱 기록으로 저장</button>
-          <button id="discardRacingRecordBtn" class="secondary-btn" type="button">저장하지 않기</button>
         </div>
       </section>
 

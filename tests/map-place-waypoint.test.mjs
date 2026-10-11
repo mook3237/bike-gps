@@ -1144,7 +1144,7 @@ test('Racing map shows only valid comparison data and switches distance or time 
     return{waiting,distance,time:$('#racingComparisonValue').textContent,speed:$('#racingSpeedValue').textContent,mode:state.racingDisplayMode};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    waiting:{screen:'racing',overlay:true,navigation:false,comparison:'',comparisonHidden:true,speed:'--',zoomHidden:false,menuVisible:true,searchVisible:true},
+    waiting:{screen:'racing',overlay:true,navigation:false,comparison:'',comparisonHidden:true,speed:'--',zoomHidden:true,menuVisible:true,searchVisible:true},
     distance:'120m 앞섬',time:'18초 뒤처짐',speed:'27',mode:'time',
   });
   assert.match(html,/data-menu-item="racing-settings"[^>]*>[\s\S]*?레이싱 모드 설정/);
@@ -1194,7 +1194,7 @@ test('Racing starts explicitly after countdown and connects shared GPS updates t
     class TestPolyline {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setOptions(options){Object.assign(this,options)}setZIndex(value){this.zIndex=value}}
     class TestOverlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setPosition(position){this.position=position}}
     kakao={maps:{LatLng:TestLatLng,LatLngBounds:TestBounds,Polyline:TestPolyline,CustomOverlay:TestOverlay}};
-    state.map={relayout(){},setBounds(){}};
+    state.map={relayout(){},setBounds(){},setLevel(level){this.level=level},panTo(position){this.center=position}};
     const route=[
       {latitude:0,longitude:0,timestamp:0,distance:0,movingTime:0,filteredSpeed:0,moving:false},
       {latitude:0,longitude:.0005,timestamp:10000,distance:55.6,movingTime:10000,filteredSpeed:5.56,moving:true},
@@ -1213,7 +1213,7 @@ test('Racing starts explicitly after countdown and connects shared GPS updates t
     $('#racingStartBtn').onclick();
     const countdown={phase:state.racingPhase,text:$('#racingCountdown').textContent,snapshot:state.racingSnapshot};
     runPendingTimers();runPendingTimers();runPendingTimers();
-    const active={phase:state.racingPhase,type:state.racingSession?.target?.type,watchers:testNativeWatchStarts()};
+    const active={phase:state.racingPhase,type:state.racingSession?.target?.type,watchers:testNativeWatchStarts(),snapshot:!!state.racingSnapshot,targetMarker:!!state.racingTargetMarker,setupHidden:$('#racingSetupPanel').classList.contains('hidden')};
     const base=Date.now();
     emitNativePosition({coords:{latitude:0,longitude:0,accuracy:3,speed:5,heading:90},timestamp:base});
     emitNativePosition({coords:{latitude:0,longitude:.00018,accuracy:3,speed:5,heading:90},timestamp:base+2000});
@@ -1229,12 +1229,14 @@ test('Racing starts explicitly after countdown and connects shared GPS updates t
     const stopped={moving:state.ride.motion.moving,movingTime:state.ride.movingTime,elapsedAdvanced:Ride.rideMetrics(state.ride,base+14000).elapsedTime>elapsedTime,snapshotFrozen:JSON.stringify(state.racingSnapshot)===JSON.stringify(movingSnapshot)};
     emitNativePosition({coords:{latitude:0,longitude:.00056,accuracy:3,speed:5,heading:90},timestamp:base+16000});
     const resumed={moving:state.ride.motion.moving,movingTimeAdvanced:state.ride.movingTime>movingTime,snapshotChanged:JSON.stringify(state.racingSnapshot)!==JSON.stringify(movingSnapshot)};
+    state.racingSnapshot.currentRouteProgress=state.racingSession.routeDistance;
+    $('#mainMenu').setAttribute=()=>{};openMainMenu();const racingEndVisible=!$('#mainMenu').querySelector('[data-menu-item="racing-end"]').classList.contains('hidden');closeMainMenu(true);
     finishRacingSession();
-    const savePrompt={visible:!$('#racingSaveModal').classList.contains('hidden'),hasRoute:pendingRacingRecord?.route?.length>1};
-    $('#saveRacingRecordBtn').onclick();
-    const racingSaved={rides:profileRepository.readRides(activeProfileId).length,racing:profileRepository.readRacing(activeProfileId).length,modalHidden:$('#racingSaveModal').classList.contains('hidden')};
-    pendingRacingRecord=profileRepository.readRacing(activeProfileId)[0];$('#saveRacingAsRideBtn').onclick();
-    const ridingSaved={rides:profileRepository.readRides(activeProfileId).length,racing:profileRepository.readRacing(activeProfileId).length};
+    const savePrompt={visible:!$('#rideResultModal').classList.contains('hidden'),hasRoute:pendingRideResult?.record?.route?.length>1,threeActions:['saveResultRacingBtn','saveResultRideBtn','discardResultBtn'].every(id=>!!$('#'+id))};
+    $('#saveResultRacingBtn').onclick();
+    const racingSaved={rides:profileRepository.readRides(activeProfileId).length,racing:profileRepository.readRacing(activeProfileId).length,modalHidden:$('#rideResultModal').classList.contains('hidden')};
+    const savedRace=profileRepository.readRacing(activeProfileId)[0];openRideResult(savedRace,{mode:'racing'});$('#saveResultRideBtn').onclick();
+    const ridingRecord=profileRepository.readRides(activeProfileId)[0],ridingSaved={rides:profileRepository.readRides(activeProfileId).length,racing:profileRepository.readRacing(activeProfileId).length,hasRoute:'route' in ridingRecord};
     renderRecords('riding');const ridingList={title:$('#recordsTitle').textContent,hasRecord:$('#recordsList').innerHTML.includes('km')};
     renderRecords('racing');const racingList={title:$('#recordsTitle').textContent,hasRecord:$('#recordsList').innerHTML.includes('km')};
     emitNativePosition({coords:{latitude:0,longitude:0,accuracy:3,speed:0,heading:90},timestamp:base+18000});
@@ -1242,18 +1244,19 @@ test('Racing starts explicitly after countdown and connects shared GPS updates t
     $('#racingStartBtn').onclick();runPendingTimers();runPendingTimers();runPendingTimers();
     const saved={phase:state.racingPhase,type:state.racingSession?.target?.type,watchers:testNativeWatchStarts()};
     renderScreen('map',false);
-    return{before,countdown,active,live,stopped,resumed,savePrompt,racingSaved,ridingSaved,ridingList,racingList,saved,after:{phase:state.racingPhase,session:state.racingSession,snapshot:state.racingSnapshot}};
+    return{before,countdown,active,live,stopped,resumed,racingEndVisible,savePrompt,racingSaved,ridingSaved,ridingList,racingList,saved,after:{phase:state.racingPhase,session:state.racingSession,snapshot:state.racingSnapshot}};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
     before:{phase:'idle',snapshot:null,watchers:1},
     countdown:{phase:'countdown',text:'3',snapshot:null},
-    active:{phase:'active',type:'TARGET_SPEED',watchers:2},
+    active:{phase:'active',type:'TARGET_SPEED',watchers:2,snapshot:true,targetMarker:true,setupHidden:true},
     live:{snapshot:true,gap:20,hud:'20m 앞섬'},
     stopped:{moving:false,movingTime:4000,elapsedAdvanced:true,snapshotFrozen:true},
     resumed:{moving:true,movingTimeAdvanced:true,snapshotChanged:true},
-    savePrompt:{visible:true,hasRoute:true},
+    racingEndVisible:true,
+    savePrompt:{visible:true,hasRoute:true,threeActions:true},
     racingSaved:{rides:0,racing:2,modalHidden:true},
-    ridingSaved:{rides:1,racing:2},
+    ridingSaved:{rides:1,racing:2,hasRoute:false},
     ridingList:{title:'라이딩 기록',hasRecord:true},
     racingList:{title:'레이싱 기록',hasRecord:true},
     saved:{phase:'armed',watchers:4},
@@ -1261,7 +1264,34 @@ test('Racing starts explicitly after countdown and connects shared GPS updates t
   });
   assert.match(html,/data-menu-item="riding-records"[^>]*>[\s\S]*?라이딩 기록/);
   assert.match(html,/data-menu-item="racing-records"[^>]*>[\s\S]*?과거 기록과 레이싱/);
-  assert.match(html,/id="saveRacingAsRideBtn"[\s\S]*?id="saveRacingRecordBtn"[\s\S]*?id="discardRacingRecordBtn"/);
+  assert.match(html,/id="saveResultRacingBtn"[\s\S]*?id="saveResultRideBtn"[\s\S]*?id="discardResultBtn"/);
+});
+
+test('all ride modes share one result flow and Racing initializes its target marker', () => {
+  assert.match(html,/data-menu-item="racing-end"/);
+  assert.match(html,/id="rideResultModal"[\s\S]*?id="saveResultRacingBtn"[\s\S]*?id="saveResultRideBtn"[\s\S]*?id="discardResultBtn"/);
+  assert.doesNotMatch(html,/id="saveModal"|id="racingSaveModal"/);
+  assert.match(html,/id="recordDetail"/);
+  assert.match(appSource,/function openRideResult\(/);
+  assert.match(appSource,/function racingCourseIdentity\(/);
+  assert.match(appSource,/state\.racingSnapshot=Racing\.updateRace\(state\.racingSession/);
+  assert.match(appSource,/function followRacingPosition\(/);
+  assert.match(appSource,/delete summary\.route/);
+  assert.match(styles,/\.ride-result-sheet\{/);
+  assert.match(styles,/@media\(max-width:380px\)[\s\S]*?\.ride-result-stats/);
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    const route=[{latitude:37,longitude:127,timestamp:0},{latitude:37,longitude:127.001,timestamp:10000}];
+    let saved=[];activeProfileId='profile-a';profileRepository={readSettings(){return{distanceUnit:'km'}},readRacing(){return saved}};
+    const first={route,courseRoute:route,distance:90,courseDistance:90,movingTime:10000,completed:true,averageMovingSpeed:9,maxSpeed:11};
+    const firstAssessment=racingRecordAssessment(first);
+    saved=[{...first,movingTime:9000}];
+    const slower=racingRecordAssessment(first),best=racingRecordAssessment({...first,movingTime:8000}),incomplete=racingRecordAssessment({...first,completed:false});
+    const summary=generalRecordSummary({...first,detailedSamples:[{}],departure:route[0],destination:route[1]});
+    const reversed=recordsShareCourse(first,{...first,courseRoute:[...route].reverse(),route:[...route].reverse()});
+    return{first:firstAssessment.status,slower:slower.status,best:best.status,incomplete:incomplete.eligible,summaryHasRoute:'route' in summary||'courseRoute' in summary||'detailedSamples' in summary||'departure' in summary||'destination' in summary,reversed};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{first:'first',slower:'slower',best:'best',incomplete:false,summaryHasRoute:false,reversed:false});
 });
 
 test('empty search shows structured recent rows and typed search uses only matching recent candidates', () => {
@@ -1751,6 +1781,9 @@ test('screen transitions isolate Racing overlays, retire stale course responses,
     $('#racingTabBtn').onclick();
     const resumedTripDialog=!$('#racingTripTypeDialog').classList.contains('hidden');
     renderScreen('map',false);
+    window.visualViewport.height=800;syncViewportMetrics();document.activeElement=$('#racingTargetSpeed');window.visualViewport.height=500;syncViewportMetrics();
+    const keyboard={layoutHeight:document.documentElement.style.getPropertyValue('--viewport-height'),inset:document.documentElement.style.getPropertyValue('--keyboard-inset'),open:document.body.classList.contains('racing-keyboard-open')};
+    document.activeElement=null;window.visualViewport.height=800;syncViewportMetrics();
     return{
       racingDialogVisible,
       racingClass:document.body.classList.contains('racing-active'),
@@ -1761,12 +1794,12 @@ test('screen transitions isolate Racing overlays, retire stale course responses,
       navMenuHidden:$('#navMenu').classList.contains('hidden'),
       setupPreserved:!!state.racingCourseSetup,
       staleRouteApplied:state.routes.some(route=>route.id==='late'),
-      viewportHeight:document.documentElement.style.getPropertyValue('--viewport-height'),
+      viewportHeight:document.documentElement.style.getPropertyValue('--viewport-height'),keyboard,
     };
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
     racingDialogVisible:true,racingClass:false,ordinarySearchRacingClass:false,resumedTripDialog:true,tripHidden:true,returnHidden:true,navMenuHidden:true,
-    setupPreserved:true,staleRouteApplied:false,viewportHeight:'500px',
+    setupPreserved:true,staleRouteApplied:false,viewportHeight:'800px',keyboard:{layoutHeight:'800px',inset:'300px',open:true},
   });
   assert.match(styles,/\.main-menu-drawer\{[^}]*width:min\(42vw,170px\)/);
   assert.match(styles,/#navMenu\{[^}]*width:50%/);
@@ -3291,7 +3324,7 @@ test('Riding Board interactive overlays stay above the board and suppress only t
   const boardRule=[...styles.matchAll(/\.riding-board\{([^}]*)\}/g)].find(match=>match[1].includes('--riding-u'))?.[1]||'';
   const boardZ=Number(boardRule.match(/z-index:(\d+)/)?.[1]);
   const overlayZ=Number(styles.match(/#ridingMenu\{[^}]*z-index:(\d+)/)?.[1]);
-  const dialogZ=Number(styles.match(/#ridingMetricDialog,\s*#saveModal\{[^}]*z-index:(\d+)/)?.[1]);
+  const dialogZ=Number(styles.match(/#ridingMetricDialog,\s*#rideResultModal\{[^}]*z-index:(\d+)/)?.[1]);
   assert.ok(overlayZ>boardZ,'Riding Board overlays must stack above the board');
   assert.ok(dialogZ>boardZ,'Riding Board dialogs must stack above the board');
   assert.match(styles,/#ridingMenu\{[^}]*position:fixed[^}]*inset:0[^}]*background:[^;}]*rgba[^}]*z-index:40/);
@@ -3371,7 +3404,7 @@ test('Riding Board drawer actions close first and preserve Pause Continue and En
     $('#ridingBoardMenu').onclick();$('#ridingPauseBtn').onclick();
     const resumed={menuClosed:$('#ridingMenu').classList.contains('hidden'),ride:state.ride.recordingState};
     $('#ridingBoardMenu').onclick();$('#ridingEndBtn').onclick();
-    return{paused,resumed,ended:{menuClosed:$('#ridingMenu').classList.contains('hidden'),ride:state.ride.recordingState,screen:state.screen,saveOpen:!$('#saveModal').classList.contains('hidden')}};
+    return{paused,resumed,ended:{menuClosed:$('#ridingMenu').classList.contains('hidden'),ride:state.ride.recordingState,screen:state.screen,saveOpen:!$('#rideResultModal').classList.contains('hidden')}};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
     paused:{menuClosed:true,ride:'paused'},
@@ -3420,9 +3453,9 @@ test('Riding Board Record End keeps its screen through Save and Dont Save', () =
       $('#ridingBoardTabBtn').onclick();
       $('#ridingRecordPrototypeBtn').onclick();
       $('#ridingRecordPrototypeBtn').onclick();
-      const ended={screen:state.screen,boardVisible:!$('#ridingBoard').classList.contains('hidden'),saveOpen:!$('#saveModal').classList.contains('hidden'),origin:pendingRideOrigin};
-      $('#${action}RideBtn').onclick();
-      return{ended,after:{screen:state.screen,boardVisible:!$('#ridingBoard').classList.contains('hidden'),saveOpen:!$('#saveModal').classList.contains('hidden'),rideState:state.ride.recordingState,saved:rides.length}};
+      const ended={screen:state.screen,boardVisible:!$('#ridingBoard').classList.contains('hidden'),saveOpen:!$('#rideResultModal').classList.contains('hidden'),origin:pendingRideOrigin};
+      $('#${action==='save'?'saveResultRide':'discardResult'}Btn').onclick();
+      return{ended,after:{screen:state.screen,boardVisible:!$('#ridingBoard').classList.contains('hidden'),saveOpen:!$('#rideResultModal').classList.contains('hidden'),rideState:state.ride.recordingState,saved:rides.length}};
     })()`,context);
   };
   const saved=JSON.parse(JSON.stringify(run('save'))),discarded=JSON.parse(JSON.stringify(run('discard')));
@@ -3514,7 +3547,7 @@ test('post-arrival uses the shared stationary candidate and finalizes at three s
     maybeFinishRideAfterArrival(3999);const before=state.ride.recordingState;
     state.ride.motion.stationaryCandidateSince=null;maybeFinishRideAfterArrival(5000);const resumed=state.ride.recordingState;
     state.ride.motion.stationaryCandidateSince=6000;maybeFinishRideAfterArrival(9000);const after=state.ride.recordingState;
-    return{before,resumed,after,modal:!$('#saveModal').classList.contains('hidden')};
+    return{before,resumed,after,modal:!$('#rideResultModal').classList.contains('hidden')};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{before:'recording',resumed:'recording',after:'completed',modal:true});
 });
@@ -3534,7 +3567,7 @@ test('manual Navigation End can finalize the shared ride through the common save
   const context=loadApp('',false,true);installConfirmedWaypointFixture(context);
   const result=vm.runInContext(`(()=>{
     startNavigation();requestManualNavigationEnd();$('#endRideAfterNavigationBtn').onclick();
-    return{ride:state.ride.recordingState,pending:pendingRideRecord!=null,saveModal:!$('#saveModal').classList.contains('hidden')};
+    return{ride:state.ride.recordingState,pending:pendingRideRecord!=null,saveModal:!$('#rideResultModal').classList.contains('hidden')};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{ride:'completed',pending:true,saveModal:true});
 });
