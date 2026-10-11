@@ -672,7 +672,7 @@
 .map-active:not(.racing-active) .search-entry,.map-active:not(.racing-active) #menuBtn,.map-active:not(.racing-active) .map-controls button{border:1px solid #163253;background:rgba(2,10,24,.88);color:#fff;box-shadow:0 3px 14px rgba(2,10,24,.34);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
 .map-active:not(.racing-active) .search-entry{color:#fff;font-weight:800}.map-active:not(.racing-active) .search-entry span,.map-active:not(.racing-active) #menuBtn,.map-active:not(.racing-active) .map-controls button{color:#7cc4f2}
 .map-active:not(.racing-active) .bottom-nav{border-top-color:#14304f;background:rgba(8,24,46,.94)}.map-active:not(.racing-active) .bottom-nav button{background:transparent;color:#7f93ab}.map-active:not(.racing-active) .bottom-nav button.active{color:#2cf0ff}
-.racing-active #mapHeader{left:auto}.racing-active #menuBtn{border:1px solid #163253;background:rgba(2,10,24,.86);color:#7cc4f2;box-shadow:0 3px 14px rgba(2,10,24,.34)}
+.racing-active #menuBtn{border:1px solid #163253;background:rgba(2,10,24,.86);color:#7cc4f2;box-shadow:0 3px 14px rgba(2,10,24,.34)}
 .racing-settings-title{margin-top:18px!important;padding-top:14px;border-top:1px solid #edf1f5}
 .app-setting-row input[type="number"]{width:104px;height:40px;border:1px solid #d6e1ec;border-radius:10px;background:#fff;padding:0 9px}.racing-course-row button,.record-challenge-btn{min-height:40px;border:1px solid #91dff0;border-radius:10px;background:#071b2c;color:#2cf0ff;padding:0 12px;font-weight:800}.record-challenge-btn{margin-top:10px}.racing-course-options{display:grid;grid-template-columns:1fr 1fr;gap:10px}.racing-course-options button{margin-top:0}.racing-course-options strong,.racing-course-options small{display:block}.racing-course-options small{margin-top:4px}.racing-saved-opponent-note{margin:6px 0 12px;color:#718198;font-size:12px}.racing-start-btn{width:100%;margin-top:12px}.racing-countdown{position:absolute;top:42%;left:50%;transform:translate(-50%,-50%);color:#2cf0ff;font-size:76px;line-height:1;font-weight:800;font-variant-numeric:tabular-nums;text-shadow:0 2px 8px rgba(2,10,24,.95),0 0 18px rgba(44,240,255,.7)}
 .empty-navigation-active .turn-card,.empty-navigation-active .nav-route-status,.empty-navigation-active #navSearchBtn,.empty-navigation-active .nav-recalc-btn,.empty-navigation-active .nav-info-toggle,.empty-navigation-active #navMenu [data-nav-action="recalc"],.empty-navigation-active #navMenu [data-nav-action="pause"],.empty-navigation-active #navMenu [data-nav-action="add-route"],.empty-navigation-active #navMenu [data-nav-action="alternate-route"]{display:none!important}
@@ -686,9 +686,18 @@
 .racing-target-marker{width:28px;height:32px;color:#ff4f5e;font-size:31px;line-height:32px;text-align:center;-webkit-text-stroke:4px #fff;paint-order:stroke fill;filter:drop-shadow(0 2px 6px rgba(2,10,24,.65))}
 .racing-target-indicator{position:absolute;top:88px;left:50%;transform:translateX(-50%);z-index:6;color:#ff7a84;font-size:13px;font-weight:900;text-shadow:0 2px 7px #020a18}
 .racing-target-indicator::before{content:'▲';display:inline-block;margin-right:6px;transform:rotate(var(--target-angle));-webkit-text-stroke:2px #fff;paint-order:stroke fill}
-.racing-setup-panel{position:absolute;z-index:7;left:50%;bottom:calc(env(safe-area-inset-bottom) + 82px);transform:translateX(-50%);width:min(330px,calc(100vw - 36px));padding:14px;border:1px solid #163253;border-radius:16px;background:rgba(2,10,24,.9);color:#fff;box-shadow:0 6px 24px rgba(2,10,24,.38);backdrop-filter:blur(10px)}
+.racing-setup-panel{position:absolute;z-index:7;left:50%;bottom:calc(env(safe-area-inset-bottom) + 82px);transform:translateX(-50%);width:min(330px,calc(100vw - 36px));padding:14px;border:1px solid #163253;border-radius:16px;background:rgba(2,10,24,.9);color:#fff;box-shadow:0 6px 24px rgba(2,10,24,.38);backdrop-filter:blur(10px);pointer-events:auto;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .racing-setup-panel>strong{display:block;margin-bottom:10px;color:#2cf0ff}.racing-setup-panel label{display:flex;align-items:center;justify-content:space-between;gap:12px;font-weight:800}.racing-setup-panel input{width:90px;height:40px;border:1px solid #2d7797;border-radius:10px;background:#071b2c;color:#fff;padding:0 8px;font-size:18px;font-weight:800}.racing-setup-panel label small{margin-left:5px;color:#7cc4f2}
 .racing-controls-hidden #mapHeader,.racing-controls-hidden .right-controls,.racing-controls-hidden .zoom-controls{opacity:0;pointer-events:none;transition:opacity .2s ease}
+
+#appSettingsScreen,#racingSettingsScreen{background:#020a18;color:#fff}
+#appSettingsScreen .app-settings-back,#racingSettingsScreen .app-settings-back{border:1px solid #294257;background:#0d2132;color:#7cc4f2;box-shadow:0 2px 10px #0006}
+#appSettingsScreen .app-settings-content,#racingSettingsScreen .app-settings-content,.racing-course-dialog,#ridingMetricDialog .dialog{overflow-y:auto;-webkit-overflow-scrolling:touch;border-color:#294257;background:#07131f;color:#fff}
+#appSettingsScreen .app-settings-content h2,#racingSettingsScreen .app-settings-content h2,.racing-course-dialog small,#ridingMetricDialog .dialog p{color:#7cc4f2}
+#appSettingsScreen .app-setting-row,#racingSettingsScreen .app-setting-row{border-color:#294257}
+#appSettingsScreen .app-setting-row small,#racingSettingsScreen .app-setting-row small{color:#9ca9b8}
+#appSettingsScreen .app-setting-row select,#racingSettingsScreen .app-setting-row select,#ridingMetricDialog button{border-color:#294257;background:#0d2132;color:#fff}
+#ridingMenu .riding-menu-drawer{max-height:100%;align-self:flex-end}
 
 .racing-active .map-controls button{
   border:1px solid #163253;

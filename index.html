@@ -147,7 +147,16 @@
           <label class="app-setting-row"><span><strong>화면 항상 켜기</strong><small>지원되는 기기에서 화면 꺼짐 방지</small></span><input type="checkbox" data-setting="keepScreenAwake"></label>
           <label class="app-setting-row"><span><strong>짧은 주행 저장</strong><small>저장 기준 확정 후 적용 예정</small></span><input type="checkbox" data-setting="saveShortRides"></label>
           <label class="app-setting-row"><span><strong>시계 형식</strong><small>도착 예정 시간 표시</small></span><select data-setting="clockFormat"><option value="device">기기 설정</option><option value="12h">12시간</option><option value="24h">24시간</option></select></label>
-          <h2 class="racing-settings-title">레이싱 모드 설정</h2>
+        </main>
+      </section>
+
+      <section id="racingSettingsScreen" class="app-settings-screen hidden" aria-hidden="true">
+        <header class="app-settings-header">
+          <button id="racingSettingsBack" class="app-settings-back" type="button" aria-label="뒤로">‹</button>
+          <h1>레이싱 모드 설정</h1>
+        </header>
+        <main class="app-settings-content">
+          <h2>레이싱</h2>
           <label class="app-setting-row"><span><strong>비교 표시</strong><small>레이싱 중 표시할 격차 기준</small></span><select id="racingDisplayModeSetting"><option value="distance">거리</option><option value="time">시간</option></select></label>
         </main>
       </section>

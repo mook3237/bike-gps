@@ -1155,6 +1155,38 @@ test('Racing map shows only valid comparison data and switches distance or time 
   assert.doesNotMatch(html,/id="racingDistanceModeBtn"|id="racingTimeModeBtn"|레이싱 데이터 대기 중/);
 });
 
+test('Racing setup stays touchable, starts countdown, and settings cards use half natural height', () => {
+  assert.match(styles,/\.racing-setup-panel\{[^}]*pointer-events:auto/);
+  assert.doesNotMatch(styles,/\.racing-active #mapHeader\{[^}]*left:auto/);
+  assert.match(html,/id="appSettingsScreen"[\s\S]*?id="appSettingsBack"[\s\S]*?<\/section>[\s\S]*?id="racingSettingsScreen"[\s\S]*?id="racingSettingsBack"[\s\S]*?id="racingDisplayModeSetting"/);
+  const context=loadApp('',true,true);
+  const result=vm.runInContext(`(()=>{
+    let historyEntry={screen:'racing'};
+    history={get state(){return historyEntry},replaceState(entry){historyEntry=entry},back(){handleHistoryPopState({state:{screen:'racing'}})}};
+    $('#appSettingsScreen').setAttribute=()=>{};
+    $('#racingSettingsScreen').setAttribute=()=>{};
+    const panel=$('#racingSetupPanel');
+    panel.scrollHeight=240;
+    applyHalfHeightCard(panel);
+    state.screen='racing';
+    state.racingCourse={name:'테스트 코스',route:[{latitude:37,longitude:127},{latitude:37.001,longitude:127.001}]};
+    renderRacingSetupControls();
+    const input=$('#racingTargetSpeed');
+    input.value='24.5';
+    input.oninput({target:input});
+    $('#racingStartBtn').onclick();
+    openRacingSettings();
+    const racingOnly=!$('#racingSettingsScreen').classList.contains('hidden')&&$('#appSettingsScreen').classList.contains('hidden');
+    const setting=$('#racingDisplayModeSetting');setting.value='time';setting.onchange({target:setting});
+    closeRacingSettings(true);openRacingSettings();
+    const retained=setting.value;
+    closeRacingSettings(true);openAppSettings();
+    const appOnly=!$('#appSettingsScreen').classList.contains('hidden')&&$('#racingSettingsScreen').classList.contains('hidden');
+    return{height:panel.style.getPropertyValue('height'),speed:state.racingTargetSpeedKmh,phase:state.racingPhase,countdown:$('#racingCountdown').textContent,racingOnly,retained,appOnly};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{height:'120px',speed:24.5,phase:'countdown',countdown:'3',racingOnly:true,retained:'time',appOnly:true});
+});
+
 test('Racing starts explicitly after countdown and connects shared GPS updates to the HUD', () => {
   const context=loadApp('',true,true);
   const result=vm.runInContext(`(()=>{
