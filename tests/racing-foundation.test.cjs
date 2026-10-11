@@ -52,6 +52,24 @@ test('constant-speed target progresses along the route in canonical units', () =
   assert.equal(snapshot.status, 'ahead');
 });
 
+test('rerouting preserves elapsed time and both gap signs when the target is behind the new route start', () => {
+  const race = Racing.createRaceSession({ route: raceRoute, target: Racing.createTargetSpeedTarget(5), currentMovingTime: 0 });
+  const before = Racing.updateRace(race, { currentProgressDistance: 80, currentMovingTime: 10000 });
+  const rerouted = [metersPoint(80), metersPoint(180), metersPoint(280)];
+  const rebased = Racing.rebaseRaceRoute(race, { route: rerouted, currentPosition: rerouted[0], snapshot: before });
+  const frozen = Racing.updateRace(race, { currentProgressDistance: 0, currentMovingTime: 10000 });
+  const resumed = Racing.updateRace(race, { currentProgressDistance: 10, currentMovingTime: 12000 });
+
+  assert.equal(rebased, true);
+  assert.equal(frozen.raceElapsedTime, before.raceElapsedTime);
+  assert.ok(Math.abs(frozen.distanceDifference - before.distanceDifference) < 0.1);
+  assert.ok(Math.abs(frozen.timeDifference - before.timeDifference) < 1);
+  assert.equal(frozen.targetBeforeRouteStart, 30);
+  assert.deepEqual(frozen.targetPosition, rerouted[0]);
+  assert.ok(Math.abs(resumed.distanceDifference - before.distanceDifference) < 0.1);
+  assert.ok(Math.abs(resumed.timeDifference - before.timeDifference) < 1);
+});
+
 test('shared Ride moving time advances, freezes while stopped or paused, and resumes without stopped time', () => {
   const race = Racing.createRaceSession({ route: raceRoute, target: Racing.createTargetSpeedTarget(5), currentMovingTime: 5000 });
   const moving = Racing.updateRace(race, { currentProgressDistance: 20, currentMovingTime: 7000 });

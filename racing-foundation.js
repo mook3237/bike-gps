@@ -171,6 +171,9 @@
       target,
       lastMovingTime: baseline,
       raceElapsedTime: 0,
+      progressBase: 0,
+      targetProgressOffset: 0,
+      lastCurrentProgress: 0,
     };
   }
 
@@ -183,14 +186,20 @@
     const projected = finite(observation.currentProgressDistance)
       ? null
       : projectOnRoute(session.route, observation.currentPosition);
-    const rawCurrentProgress = finite(observation.currentProgressDistance)
+    const rawLocalProgress = finite(observation.currentProgressDistance)
       ? observation.currentProgressDistance
       : projected.alongDistance;
-    const currentRouteProgress = Math.max(0, Math.min(session.routeDistance, rawCurrentProgress));
-    const targetRouteProgress = Math.max(0, Math.min(session.routeDistance, targetProgressAtTime(session.target, session.raceElapsedTime)));
+    const routeStartProgress = finite(session.progressBase) ? session.progressBase : 0;
+    const routeEndProgress = routeStartProgress + session.routeDistance;
+    const rawCurrentProgress = routeStartProgress + Math.max(0, rawLocalProgress);
+    const currentRouteProgress = Math.max(session.lastCurrentProgress || routeStartProgress, Math.min(routeEndProgress, rawCurrentProgress));
+    session.lastCurrentProgress = currentRouteProgress;
+    const rawTargetProgress = targetProgressAtTime(session.target, session.raceElapsedTime) + (session.targetProgressOffset || 0);
+    const targetRouteProgress = Math.max(0, Math.min(routeEndProgress, rawTargetProgress));
     const distanceDifference = currentRouteProgress - targetRouteProgress;
-    const historicalTimeAtCurrentProgress = targetTimeAtProgress(session.target, currentRouteProgress);
+    const historicalTimeAtCurrentProgress = targetTimeAtProgress(session.target, Math.max(0, currentRouteProgress - (session.targetProgressOffset || 0)));
     const timeDifference = historicalTimeAtCurrentProgress - session.raceElapsedTime;
+    const targetLocalProgress = targetRouteProgress - routeStartProgress;
     return {
       currentRouteProgress,
       targetRouteProgress,
@@ -198,9 +207,26 @@
       timeDifference,
       historicalTimeAtCurrentProgress,
       status: distanceDifference > 0 ? 'ahead' : distanceDifference < 0 ? 'behind' : 'even',
-      targetPosition: pointAtRouteDistance(session.route, targetRouteProgress),
+      targetPosition: pointAtRouteDistance(session.route, Math.max(0, targetLocalProgress)),
+      targetBeforeRouteStart: Math.max(0, -targetLocalProgress),
+      offRouteDistance: projected?.offRouteDistance ?? 0,
+      projectedPosition: projected?.projectedPoint || null,
       raceElapsedTime: session.raceElapsedTime,
     };
+  }
+
+  function rebaseRaceRoute(session, { route, currentPosition, snapshot } = {}) {
+    if (!session || session.target?.type !== TARGET_SPEED || !Array.isArray(route) || route.length < 2 || !route.every(validPoint) || !snapshot) return false;
+    const nextRoute = route.map(point => ({ latitude: point.latitude, longitude: point.longitude }));
+    const projection = projectOnRoute(nextRoute, currentPosition || nextRoute[0]);
+    const currentProgress = Math.max(0, finite(snapshot.currentRouteProgress) ? snapshot.currentRouteProgress : session.lastCurrentProgress || 0);
+    const targetProgress = Math.max(0, finite(snapshot.targetRouteProgress) ? snapshot.targetRouteProgress : targetProgressAtTime(session.target, session.raceElapsedTime));
+    session.route = nextRoute;
+    session.routeDistance = routeDistance(nextRoute);
+    session.progressBase = currentProgress - projection.alongDistance;
+    session.targetProgressOffset = targetProgress - targetProgressAtTime(session.target, session.raceElapsedTime);
+    session.lastCurrentProgress = currentProgress;
+    return true;
   }
 
   return {
@@ -212,6 +238,7 @@
     createTargetSpeedTarget,
     pointAtRouteDistance,
     projectOnRoute,
+    rebaseRaceRoute,
     targetProgressAtTime,
     targetTimeAtProgress,
     updateRace,

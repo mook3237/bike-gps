@@ -87,6 +87,36 @@ test('FAST observation flags stale non-monotonic and impossible position jumps w
   assert.equal(stale.quality.monotonic, false);
 });
 
+test('FAST display speed rejects GPS jumps and avoids a false zero during continuous movement', () => {
+  const state = createFastObservationState();
+  const first = processFastObservation(state, pointAtMeters(0, 1000, 5, 3), 1000);
+  const movingWithZeroRaw = processFastObservation(state, pointAtMeters(5, 2000, 0, 3), 2000);
+  const jump = processFastObservation(state, pointAtMeters(1000, 3000, 20, 3), 3000);
+  const recovered = processFastObservation(state, pointAtMeters(10, 3000, 5, 3), 3000);
+
+  assert.equal(first.speed.source, 'gps');
+  assert.equal(movingWithZeroRaw.speed.source, 'position-derived');
+  assert.ok(movingWithZeroRaw.speed.mps > 4.9 && movingWithZeroRaw.speed.mps < 5.1);
+  assert.equal(jump.speed.valid, false);
+  assert.equal(jump.speed.reason, 'implausible-position');
+  assert.equal(recovered.quality.plausiblePosition, true);
+});
+
+test('motion rejects a single impossible jump without changing its accepted anchor or ride distance', () => {
+  const ride = createRideSession();
+  startRide(ride, 0);
+  ingestRideFix(ride, pointAtMeters(0, 0, 0, 3));
+  ingestRideFix(ride, pointAtMeters(10, 1000, 10, 3));
+  const before = ride.distance;
+  const jump = ingestRideFix(ride, pointAtMeters(1000, 2000, 30, 3));
+  const recovered = ingestRideFix(ride, pointAtMeters(20, 3000, 10, 3));
+
+  assert.equal(jump.rejectedReason, 'implausible-position');
+  assert.equal(jump.acceptedDistance, 0);
+  assert.ok(ride.distance - before < 30);
+  assert.notEqual(recovered.rejectedReason, 'implausible-position');
+});
+
 test('one native fix exposes the same FAST observation to every consumer with one watcher', () => {
   let starts = 0;
   let success;

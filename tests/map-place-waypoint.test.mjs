@@ -1136,19 +1136,22 @@ test('Racing map shows only valid comparison data and switches distance or time 
   const result=vm.runInContext(`(()=>{
     state.map={relayout(){}};state.currentLocation=null;
     renderScreen('racing',false);
-    const waiting={screen:state.screen,overlay:!$('#racingOverlay').classList.contains('hidden'),navigation:!$('#navOverlay').classList.contains('hidden'),comparison:$('#racingComparisonValue').textContent,comparisonHidden:$('#racingComparisonValue').classList.contains('hidden'),speed:$('#racingSpeedValue').textContent,zoomHidden:$('.zoom-controls').classList.contains('hidden'),menuVisible:!$('#mapHeader').classList.contains('hidden')};
+    const waiting={screen:state.screen,overlay:!$('#racingOverlay').classList.contains('hidden'),navigation:!$('#navOverlay').classList.contains('hidden'),comparison:$('#racingComparisonValue').textContent,comparisonHidden:$('#racingComparisonValue').classList.contains('hidden'),speed:$('#racingSpeedValue').textContent,zoomHidden:$('.zoom-controls').classList.contains('hidden'),menuVisible:!$('#mapHeader').classList.contains('hidden'),searchVisible:!$('#searchEntry').classList.contains('hidden')};
     state.racingSnapshot={distanceDifference:120,timeDifference:-18000};
-    state.ride.recordingState='recording';state.ride.currentSpeed=7.5;
+    state.racingDisplaySpeed=7.5;
     renderRacingHud();const distance=$('#racingComparisonValue').textContent;
     const setting=$('#racingDisplayModeSetting');setting.value='time';setting.onchange({target:setting});
     return{waiting,distance,time:$('#racingComparisonValue').textContent,speed:$('#racingSpeedValue').textContent,mode:state.racingDisplayMode};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    waiting:{screen:'racing',overlay:true,navigation:false,comparison:'',comparisonHidden:true,speed:'--',zoomHidden:true,menuVisible:true},
+    waiting:{screen:'racing',overlay:true,navigation:false,comparison:'',comparisonHidden:true,speed:'--',zoomHidden:false,menuVisible:true,searchVisible:true},
     distance:'120m 앞섬',time:'18초 뒤처짐',speed:'27',mode:'time',
   });
   assert.match(html,/data-menu-item="racing-settings"[^>]*>[\s\S]*?레이싱 모드 설정/);
   assert.match(html,/id="racingDisplayModeSetting"[\s\S]*?<option value="distance">거리<\/option>[\s\S]*?<option value="time">시간<\/option>/);
+  assert.doesNotMatch(html,/id="racingCourseValue"|id="racingOpponentType"|id="racingOpponentRecordSelect"/);
+  assert.match(html,/id="racingSetupPanel"[\s\S]*?id="racingTargetSpeed"[\s\S]*?id="racingStartBtn"/);
+  assert.match(html,/data-menu-item="racing-records"[^>]*>[\s\S]*?과거 기록과 레이싱/);
   assert.doesNotMatch(html,/id="racingDistanceModeBtn"|id="racingTimeModeBtn"|레이싱 데이터 대기 중/);
 });
 
@@ -1156,9 +1159,11 @@ test('Racing starts explicitly after countdown and connects shared GPS updates t
   const context=loadApp('',true,true);
   const result=vm.runInContext(`(()=>{
     class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    class TestBounds {constructor(){this.points=[]}extend(point){this.points.push(point)}isEmpty(){return this.points.length===0}}
+    class TestPolyline {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setOptions(options){Object.assign(this,options)}setZIndex(value){this.zIndex=value}}
     class TestOverlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setPosition(position){this.position=position}}
-    kakao={maps:{LatLng:TestLatLng,CustomOverlay:TestOverlay}};
-    state.map={relayout(){}};
+    kakao={maps:{LatLng:TestLatLng,LatLngBounds:TestBounds,Polyline:TestPolyline,CustomOverlay:TestOverlay}};
+    state.map={relayout(){},setBounds(){}};
     const route=[
       {latitude:0,longitude:0,timestamp:0,distance:0,movingTime:0,filteredSpeed:0,moving:false},
       {latitude:0,longitude:.0005,timestamp:10000,distance:55.6,movingTime:10000,filteredSpeed:5.56,moving:true},
@@ -1169,13 +1174,11 @@ test('Racing starts explicitly after countdown and connects shared GPS updates t
     profileRepository=RideMateProfiles.createProfileRepository(storage,{createId:()=> 'profile-a',now:()=> '2026-10-11T00:00:00.000Z'});
     profileRepository.initialize();
     activeProfileId='profile-a';
-    profileRepository.prependRide(activeProfileId,savedRide);
+    profileRepository.prependRacing(activeProfileId,savedRide);
     renderScreen('racing',false);
-    renderRacingSettings();
+    state.racingCourse={source:'new',name:'New course',route:route.map(({latitude,longitude})=>({latitude,longitude})),distance:111.2,time:20,departure:route[0],destination:route.at(-1),checkpoints:[route.at(-1)]};
+    state.racingOpponentType='speed';state.racingTargetSpeedKmh=18;renderRacingSetupControls();
     const before={phase:state.racingPhase,snapshot:state.racingSnapshot,watchers:testNativeWatchStarts()};
-    $('#racingRouteSelect').value='0';$('#racingRouteSelect').onchange({target:$('#racingRouteSelect')});
-    $('#racingOpponentType').value='speed';$('#racingOpponentType').onchange({target:$('#racingOpponentType')});
-    $('#racingTargetSpeed').value='18';$('#racingTargetSpeed').oninput({target:$('#racingTargetSpeed')});
     $('#racingStartBtn').onclick();
     const countdown={phase:state.racingPhase,text:$('#racingCountdown').textContent,snapshot:state.racingSnapshot};
     runPendingTimers();runPendingTimers();runPendingTimers();
@@ -1203,29 +1206,30 @@ test('Racing starts explicitly after countdown and connects shared GPS updates t
     const ridingSaved={rides:profileRepository.readRides(activeProfileId).length,racing:profileRepository.readRacing(activeProfileId).length};
     renderRecords('riding');const ridingList={title:$('#recordsTitle').textContent,hasRecord:$('#recordsList').innerHTML.includes('km')};
     renderRecords('racing');const racingList={title:$('#recordsTitle').textContent,hasRecord:$('#recordsList').innerHTML.includes('km')};
-    $('#racingOpponentType').value='saved';$('#racingOpponentType').onchange({target:$('#racingOpponentType')});
+    emitNativePosition({coords:{latitude:0,longitude:0,accuracy:3,speed:0,heading:90},timestamp:base+18000});
+    challengeRacingRecord(1);
     $('#racingStartBtn').onclick();runPendingTimers();runPendingTimers();runPendingTimers();
     const saved={phase:state.racingPhase,type:state.racingSession?.target?.type,watchers:testNativeWatchStarts()};
     renderScreen('map',false);
     return{before,countdown,active,live,stopped,resumed,savePrompt,racingSaved,ridingSaved,ridingList,racingList,saved,after:{phase:state.racingPhase,session:state.racingSession,snapshot:state.racingSnapshot}};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    before:{phase:'idle',snapshot:null,watchers:0},
+    before:{phase:'idle',snapshot:null,watchers:1},
     countdown:{phase:'countdown',text:'3',snapshot:null},
-    active:{phase:'active',type:'TARGET_SPEED',watchers:1},
+    active:{phase:'active',type:'TARGET_SPEED',watchers:2},
     live:{snapshot:true,gap:20,hud:'20m 앞섬'},
     stopped:{moving:false,movingTime:4000,elapsedAdvanced:true,snapshotFrozen:true},
     resumed:{moving:true,movingTimeAdvanced:true,snapshotChanged:true},
     savePrompt:{visible:true,hasRoute:true},
-    racingSaved:{rides:1,racing:1,modalHidden:true},
-    ridingSaved:{rides:2,racing:1},
+    racingSaved:{rides:0,racing:2,modalHidden:true},
+    ridingSaved:{rides:1,racing:2},
     ridingList:{title:'라이딩 기록',hasRecord:true},
     racingList:{title:'레이싱 기록',hasRecord:true},
-    saved:{phase:'active',type:'SAVED_RIDE',watchers:2},
+    saved:{phase:'armed',watchers:4},
     after:{phase:'idle',session:null,snapshot:null},
   });
   assert.match(html,/data-menu-item="riding-records"[^>]*>[\s\S]*?라이딩 기록/);
-  assert.match(html,/data-menu-item="racing-records"[^>]*>[\s\S]*?레이싱 기록/);
+  assert.match(html,/data-menu-item="racing-records"[^>]*>[\s\S]*?과거 기록과 레이싱/);
   assert.match(html,/id="saveRacingAsRideBtn"[\s\S]*?id="saveRacingRecordBtn"[\s\S]*?id="discardRacingRecordBtn"/);
 });
 
@@ -3540,50 +3544,48 @@ test('Racing destination setup stays isolated through shared place selection and
     locate=async()=>origin;
     fetchRoutes=async(from,to)=>[rawRoute(from,to,'BIKE_ONLY'),rawRoute(from,to,'SHORTEST',120)];
 
-    state.screen='racing';openPlace(destination,true);
-    const pinCard={screen:state.screen,stage:state.racingCourseSetup?.stage,finish:testRacingFinishes};
-    await $('#setEnd').onclick();
+    state.screen='racing';await openPlace(destination,true);
+    const pinCard={screen:state.screen,stage:state.racingCourseSetup?.stage,tripShown:!$('#racingTripTypeDialog').classList.contains('hidden'),placeSheetHidden:ui.sheet.classList.contains('hidden'),finish:testRacingFinishes};
     const tripFirst={stage:state.racingCourseSetup?.stage,shown:!$('#racingTripTypeDialog').classList.contains('hidden'),screen:state.screen};
     await chooseOneWayRacingCourse();
     const oneWayRoutes={screen:state.screen,count:state.routes.length,cards:$('#routeCards').querySelectorAll('[data-i]').length,start:$('#startNavBtn').textContent,points:state.routes[0]._points.length};
     $('#startNavBtn').onclick();
-    const oneWay={source:state.racingCourse.source,points:state.racingCourse.route.length,settings:testSettingsOpened,phase:state.racingPhase};
+    const oneWay={source:state.racingCourse.source,points:state.racingCourse.route.length,settings:testSettingsOpened,phase:state.racingPhase,setupVisible:!$('#racingSetupPanel').classList.contains('hidden'),startText:$('#racingStartBtn').textContent,speedVisible:!$('#racingSpeedSettingRow').classList.contains('hidden')};
 
-    state.screen='racing';state.racingCourseSetup=null;openPlace(destination,true);await $('#setEnd').onclick();showRacingReturnChoice();await chooseCurrentRacingReturn();
+    state.screen='racing';state.racingCourseSetup=null;await openPlace(destination,true);showRacingReturnChoice();await chooseCurrentRacingReturn();
     const roundRoutes={screen:state.screen,count:state.routes.length,points:state.routes[0]._points.map(point=>[point.latitude,point.longitude])};
     $('#startNavBtn').onclick();
     const round={mode:state.racingCourse.routeMode,points:state.racingCourse.route.map(point=>[point.latitude,point.longitude]),settings:testSettingsOpened};
 
     state.screen='racing';state.racingCourseSetup=null;startRacingCourseSelection();await choosePlace(destination);
     const searchCard={screen:state.screen,stage:state.racingCourseSetup?.stage};
-    await $('#setEnd').onclick();showRacingReturnChoice();chooseOtherRacingReturn();await choosePlace(returnDestination);
-    const returnCard={screen:state.screen,stage:state.racingCourseSetup?.stage};
-    await $('#setEnd').onclick();
+    showRacingReturnChoice();chooseOtherRacingReturn();await choosePlace(returnDestination);
+    const returnCard={screen:state.screen,stage:state.racingCourseSetup?.stage,tripShown:!$('#racingTripTypeDialog').classList.contains('hidden')};
     const otherReturn={screen:state.screen,points:state.routes[0]._points.map(point=>[point.latitude,point.longitude])};
     cancelRacingCourseSelection();
     const cancelled={screen:state.screen,setup:state.racingCourseSetup,finish:testRacingFinishes};
 
-    state.screen='racing';startRacingCourseSelection();state.racingCourseSetup.mapPicking=true;handlePopState({state:{screen:'racing'}});openPlace(returnDestination,true);
+    state.screen='racing';startRacingCourseSelection();state.racingCourseSetup.mapPicking=true;handlePopState({state:{screen:'racing'}});await openPlace(returnDestination,true);
     const manualCard={screen:state.screen,stage:state.racingCourseSetup?.stage,finish:testRacingFinishes};
     handlePopState({state:{screen:'racing'}});
     const backedOut={screen:state.screen,setup:state.racingCourseSetup,finish:testRacingFinishes};
 
-    state.racingCourseSetup=null;state.screen='map';let navigationLoads=0;loadRoutes=async()=>{navigationLoads++};openPlace(destination,true);await $('#setEnd').onclick();
-    return{pinCard,tripFirst,oneWayRoutes,oneWay,roundRoutes,round,searchCard,returnCard,otherReturn,cancelled,manualCard,backedOut,navigationLoads};
+    state.racingCourseSetup=null;state.screen='map';let navigationLoads=0;loadRoutes=async()=>{navigationLoads++};openPlace(destination,true);const normalMap={screen:state.screen,hasMapPlaceActions:!!$('#setStart')&&!!$('#setEnd')};await $('#setEnd').onclick();
+    return{pinCard,tripFirst,oneWayRoutes,oneWay,roundRoutes,round,searchCard,returnCard,otherReturn,cancelled,manualCard,backedOut,normalMap,navigationLoads};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    pinCard:{screen:'place',stage:'destination-discovery',finish:0},
+    pinCard:{screen:'racing',stage:'trip-type',tripShown:true,placeSheetHidden:true,finish:0},
     tripFirst:{stage:'trip-type',shown:true,screen:'racing'},
     oneWayRoutes:{screen:'racing-route',count:2,cards:2,start:'코스 선택',points:2},
-    oneWay:{source:'new',points:2,settings:1,phase:'idle'},
+    oneWay:{source:'new',points:2,settings:0,phase:'idle',setupVisible:true,startText:'레이싱 시작',speedVisible:true},
     roundRoutes:{screen:'racing-route',count:2,points:[[37,126.999],[37,127],[37,126.999]]},
-    round:{mode:'BIKE_ONLY',points:[[37,126.999],[37,127],[37,126.999]],settings:2},
-    searchCard:{screen:'place',stage:'destination-discovery'},
-    returnCard:{screen:'place',stage:'return-destination-discovery'},
+    round:{mode:'BIKE_ONLY',points:[[37,126.999],[37,127],[37,126.999]],settings:0},
+    searchCard:{screen:'racing',stage:'trip-type'},
+    returnCard:{screen:'racing-route',stage:'route-alternatives',tripShown:false},
     otherReturn:{screen:'racing-route',points:[[37,126.999],[37,127],[37,127.001]]},
     cancelled:{screen:'racing',setup:null,finish:0},navigationLoads:1,
-    manualCard:{screen:'place',stage:'destination-discovery',finish:0},
-    backedOut:{screen:'racing',setup:null,finish:0},
+    manualCard:{screen:'racing',stage:'trip-type',finish:0},
+    backedOut:{screen:'racing',setup:null,finish:0},normalMap:{screen:'place',hasMapPlaceActions:true},
   });
 });
 
@@ -3596,12 +3598,13 @@ test('Racing course selection joins return routes and saved replay enforces the 
     class TestOverlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setPosition(position){this.position=position}}
     kakao={maps:{LatLng:TestLatLng,LatLngBounds:TestBounds,Polyline:TestPolyline,CustomOverlay:TestOverlay}};
     state.map={getLevel:()=>4,getCenter:()=>({}),setBounds(){},relayout(){},panTo(){}};
-    openAppSettings=()=>{testSettingsOpened=true};closeRecordsScreen=()=>true;
+    let testSettingsOpened=false;openAppSettings=()=>{testSettingsOpened=true};closeRecordsScreen=()=>true;
     const origin={name:'출발',latitude:37,longitude:126.999},turn={name:'목적지',latitude:37,longitude:127},returnDestination={name:'복귀',latitude:37,longitude:127.001};
     const outbound={label:'출발 경로',routeMode:'BIKE_ONLY',totalDistance:111,totalTime:60,_points:[origin,turn],_steps:[]};
-    state.routes=[outbound];state.selectedRoute=0;state.racingCourseSetup={stage:'outbound',origin,destination:turn};
+    state.routes=[outbound];state.selectedRoute=0;state.racingCourseSetup={stage:'trip-type',origin,destination:turn};
     const tripShown=showRacingTripType();
-    const oneWayApplied=chooseOneWayRacingCourse();
+    state.racingCourseSetup={stage:'route-alternatives',tripType:'one-way',origin,destination:turn};
+    const oneWayApplied=confirmRacingCourseSelection();
     const oneWay={source:state.racingCourse.source,points:state.racingCourse.route.length,name:state.racingCourse.name};
     state.racingCourseSetup={stage:'return-choice',origin,destination:turn,outboundRoute:outbound};
     fetch=async()=>({ok:true,json:async()=>({routes:[
@@ -3632,6 +3635,28 @@ test('Racing course selection joins return routes and saved replay enforces the 
     roundApplied:true,round:{mode:'BIKE_ONLY',points:[[37,126.999],[37,127],[37,127.001]],distance:222},
     challenge:true,shownRoute:[[37,127],[37,127.001]],invalidChallenge:false,invalidMessage:'GPS 경로 또는 시간 정보가 부족해 이 기록에 도전할 수 없습니다.',
     eligibility:{near:true,before:true,past:false,pastMessage:'기록 시작 위치보다 앞에 있어 기록을 시작할 수 없습니다.'},
-    jitterStarted:false,crossingStarted:true,phase:'active',courseSource:'saved',opponentIndex:0,settingsOpened:true,
+    jitterStarted:false,crossingStarted:true,phase:'active',courseSource:'saved',opponentIndex:0,settingsOpened:false,
   });
+});
+
+test('Racing reroute requires accurate consecutive movement and excludes saved replay', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    let calls=0;recalculateRacingRoute=()=>{calls++;return Promise.resolve(true)};
+    state.racingPhase='active';state.racingSession={target:{type:Racing.TARGET_SPEED}};state.racingCourse={source:'new',checkpoints:[{latitude:37,longitude:127}]};
+    const fast=(timestamp,accuracy=3,plausible=true)=>({timestamp,position:{latitude:37,longitude:127,accuracy},quality:{fresh:true,monotonic:true,plausiblePosition:plausible}});
+    observeRacingOffRoute(fast(0,100),{moving:true},{offRouteDistance:120});
+    observeRacingOffRoute(fast(500,3,false),{moving:true},{offRouteDistance:120});
+    const before=calls;
+    observeRacingOffRoute(fast(1000),{moving:true},{offRouteDistance:40});
+    observeRacingOffRoute(fast(3000),{moving:true},{offRouteDistance:42});
+    observeRacingOffRoute(fast(5000),{moving:true},{offRouteDistance:45});
+    const afterNew=calls;
+    state.racingCourse.source='saved';state.racingOffRoute=null;
+    observeRacingOffRoute(fast(10000),{moving:true},{offRouteDistance:150});
+    observeRacingOffRoute(fast(12000),{moving:true},{offRouteDistance:150});
+    observeRacingOffRoute(fast(14000),{moving:true},{offRouteDistance:150});
+    return{before,afterNew,afterSaved:calls};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{before:0,afterNew:1,afterSaved:1});
 });

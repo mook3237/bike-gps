@@ -7,6 +7,19 @@
   const GHOST_DATA_VERSION = 1;
   const FAST_FRESH_MAX_AGE_MS = 3000;
   const FAST_MAX_PLAUSIBLE_SPEED_MPS = 60;
+  const FAST_MAX_ACCURACY_M = 50;
+  let gpsDiagnosticsEnabled = false;
+  let gpsDiagnosticsLogger = null;
+
+  function setGpsDiagnosticsEnabled(enabled, logger = null) {
+    gpsDiagnosticsEnabled = enabled === true;
+    gpsDiagnosticsLogger = typeof logger === 'function' ? logger : null;
+  }
+
+  function gpsDiagnostic(stage, values) {
+    if (!gpsDiagnosticsEnabled) return;
+    (gpsDiagnosticsLogger || console.debug)?.('[RideMate GPS]', stage, values);
+  }
 
   function haversineDistance(a, b) {
     if (!a || !b) return 0;
@@ -31,6 +44,8 @@
       lastTimestamp: null,
       lastAccuracy: null,
       lastHeading: null,
+      lastDisplaySpeed: null,
+      lastDisplayTimestamp: null,
     };
   }
 
@@ -54,7 +69,7 @@
     };
     const ageMs = Math.max(0, receivedAt - timestamp);
     const fresh = ageMs <= FAST_FRESH_MAX_AGE_MS;
-    const monotonic = state.lastTimestamp == null || timestamp >= state.lastTimestamp;
+    const monotonic = state.lastTimestamp == null || timestamp > state.lastTimestamp;
     const elapsedMs = state.lastTimestamp == null ? 0 : timestamp - state.lastTimestamp;
     const distance = state.lastPosition ? haversineDistance(state.lastPosition, position) : 0;
     const uncertainty = Math.max(10, position.accuracy || 0, state.lastAccuracy || 0);
@@ -63,17 +78,35 @@
       || elapsedMs === 0 && distance <= uncertainty;
     const plausiblePosition = monotonic && plausibleDistance;
 
+    const rawSpeedMps = Number.isFinite(fix?.speed) && fix.speed >= 0 ? fix.speed : null;
+    const derivedSpeedMps = state.lastPosition && elapsedMs > 0 ? distance / (elapsedMs / 1000) : null;
+    const derivedReliable = Number.isFinite(derivedSpeedMps)
+      && derivedSpeedMps <= FAST_MAX_PLAUSIBLE_SPEED_MPS
+      && distance >= Math.max(2, position.accuracy * .75);
     let speedMps = 0;
-    let speedSource = 'position-derived';
+    let speedSource = 'unavailable';
     let speedValid = false;
-    if (Number.isFinite(fix?.speed) && fix.speed >= 0 && fix.speed <= FAST_MAX_PLAUSIBLE_SPEED_MPS) {
-      speedMps = fix.speed;
-      speedSource = 'gps';
-      speedValid = true;
-    } else if (state.lastPosition && elapsedMs > 0 && fresh && plausiblePosition) {
-      speedMps = distance / (elapsedMs / 1000);
-      speedValid = speedMps <= FAST_MAX_PLAUSIBLE_SPEED_MPS;
-      if (!speedValid) speedMps = 0;
+    let speedReason = !fresh ? 'stale' : !monotonic ? 'non-monotonic' : !plausiblePosition ? 'implausible-position' : position.accuracy > FAST_MAX_ACCURACY_M ? 'low-accuracy' : 'unavailable';
+    if (fresh && monotonic && plausiblePosition && position.accuracy <= FAST_MAX_ACCURACY_M) {
+      if (derivedReliable && (rawSpeedMps == null || rawSpeedMps < .5 && derivedSpeedMps >= .8)) {
+        speedMps = derivedSpeedMps;
+        speedSource = 'position-derived';
+        speedValid = true;
+        speedReason = 'accepted-derived';
+      } else if (rawSpeedMps != null && rawSpeedMps <= FAST_MAX_PLAUSIBLE_SPEED_MPS) {
+        speedMps = rawSpeedMps;
+        speedSource = 'gps';
+        speedValid = true;
+        speedReason = 'accepted-gps';
+      }
+      if (speedValid && Number.isFinite(state.lastDisplaySpeed) && state.lastDisplayTimestamp != null && elapsedMs > 0) {
+        const allowedDelta = 2 + elapsedMs / 1000 * 4;
+        if (Math.abs(speedMps - state.lastDisplaySpeed) > allowedDelta && !derivedReliable) {
+          speedMps = state.lastDisplaySpeed;
+          speedSource = 'retained';
+          speedReason = 'implausible-acceleration';
+        }
+      }
     }
 
     let headingDegrees = null;
@@ -96,7 +129,7 @@
       receivedAt,
       ageMs,
       position,
-      speed: { mps: Math.max(0, speedMps), source: speedSource, valid: speedValid },
+      speed: { mps: Math.max(0, speedMps), source: speedSource, valid: speedValid, reason: speedReason, rawMps: rawSpeedMps, derivedMps: derivedSpeedMps },
       heading: { degrees: headingDegrees, source: headingSource },
       quality: { fresh, monotonic, plausiblePosition },
     };
@@ -105,7 +138,12 @@
       state.lastTimestamp = timestamp;
       state.lastAccuracy = position.accuracy;
       if (Number.isFinite(headingDegrees)) state.lastHeading = headingDegrees;
+      if (speedValid) {
+        state.lastDisplaySpeed = Math.max(0, speedMps);
+        state.lastDisplayTimestamp = timestamp;
+      }
     }
+    gpsDiagnostic('fast', { timestamp, receivedAt, ageMs, accuracy: position.accuracy, rawSpeed: rawSpeedMps, derivedSpeed: derivedSpeedMps, displaySpeed: speedValid ? speedMps : null, reason: speedReason, accepted: fresh && monotonic && plausiblePosition });
     return observation;
   }
 
@@ -185,6 +223,15 @@
     const timestamp = Number.isFinite(fix.timestamp) ? fix.timestamp : Date.now();
     const distance = motion.lastPosition ? haversineDistance(motion.lastPosition, position) : 0;
     const elapsedMs = motion.lastTimestamp == null ? 0 : Math.max(0, timestamp - motion.lastTimestamp);
+    const pointAccuracy = Number.isFinite(fix.accuracy) && fix.accuracy > 0 ? fix.accuracy : 5;
+    const positionUncertainty = Math.max(10, pointAccuracy);
+    const plausiblePosition = !motion.lastPosition || elapsedMs > 0 && distance <= FAST_MAX_PLAUSIBLE_SPEED_MPS * (elapsedMs / 1000) + positionUncertainty * 2;
+    if (motion.lastTimestamp != null && (timestamp <= motion.lastTimestamp || !plausiblePosition)) {
+      const rejectedReason = timestamp <= motion.lastTimestamp ? 'non-monotonic' : 'implausible-position';
+      const rejected = { position, timestamp, rawSpeed: 0, speed: motion.filteredSpeed, moving: motion.moving, acceptedDistance: 0, acceptedMovingTime: 0, evidence: movementWindowEvidence(motion.speedWindow), rejectedReason };
+      gpsDiagnostic('motion', { timestamp, accuracy: pointAccuracy, rawSpeed: fix.speed, displaySpeed: motion.filteredSpeed, reason: rejectedReason, moving: motion.moving, acceptedDistance: 0 });
+      return rejected;
+    }
     const rawSpeed = resolveSpeed(fix, distance, elapsedMs);
     let acceptedDistance = 0;
     let acceptedMovingTime = 0;
@@ -256,7 +303,13 @@
 
     motion.lastPosition = position;
     motion.lastTimestamp = timestamp;
-    return { position, timestamp, rawSpeed, speed: filteredSpeed, moving: motion.moving, acceptedDistance, acceptedMovingTime, evidence };
+    const result = { position, timestamp, rawSpeed, speed: filteredSpeed, moving: motion.moving, acceptedDistance, acceptedMovingTime, evidence, rejectedReason: null };
+    gpsDiagnostic('motion', { timestamp, accuracy: pointAccuracy, rawSpeed, displaySpeed: filteredSpeed, reason: 'accepted', moving: motion.moving, acceptedDistance });
+    return result;
+  }
+
+  function reportGpsDisplay(fast, movement, displaySpeed, renderedAt = Date.now()) {
+    gpsDiagnostic('display', { timestamp: fast?.timestamp, receivedAt: fast?.receivedAt, renderedAt, renderDelayMs: Number.isFinite(fast?.receivedAt) ? Math.max(0, renderedAt - fast.receivedAt) : null, accuracy: fast?.position?.accuracy, rawSpeed: fast?.speed?.rawMps, derivedSpeed: fast?.speed?.derivedMps, displaySpeed, reason: fast?.speed?.reason, moving: movement?.moving === true });
   }
 
   function calculateBestKilometer(distanceHistory) {
@@ -594,8 +647,10 @@
     permanentRideRecord,
     processFastObservation,
     processMotionFix,
+    reportGpsDisplay,
     resetMotionState,
     resolveSpeed,
+    setGpsDiagnosticsEnabled,
     resumeRide,
     rideMetrics,
     startRide,
