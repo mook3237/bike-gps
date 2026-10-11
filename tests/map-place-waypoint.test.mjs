@@ -3521,6 +3521,72 @@ test('Riding Board unit setting converts display only and keeps canonical ride v
   assert.equal(result.gaugeUnit,'mph');
 });
 
+test('Racing destination setup stays isolated through shared place selection and complete route cards', async () => {
+  const context=loadApp('',true,true);
+  const result=await vm.runInContext(`(async()=>{
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    class TestBounds {constructor(){this.points=[]}extend(point){this.points.push(point)}isEmpty(){return this.points.length===0}}
+    class TestPolyline {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setOptions(options){Object.assign(this,options)}setZIndex(value){this.zIndex=value}}
+    class TestOverlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setPosition(position){this.position=position}}
+    kakao={maps:{LatLng:TestLatLng,LatLngBounds:TestBounds,Polyline:TestPolyline,CustomOverlay:TestOverlay}};
+    state.map={getLevel:()=>4,getCenter:()=>({}),setBounds(){},relayout(){},panTo(){}};
+    saveRecentSearch=()=>{};renderRecentSearches=()=>{};
+    history={state:{screen:'racing'},pushState(entry){this.state=entry},replaceState(entry){this.state=entry},back(){}};
+    testSettingsOpened=0;testRacingFinishes=0;openAppSettings=()=>{testSettingsOpened++};finishRacingSession=()=>{testRacingFinishes++};
+    const origin={id:'origin',name:'Origin',latitude:37,longitude:126.999};
+    const destination={id:'destination',name:'Destination',latitude:37,longitude:127};
+    const returnDestination={id:'return',name:'Return',latitude:37,longitude:127.001};
+    const rawRoute=(from,to,mode='BIKE_ONLY',distance=111)=>({label:mode,routeMode:mode,totalDistance:distance,totalTime:60,route:{legs:[{steps:[{properties:{distance,time:60},path:{points:[[from.longitude,from.latitude],[to.longitude,to.latitude]]}}]}]}});
+    locate=async()=>origin;
+    fetchRoutes=async(from,to)=>[rawRoute(from,to,'BIKE_ONLY'),rawRoute(from,to,'SHORTEST',120)];
+
+    state.screen='racing';openPlace(destination,true);
+    const pinCard={screen:state.screen,stage:state.racingCourseSetup?.stage,finish:testRacingFinishes};
+    await $('#setEnd').onclick();
+    const tripFirst={stage:state.racingCourseSetup?.stage,shown:!$('#racingTripTypeDialog').classList.contains('hidden'),screen:state.screen};
+    await chooseOneWayRacingCourse();
+    const oneWayRoutes={screen:state.screen,count:state.routes.length,cards:$('#routeCards').querySelectorAll('[data-i]').length,start:$('#startNavBtn').textContent,points:state.routes[0]._points.length};
+    $('#startNavBtn').onclick();
+    const oneWay={source:state.racingCourse.source,points:state.racingCourse.route.length,settings:testSettingsOpened,phase:state.racingPhase};
+
+    state.screen='racing';state.racingCourseSetup=null;openPlace(destination,true);await $('#setEnd').onclick();showRacingReturnChoice();await chooseCurrentRacingReturn();
+    const roundRoutes={screen:state.screen,count:state.routes.length,points:state.routes[0]._points.map(point=>[point.latitude,point.longitude])};
+    $('#startNavBtn').onclick();
+    const round={mode:state.racingCourse.routeMode,points:state.racingCourse.route.map(point=>[point.latitude,point.longitude]),settings:testSettingsOpened};
+
+    state.screen='racing';state.racingCourseSetup=null;startRacingCourseSelection();await choosePlace(destination);
+    const searchCard={screen:state.screen,stage:state.racingCourseSetup?.stage};
+    await $('#setEnd').onclick();showRacingReturnChoice();chooseOtherRacingReturn();await choosePlace(returnDestination);
+    const returnCard={screen:state.screen,stage:state.racingCourseSetup?.stage};
+    await $('#setEnd').onclick();
+    const otherReturn={screen:state.screen,points:state.routes[0]._points.map(point=>[point.latitude,point.longitude])};
+    cancelRacingCourseSelection();
+    const cancelled={screen:state.screen,setup:state.racingCourseSetup,finish:testRacingFinishes};
+
+    state.screen='racing';startRacingCourseSelection();state.racingCourseSetup.mapPicking=true;handlePopState({state:{screen:'racing'}});openPlace(returnDestination,true);
+    const manualCard={screen:state.screen,stage:state.racingCourseSetup?.stage,finish:testRacingFinishes};
+    handlePopState({state:{screen:'racing'}});
+    const backedOut={screen:state.screen,setup:state.racingCourseSetup,finish:testRacingFinishes};
+
+    state.racingCourseSetup=null;state.screen='map';let navigationLoads=0;loadRoutes=async()=>{navigationLoads++};openPlace(destination,true);await $('#setEnd').onclick();
+    return{pinCard,tripFirst,oneWayRoutes,oneWay,roundRoutes,round,searchCard,returnCard,otherReturn,cancelled,manualCard,backedOut,navigationLoads};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    pinCard:{screen:'place',stage:'destination-discovery',finish:0},
+    tripFirst:{stage:'trip-type',shown:true,screen:'racing'},
+    oneWayRoutes:{screen:'racing-route',count:2,cards:2,start:'코스 선택',points:2},
+    oneWay:{source:'new',points:2,settings:1,phase:'idle'},
+    roundRoutes:{screen:'racing-route',count:2,points:[[37,126.999],[37,127],[37,126.999]]},
+    round:{mode:'BIKE_ONLY',points:[[37,126.999],[37,127],[37,126.999]],settings:2},
+    searchCard:{screen:'place',stage:'destination-discovery'},
+    returnCard:{screen:'place',stage:'return-destination-discovery'},
+    otherReturn:{screen:'racing-route',points:[[37,126.999],[37,127],[37,127.001]]},
+    cancelled:{screen:'racing',setup:null,finish:0},navigationLoads:1,
+    manualCard:{screen:'place',stage:'destination-discovery',finish:0},
+    backedOut:{screen:'racing',setup:null,finish:0},
+  });
+});
+
 test('Racing course selection joins return routes and saved replay enforces the recorded start', async () => {
   const context=loadApp('',true,true);
   const result=await vm.runInContext(`(async()=>{
