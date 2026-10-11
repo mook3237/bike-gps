@@ -101,7 +101,7 @@
       }
       if (speedValid && Number.isFinite(state.lastDisplaySpeed) && state.lastDisplayTimestamp != null && elapsedMs > 0) {
         const allowedDelta = 2 + elapsedMs / 1000 * 4;
-        if (Math.abs(speedMps - state.lastDisplaySpeed) > allowedDelta && !derivedReliable) {
+        if (speedMps - state.lastDisplaySpeed > allowedDelta && !derivedReliable) {
           speedMps = state.lastDisplaySpeed;
           speedSource = 'retained';
           speedReason = 'implausible-acceleration';

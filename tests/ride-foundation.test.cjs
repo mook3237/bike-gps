@@ -62,6 +62,23 @@ test('FAST observation reacts immediately to acceleration deceleration and stop'
   assert.equal(stop.speed.valid, true);
 });
 
+test('FAST observation accepts repeated measured stops after 7 m/s and resumes normally', () => {
+  const state = createFastObservationState();
+  const moving = processFastObservation(state, pointAtMeters(0, 1000, 7), 1000);
+  const firstStop = processFastObservation(state, pointAtMeters(0, 2000, 0), 2000);
+  const repeatedStop = processFastObservation(state, pointAtMeters(0, 3000, 0), 3000);
+  const restart = processFastObservation(state, pointAtMeters(3, 4000, 3), 4000);
+
+  assert.deepEqual(
+    [moving.speed.mps, firstStop.speed.mps, repeatedStop.speed.mps, restart.speed.mps],
+    [7, 0, 0, 3],
+  );
+  assert.deepEqual(
+    [moving.speed.source, firstStop.speed.source, repeatedStop.speed.source, restart.speed.source],
+    ['gps', 'gps', 'gps', 'gps'],
+  );
+});
+
 test('FAST observation derives speed from consecutive usable positions without a confirmation window', () => {
   const state = createFastObservationState();
   const first = processFastObservation(state, pointAtMeters(0, 1000, null), 1000);
