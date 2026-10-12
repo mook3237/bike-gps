@@ -3830,3 +3830,75 @@ test('Racing reroute requires accurate consecutive movement and excludes saved r
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{before:0,afterNew:1,afterSaved:1});
 });
+
+test('Racing reaching the final checkpoint blocks later off-route rerouting without ending the race', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    let calls=0;recalculateRacingRoute=()=>{calls++;return Promise.resolve(true)};
+    state.racingPhase='active';
+    state.racingSession={target:{type:Racing.TARGET_SPEED},progressBase:0,routeDistance:100};
+    state.racingCourse={source:'new',checkpoints:[{latitude:37,longitude:127.001}],checkpointAlong:[100]};
+    const arrived={currentRouteProgress:100,offRouteDistance:3};
+    advanceRacingCheckpoint(arrived);
+    const fast=timestamp=>({timestamp,position:{latitude:37,longitude:127.002,accuracy:3},quality:{fresh:true,monotonic:true,plausiblePosition:true}});
+    observeRacingOffRoute(fast(1000),{moving:true},{currentRouteProgress:100,offRouteDistance:45});
+    observeRacingOffRoute(fast(3000),{moving:true},{currentRouteProgress:100,offRouteDistance:45});
+    observeRacingOffRoute(fast(5000),{moving:true},{currentRouteProgress:100,offRouteDistance:45});
+    return{reached:state.racingReachedDestination,calls,phase:state.racingPhase};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{reached:true,calls:0,phase:'active'});
+});
+
+test('Racing reroute redraws the new route without fitting the full route bounds', async () => {
+  const context=loadApp('',false,true);
+  const result=await vm.runInContext(`(async()=>{
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    class TestBounds {constructor(){this.points=[]}extend(point){this.points.push(point)}isEmpty(){return this.points.length===0}}
+    class TestPolyline {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setOptions(options){Object.assign(this,options)}}
+    class TestOverlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setPosition(position){this.position=position}}
+    kakao={maps:{LatLng:TestLatLng,LatLngBounds:TestBounds,Polyline:TestPolyline,CustomOverlay:TestOverlay}};
+    let level=2,fits=0;
+    state.map={getLevel:()=>level,setBounds(){fits++;level=9},relayout(){},panTo(){},getBounds:()=>null};
+    const start={latitude:37,longitude:127},current={latitude:37,longitude:127.0005},destination={latitude:37,longitude:127.002};
+    const oldRoute=[start,destination],target=Racing.createTargetSpeedTarget(5),checks=[];
+    fetchRoutes=async()=>[{label:'BIKE_ONLY',routeMode:'BIKE_ONLY',totalDistance:166,totalTime:50,route:{legs:[{steps:[{properties:{distance:166,time:50},path:{points:[[current.longitude,current.latitude],[destination.longitude,destination.latitude]]}}]}]}}];
+    for(const entry of [{label:'level-2',level:2},{label:'level-4',level:4},{label:'level-6',level:6},{label:'level-8',level:8},{label:'user-changed',level:7}]){
+      level=entry.level;fits=0;state.screen='racing';state.racingPhase='active';state.racingReachedDestination=false;state.racingLastRerouteAt=0;
+      state.racingSession=Racing.createRaceSession({route:oldRoute,target,currentMovingTime:0});
+      state.racingSnapshot=Racing.updateRace(state.racingSession,{currentPosition:current,currentMovingTime:10000});
+      state.racingCourse={source:'new',name:'course',route:oldRoute,distance:222,time:60,routeMode:'BIKE_ONLY',checkpoints:[destination],checkpointAlong:[222]};
+      const before=state.map.getLevel(),updated=await recalculateRacingRoute({timestamp:20000,position:{...current,accuracy:3},quality:{fresh:true,monotonic:true,plausiblePosition:true}});
+      checks.push({label:entry.label,updated,before,after:state.map.getLevel(),fits,routePoints:state.routes[0]._points.length});
+    }
+    return checks;
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),[
+    {label:'level-2',updated:true,before:2,after:2,fits:0,routePoints:2},
+    {label:'level-4',updated:true,before:4,after:4,fits:0,routePoints:2},
+    {label:'level-6',updated:true,before:6,after:6,fits:0,routePoints:2},
+    {label:'level-8',updated:true,before:8,after:8,fits:0,routePoints:2},
+    {label:'user-changed',updated:true,before:7,after:7,fits:0,routePoints:2},
+  ]);
+});
+
+test('Racing manual map interaction pauses camera follow and restores it with the Navigation policy', () => {
+  const context=loadApp('',true,true);
+  const result=vm.runInContext(`(()=>{
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    kakao={maps:{LatLng:TestLatLng}};
+    let pans=0;
+    state.screen='racing';state.racingPhase='active';state.currentLocation={latitude:37,longitude:127};
+    state.map={getProjection:()=>null,panTo(){pans++}};
+    handleMapDragStart();
+    const during=followRacingPosition({latitude:37,longitude:127.001},false,1000);
+    handleMapDragEnd();
+    const beforeReturn={follow:state.racingCameraFollow,pans};
+    runPendingTimers();
+    return{during,beforeReturn,afterReturn:{follow:state.racingCameraFollow,pans}};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    during:false,
+    beforeReturn:{follow:false,pans:0},
+    afterReturn:{follow:true,pans:1},
+  });
+});
