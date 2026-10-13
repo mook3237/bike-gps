@@ -1271,7 +1271,7 @@ test('Racing starts explicitly after countdown and connects shared GPS updates t
     $('#racingStartBtn').onclick();
     const countdown={phase:state.racingPhase,text:$('#racingCountdown').textContent,snapshot:state.racingSnapshot};
     runPendingTimers();runPendingTimers();runPendingTimers();
-    const active={phase:state.racingPhase,type:state.racingSession?.target?.type,watchers:testNativeWatchStarts(),snapshot:!!state.racingSnapshot,targetMarker:!!state.racingTargetMarker,setupHidden:$('#racingSetupPanel').classList.contains('hidden')};
+    const active={phase:state.racingPhase,type:state.racingSession?.target?.type,watchers:testNativeWatchStarts(),snapshot:!!state.racingSnapshot,targetMarker:!!state.racingTargetMarker,setupHidden:$('#racingSetupPanel').classList.contains('hidden'),level:state.map.level};
     const base=Date.now();
     emitNativePosition({coords:{latitude:0,longitude:0,accuracy:3,speed:5,heading:90},timestamp:base});
     emitNativePosition({coords:{latitude:0,longitude:.00018,accuracy:3,speed:5,heading:90},timestamp:base+2000});
@@ -1307,7 +1307,7 @@ test('Racing starts explicitly after countdown and connects shared GPS updates t
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
     before:{phase:'idle',snapshot:null,watchers:1},
     countdown:{phase:'countdown',text:'3',snapshot:null},
-    active:{phase:'active',type:'TARGET_SPEED',watchers:2,snapshot:true,targetMarker:true,setupHidden:true},
+    active:{phase:'active',type:'TARGET_SPEED',watchers:2,snapshot:true,targetMarker:true,setupHidden:true,level:2},
     live:{snapshot:true,gap:20,hud:'20m 앞섬'},
     stopped:{moving:false,movingTime:4000,elapsedAdvanced:true,snapshotFrozen:true},
     resumed:{moving:true,movingTimeAdvanced:true,snapshotChanged:true},
@@ -3862,7 +3862,7 @@ test('Racing reroute redraws the new route without fitting the full route bounds
     const start={latitude:37,longitude:127},current={latitude:37,longitude:127.0005},destination={latitude:37,longitude:127.002};
     const oldRoute=[start,destination],target=Racing.createTargetSpeedTarget(5),checks=[];
     fetchRoutes=async()=>[{label:'BIKE_ONLY',routeMode:'BIKE_ONLY',totalDistance:166,totalTime:50,route:{legs:[{steps:[{properties:{distance:166,time:50},path:{points:[[current.longitude,current.latitude],[destination.longitude,destination.latitude]]}}]}]}}];
-    for(const entry of [{label:'level-2',level:2},{label:'level-4',level:4},{label:'level-6',level:6},{label:'level-8',level:8},{label:'user-changed',level:7}]){
+    for(const entry of [{label:'level-2',level:2},{label:'level-3',level:3},{label:'level-4',level:4},{label:'level-6',level:6},{label:'level-8',level:8},{label:'user-changed',level:7}]){
       level=entry.level;fits=0;state.screen='racing';state.racingPhase='active';state.racingReachedDestination=false;state.racingLastRerouteAt=0;
       state.racingSession=Racing.createRaceSession({route:oldRoute,target,currentMovingTime:0});
       state.racingSnapshot=Racing.updateRace(state.racingSession,{currentPosition:current,currentMovingTime:10000});
@@ -3874,11 +3874,44 @@ test('Racing reroute redraws the new route without fitting the full route bounds
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),[
     {label:'level-2',updated:true,before:2,after:2,fits:0,routePoints:2},
+    {label:'level-3',updated:true,before:3,after:3,fits:0,routePoints:2},
     {label:'level-4',updated:true,before:4,after:4,fits:0,routePoints:2},
     {label:'level-6',updated:true,before:6,after:6,fits:0,routePoints:2},
     {label:'level-8',updated:true,before:8,after:8,fits:0,routePoints:2},
     {label:'user-changed',updated:true,before:7,after:7,fits:0,routePoints:2},
   ]);
+});
+
+test('Racing live speed changes map levels at exact boundaries without overriding manual control', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    let level=9,bounds=0;const calls=[];
+    state.map={getLevel:()=>level,setLevel(value){level=value;calls.push(value)},setBounds(){bounds++}};
+    state.screen='racing';state.racingPhase='active';state.racingCameraFollow=true;
+    const fast=(kmh,valid=true)=>({timestamp:1000,position:{latitude:37,longitude:127,accuracy:3},speed:{valid,mps:kmh/3.6},heading:{degrees:90},quality:{fresh:true,monotonic:true,plausiblePosition:true}});
+    const boundaries=[0,20,30,30.1,45,60,60.1,75].map(speed=>{updateRacingLiveDisplay(fast(speed),{moving:true});return{speed,level}});
+    updateRacingLiveDisplay(fast(45),{moving:true});
+    updateRacingLiveDisplay(fast(20),{moving:true});
+    const down=[...calls];
+    const beforeInvalid={level,calls:calls.length};
+    const invalid=fast(75);invalid.quality.fresh=false;updateRacingLiveDisplay(invalid,{moving:true});
+    const afterInvalid={level,calls:calls.length};
+    state.racingCameraFollow=false;updateRacingLiveDisplay(fast(75),{moving:true});
+    const duringManual={level,calls:calls.length};
+    state.racingCameraFollow=true;updateRacingLiveDisplay(fast(75),{moving:true});
+    const afterManual={level,calls:calls.length};
+    state.racingPhase='idle';updateRacingLiveDisplay(fast(20),{moving:true});
+    return{boundaries,calls,down,beforeInvalid,afterInvalid,duringManual,afterManual,afterEnd:{level,calls:calls.length},bounds};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    boundaries:[
+      {speed:0,level:2},{speed:20,level:2},{speed:30,level:2},{speed:30.1,level:3},
+      {speed:45,level:3},{speed:60,level:3},{speed:60.1,level:4},{speed:75,level:4},
+    ],
+    calls:[2,3,4,3,2,4],down:[2,3,4,3,2],
+    beforeInvalid:{level:2,calls:5},afterInvalid:{level:2,calls:5},
+    duringManual:{level:2,calls:5},afterManual:{level:4,calls:6},afterEnd:{level:4,calls:6},bounds:0,
+  });
 });
 
 test('Racing manual map interaction pauses camera follow and restores it with the Navigation policy', () => {
