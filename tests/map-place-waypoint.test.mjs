@@ -1158,6 +1158,42 @@ test('Racing map shows only valid comparison data and switches distance or time 
   assert.doesNotMatch(html,/id="racingDistanceModeBtn"|id="racingTimeModeBtn"|레이싱 데이터 대기 중/);
 });
 
+test('Racing zoom test changes only map level and cleans up when Racing ends', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    let level=3,center={latitude:37,longitude:127},pans=0;
+    kakao={maps:{LatLng:class {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}}};
+    state.map={getLevel:()=>level,getCenter:()=>center,setLevel(value){level=value},getProjection:()=>null,panTo(value){center=value;pans++},relayout(){}};
+    state.screen='racing';state.racingPhase='active';state.racingCameraFollow=true;
+    renderScreen('racing',false);
+    state.currentLocation={latitude:37,longitude:127};
+    state.racingSnapshot={currentRouteProgress:42,targetRouteProgress:30,targetPosition:{latitude:37,longitude:127.001}};
+    const button=$('#racingZoomTestButton'),panel=$('#racingZoomTestPanel');
+    if(typeof button.onclick!=='function')return{available:false};
+    button.onclick();
+    const opened=!panel.classList.contains('hidden'),checks=[];
+    for(const wanted of [1,2,3,4,5]){
+      const beforeCenter=state.map.getCenter(),beforeSnapshot=JSON.stringify(state.racingSnapshot),beforeLocation=JSON.stringify(state.currentLocation);
+      $('#racingZoomTestLevel'+wanted).onclick();
+      checks.push({wanted,actual:state.map.getLevel(),sameCenter:state.map.getCenter()===beforeCenter,sameSnapshot:JSON.stringify(state.racingSnapshot)===beforeSnapshot,sameLocation:JSON.stringify(state.currentLocation)===beforeLocation});
+    }
+    button.onclick();
+    const closed={hidden:panel.classList.contains('hidden'),level:state.map.getLevel()};
+    followRacingPosition({latitude:37,longitude:127.002},true,1000);
+    const afterGps={level:state.map.getLevel(),pans,progress:state.racingSnapshot.currentRouteProgress};
+    finishRacingSession({offerSave:false});
+    return{available:true,opened,checks,closed,afterGps,ended:{level:state.racingZoomTestLevel,open:state.racingZoomTestOpen,panelHidden:panel.classList.contains('hidden')}};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    available:true,
+    opened:true,
+    checks:[1,2,3,4,5].map(wanted=>({wanted,actual:wanted,sameCenter:true,sameSnapshot:true,sameLocation:true})),
+    closed:{hidden:true,level:5},
+    afterGps:{level:5,pans:1,progress:42},
+    ended:{level:null,open:false,panelHidden:true},
+  });
+});
+
 test('Racing setup stays touchable, starts countdown, and settings screens remain separate', () => {
   assert.match(styles,/\.racing-setup-panel\{[^}]*pointer-events:auto/);
   assert.doesNotMatch(styles,/\.racing-active #mapHeader\{[^}]*left:auto/);
@@ -3857,13 +3893,14 @@ test('Racing reroute redraws the new route without fitting the full route bounds
     class TestPolyline {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setOptions(options){Object.assign(this,options)}}
     class TestOverlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setPosition(position){this.position=position}}
     kakao={maps:{LatLng:TestLatLng,LatLngBounds:TestBounds,Polyline:TestPolyline,CustomOverlay:TestOverlay}};
-    let level=2,fits=0;
-    state.map={getLevel:()=>level,setBounds(){fits++;level=9},relayout(){},panTo(){},getBounds:()=>null};
+    let level=2,fits=0;const center={latitude:37,longitude:127};
+    state.map={getLevel:()=>level,getCenter:()=>center,setLevel(value){level=value},setBounds(){fits++;level=9},relayout(){},panTo(){},getBounds:()=>null};
     const start={latitude:37,longitude:127},current={latitude:37,longitude:127.0005},destination={latitude:37,longitude:127.002};
     const oldRoute=[start,destination],target=Racing.createTargetSpeedTarget(5),checks=[];
     fetchRoutes=async()=>[{label:'BIKE_ONLY',routeMode:'BIKE_ONLY',totalDistance:166,totalTime:50,route:{legs:[{steps:[{properties:{distance:166,time:50},path:{points:[[current.longitude,current.latitude],[destination.longitude,destination.latitude]]}}]}]}}];
-    for(const entry of [{label:'level-2',level:2},{label:'level-4',level:4},{label:'level-6',level:6},{label:'level-8',level:8},{label:'user-changed',level:7}]){
-      level=entry.level;fits=0;state.screen='racing';state.racingPhase='active';state.racingReachedDestination=false;state.racingLastRerouteAt=0;
+    for(const entry of [{label:'level-1',level:1},{label:'level-2',level:2},{label:'level-3',level:3},{label:'level-4',level:4},{label:'level-5',level:5},{label:'level-6',level:6},{label:'level-8',level:8},{label:'user-changed',level:7}]){
+      fits=0;state.screen='racing';state.racingPhase='active';state.racingReachedDestination=false;state.racingLastRerouteAt=0;
+      if(entry.level<=5)racingZoomTestSelectLevel(entry.level);else level=entry.level;
       state.racingSession=Racing.createRaceSession({route:oldRoute,target,currentMovingTime:0});
       state.racingSnapshot=Racing.updateRace(state.racingSession,{currentPosition:current,currentMovingTime:10000});
       state.racingCourse={source:'new',name:'course',route:oldRoute,distance:222,time:60,routeMode:'BIKE_ONLY',checkpoints:[destination],checkpointAlong:[222]};
@@ -3873,8 +3910,11 @@ test('Racing reroute redraws the new route without fitting the full route bounds
     return checks;
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),[
+    {label:'level-1',updated:true,before:1,after:1,fits:0,routePoints:2},
     {label:'level-2',updated:true,before:2,after:2,fits:0,routePoints:2},
+    {label:'level-3',updated:true,before:3,after:3,fits:0,routePoints:2},
     {label:'level-4',updated:true,before:4,after:4,fits:0,routePoints:2},
+    {label:'level-5',updated:true,before:5,after:5,fits:0,routePoints:2},
     {label:'level-6',updated:true,before:6,after:6,fits:0,routePoints:2},
     {label:'level-8',updated:true,before:8,after:8,fits:0,routePoints:2},
     {label:'user-changed',updated:true,before:7,after:7,fits:0,routePoints:2},
