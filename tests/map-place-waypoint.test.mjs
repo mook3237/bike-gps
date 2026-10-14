@@ -586,7 +586,7 @@ test('long press pins the exact address and uses state-based actions in every in
     `,context);
     assert.deepEqual(JSON.parse(JSON.stringify(result.requests)),[{x:127.0456789,y:37.6123456}],scenario.name);
     const selectedPins=JSON.parse(JSON.stringify(result.markers)).filter(marker=>marker[2]==='route-endpoint-marker destination');
-    assert.deepEqual(selectedPins,[[37.6123456,127.0456789,'route-endpoint-marker destination','','20px','28px',.5,1]],scenario.name);
+    assert.deepEqual(selectedPins,[[37.6123456,127.0456789,'route-endpoint-marker destination','<img src="assets/destination-pin.svg" alt="">','32px','44px',.5,1]],scenario.name);
     assert.equal(result.previewCalls,0,scenario.name);
     assert.equal(result.unchanged,true,scenario.name);
     for(const action of scenario.expected){
@@ -598,7 +598,33 @@ test('long press pins the exact address and uses state-based actions in every in
   const css=fs.readFileSync(new URL('../styles.css',import.meta.url),'utf8');
   const destinationRule=css.match(/\.route-endpoint-marker\.destination\{([^}]*)\}/)?.[1]||'';
   assert.match(destinationRule,/transform:none/);
-  assert.match(destinationRule,/clip-path:polygon/);
+  assert.match(css,/\.route-endpoint-marker\.destination img\{[^}]*width:100%;height:100%/);
+});
+
+test('destination and current-location overlays use shared SVG assets with the correct coordinate anchors', () => {
+  const context=loadApp('',true);
+  const result=vm.runInContext(`(()=>{
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    class TestOverlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setPosition(position){this.position=position}}
+    kakao={maps:{LatLng:TestLatLng,CustomOverlay:TestOverlay}};
+    state.map={};
+    state.destination={name:'Destination',latitude:37.6,longitude:127.1};
+    drawRouteEndpointMarkers(false);
+    const destination=state.routeEndpointMarkers[0];
+    state.screen='map';setGpsMarker({latitude:37.5,longitude:127},false,0);
+    const mapLocation={className:state.gpsMarkerEl.className,html:state.gpsMarkerEl.innerHTML,xAnchor:state.gpsMarker.xAnchor,yAnchor:state.gpsMarker.yAnchor};
+    state.screen='racing';setGpsMarker({latitude:37.51,longitude:127.01},false,123);
+    return{
+      destination:{html:destination.content.innerHTML,xAnchor:destination.xAnchor,yAnchor:destination.yAnchor},
+      mapLocation,
+      racingLocation:{className:state.gpsMarkerEl.className,html:state.gpsMarkerEl.innerHTML,position:[state.gpsMarker.position.latitude,state.gpsMarker.position.longitude],transform:state.gpsMarkerEl.style.transform},
+    };
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    destination:{html:'<img src="assets/destination-pin.svg" alt="">',xAnchor:.5,yAnchor:1},
+    mapLocation:{className:'gps-bicycle',html:'<img src="assets/current-location-bicycle.svg" alt="">',xAnchor:.5,yAnchor:.5},
+    racingLocation:{className:'gps-bicycle',html:'<img src="assets/current-location-bicycle.svg" alt="">',position:[37.51,127.01],transform:''},
+  });
 });
 
 test('an initial calculated route overview long press renders navigation actions without changing the route', () => {

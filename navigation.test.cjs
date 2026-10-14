@@ -410,10 +410,13 @@ test('route select shows fixed-size departure and destination pins', () => {
   assert.equal(vm.runInContext("state.routeEndpointMarkers[0].content.className", context), 'route-endpoint-marker departure');
   assert.equal(vm.runInContext("state.routeEndpointMarkers[1].content.className", context), 'route-endpoint-marker destination');
   assert.equal(vm.runInContext("state.routeEndpointMarkers[0].content.style.width", context), '40px');
-  assert.equal(vm.runInContext("state.routeEndpointMarkers[1].content.style.width", context), '20px');
+  assert.equal(vm.runInContext("state.routeEndpointMarkers[1].content.style.width", context), '32px');
+  assert.equal(vm.runInContext("state.routeEndpointMarkers[1].content.style.height", context), '44px');
+  assert.equal(vm.runInContext("state.routeEndpointMarkers[1].content.innerHTML", context), '<img src="assets/destination-pin.svg" alt="">');
+  assert.equal(vm.runInContext("state.routeEndpointMarkers[1].yAnchor", context), 1);
   vm.runInContext('state.map.setLevel(1);state.map.setLevel(7)', context);
   assert.equal(vm.runInContext("state.routeEndpointMarkers[0].content.style.width", context), '40px');
-  assert.equal(vm.runInContext("state.routeEndpointMarkers[1].content.style.width", context), '20px');
+  assert.equal(vm.runInContext("state.routeEndpointMarkers[1].content.style.width", context), '32px');
 });
 
 test('navigation keeps a fixed-size destination pin', () => {
@@ -430,9 +433,12 @@ test('navigation keeps a fixed-size destination pin', () => {
   assert.equal(vm.runInContext('state.routeEndpointMarkers.length', context), 1);
   assert.equal(vm.runInContext('state.routeEndpointMarkers[0].position.latitude', context), 37.6);
   assert.equal(vm.runInContext("state.routeEndpointMarkers[0].content.className", context), 'route-endpoint-marker destination');
-  assert.equal(vm.runInContext("state.routeEndpointMarkers[0].content.style.width", context), '20px');
+  assert.equal(vm.runInContext("state.routeEndpointMarkers[0].content.style.width", context), '32px');
+  assert.equal(vm.runInContext("state.routeEndpointMarkers[0].content.style.height", context), '44px');
+  assert.equal(vm.runInContext("state.routeEndpointMarkers[0].content.innerHTML", context), '<img src="assets/destination-pin.svg" alt="">');
+  assert.equal(vm.runInContext("state.routeEndpointMarkers[0].yAnchor", context), 1);
   vm.runInContext('state.map.setLevel(1);state.map.setLevel(7)', context);
-  assert.equal(vm.runInContext("state.routeEndpointMarkers[0].content.style.width", context), '20px');
+  assert.equal(vm.runInContext("state.routeEndpointMarkers[0].content.style.width", context), '32px');
 });
 
 test('navigation start discards stale speed and starts at the stopped level', () => {
