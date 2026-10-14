@@ -184,6 +184,15 @@
   z-index:40;
 }
 
+#racingSaveDecisionDialog,
+#racingEndConfirmDialog{
+  z-index:40;
+}
+
+.racing-decision-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px}
+.racing-decision-actions button{min-height:48px;margin-top:0}
+.racing-decision-actions button:disabled{opacity:.55;cursor:default}
+
 #ridingBoardMenu,
 #ridingBoardMenu *{
   -webkit-user-select:none;

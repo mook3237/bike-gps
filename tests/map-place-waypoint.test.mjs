@@ -1271,6 +1271,7 @@ test('Racing starts explicitly after countdown and connects shared GPS updates t
     $('#racingStartBtn').onclick();
     const countdown={phase:state.racingPhase,text:$('#racingCountdown').textContent,snapshot:state.racingSnapshot};
     runPendingTimers();runPendingTimers();runPendingTimers();
+    state.racingCourse.checkpointAlong=[state.racingSession.routeDistance];
     const active={phase:state.racingPhase,type:state.racingSession?.target?.type,watchers:testNativeWatchStarts(),snapshot:!!state.racingSnapshot,targetMarker:!!state.racingTargetMarker,setupHidden:$('#racingSetupPanel').classList.contains('hidden'),level:state.map.level};
     const base=Date.now();
     emitNativePosition({coords:{latitude:0,longitude:0,accuracy:3,speed:5,heading:90},timestamp:base});
@@ -1287,17 +1288,17 @@ test('Racing starts explicitly after countdown and connects shared GPS updates t
     const stopped={moving:state.ride.motion.moving,movingTime:state.ride.movingTime,elapsedAdvanced:Ride.rideMetrics(state.ride,base+14000).elapsedTime>elapsedTime,snapshotFrozen:JSON.stringify(state.racingSnapshot)===JSON.stringify(movingSnapshot)};
     emitNativePosition({coords:{latitude:0,longitude:.00056,accuracy:3,speed:5,heading:90},timestamp:base+16000});
     const resumed={moving:state.ride.motion.moving,movingTimeAdvanced:state.ride.movingTime>movingTime,snapshotChanged:JSON.stringify(state.racingSnapshot)!==JSON.stringify(movingSnapshot)};
-    state.racingSnapshot.currentRouteProgress=state.racingSession.routeDistance;
     $('#mainMenu').setAttribute=()=>{};openMainMenu();const racingEndVisible=!$('#mainMenu').querySelector('[data-menu-item="racing-end"]').classList.contains('hidden');closeMainMenu(true);
-    finishRacingSession();
-    const savePrompt={visible:!$('#rideResultModal').classList.contains('hidden'),hasRoute:pendingRideResult?.record?.route?.length>1,threeActions:['saveResultRacingBtn','saveResultRideBtn','discardResultBtn'].every(id=>!!$('#'+id))};
-    $('#saveResultRacingBtn').onclick();
-    const racingSaved={rides:profileRepository.readRides(activeProfileId).length,racing:profileRepository.readRacing(activeProfileId).length,modalHidden:$('#rideResultModal').classList.contains('hidden')};
+    emitNativePosition({coords:{latitude:0,longitude:.001,accuracy:3,speed:5,heading:90},timestamp:base+18000});
+    const savePrompt={visible:!$('#racingSaveDecisionDialog').classList.contains('hidden'),hasRoute:state.racingFrozenRecord?.route?.length>1,completed:state.racingFrozenRecord?.completed,phase:state.racingPhase};
+    $('#saveFrozenRacingBtn').onclick();
+    const racingSaved={rides:profileRepository.readRides(activeProfileId).length,racing:profileRepository.readRacing(activeProfileId).length,resultVisible:!$('#rideResultModal').classList.contains('hidden')};
+    closeRideResult();
     const savedRace=profileRepository.readRacing(activeProfileId)[0];openRideResult(savedRace,{mode:'racing'});$('#saveResultRideBtn').onclick();
     const ridingRecord=profileRepository.readRides(activeProfileId)[0],ridingSaved={rides:profileRepository.readRides(activeProfileId).length,racing:profileRepository.readRacing(activeProfileId).length,hasRoute:'route' in ridingRecord};
     renderRecords('riding');const ridingList={title:$('#recordsTitle').textContent,hasRecord:$('#recordsList').innerHTML.includes('km')};
     renderRecords('racing');const racingList={title:$('#recordsTitle').textContent,hasRecord:$('#recordsList').innerHTML.includes('km')};
-    emitNativePosition({coords:{latitude:0,longitude:0,accuracy:3,speed:0,heading:90},timestamp:base+18000});
+    emitNativePosition({coords:{latitude:0,longitude:0,accuracy:3,speed:0,heading:90},timestamp:base+20000});
     challengeRacingRecord(1);
     $('#racingStartBtn').onclick();runPendingTimers();runPendingTimers();runPendingTimers();
     const saved={phase:state.racingPhase,type:state.racingSession?.target?.type,watchers:testNativeWatchStarts()};
@@ -1312,8 +1313,8 @@ test('Racing starts explicitly after countdown and connects shared GPS updates t
     stopped:{moving:false,movingTime:4000,elapsedAdvanced:true,snapshotFrozen:true},
     resumed:{moving:true,movingTimeAdvanced:true,snapshotChanged:true},
     racingEndVisible:true,
-    savePrompt:{visible:true,hasRoute:true,threeActions:true},
-    racingSaved:{rides:0,racing:2,modalHidden:true},
+    savePrompt:{visible:true,hasRoute:true,completed:true,phase:'completion-pending'},
+    racingSaved:{rides:0,racing:2,resultVisible:true},
     ridingSaved:{rides:1,racing:2,hasRoute:false},
     ridingList:{title:'라이딩 기록',hasRecord:true},
     racingList:{title:'레이싱 기록',hasRecord:true},
@@ -3847,6 +3848,173 @@ test('Racing reaching the final checkpoint blocks later off-route rerouting with
     return{reached:state.racingReachedDestination,calls,phase:state.racingPhase};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{reached:true,calls:0,phase:'active'});
+});
+
+test('Racing confirmed arrival freezes once and ignores later racing GPS updates', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    let records=0,cards=0,reroutes=0;
+    createRacingRecord=(now,{completed}={})=>({id:'frozen',completed,endedAt:now,distance:120,movingTime:12000,route:[{latitude:37,longitude:127,timestamp:0},{latitude:37,longitude:127.001,timestamp:now}]});
+    openRacingSaveDecision=()=>{cards++;return true};
+    recalculateRacingRoute=()=>{reroutes++;return Promise.resolve(true)};
+    const originalCreate=createRacingRecord;
+    createRacingRecord=(...args)=>{records++;return originalCreate(...args)};
+    Ride.rideMetrics=()=>({movingTime:12000});
+    Racing.updateRace=()=>({currentRouteProgress:100,targetRouteProgress:90,distanceDifference:10,timeDifference:1000,offRouteDistance:3,targetPosition:{latitude:37,longitude:127.001}});
+    followRacingPosition=()=>true;renderRacingHud=()=>true;
+    state.racingPhase='active';state.racingSession={target:{type:Racing.TARGET_SPEED},progressBase:0,routeDistance:100};
+    state.racingCourse={source:'new',checkpoints:[{latitude:37,longitude:127.001}],checkpointAlong:[100]};
+    state.racingCapture={startedAt:0,startedRide:false,distance:0,movingTime:0,routeIndex:0,detailedIndex:0};
+    const fast={timestamp:12000,position:{latitude:37,longitude:127.001,accuracy:3},quality:{fresh:true,monotonic:true,plausiblePosition:true}};
+    updateActiveRacing(fast,{moving:true});
+    const frozen=JSON.stringify(state.racingFrozenRecord),snapshot=JSON.stringify(state.racingSnapshot),phase=state.racingPhase;
+    let level=2,zoomCalls=0;state.map={getLevel:()=>level,setLevel(value){level=value;zoomCalls++}};updateRacingLiveDisplay({...fast,speed:{valid:true,mps:75/3.6}},{moving:true});
+    for(let index=1;index<=10;index++)updateActiveRacing({...fast,timestamp:12000+index*1000,position:{...fast.position,longitude:127.001+index*.0001}},{moving:true});
+    observeRacingOffRoute({...fast,timestamp:30000},{moving:true},{offRouteDistance:200,currentRouteProgress:100});
+    return{phase,records,cards,reroutes,frozenUnchanged:JSON.stringify(state.racingFrozenRecord)===frozen,snapshotUnchanged:JSON.stringify(state.racingSnapshot)===snapshot,reached:state.racingReachedDestination,zoom:{level,calls:zoomCalls}};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{phase:'completion-pending',records:1,cards:1,reroutes:0,frozenUnchanged:true,snapshotUnchanged:true,reached:true,zoom:{level:2,calls:0}});
+});
+
+test('Racing destination false positives do not complete before final route progress', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    let records=0,cards=0;
+    createRacingRecord=()=>{records++;return{id:'unexpected'}};openRacingSaveDecision=()=>{cards++};
+    Ride.rideMetrics=()=>({movingTime:8000});followRacingPosition=()=>true;renderRacingHud=()=>true;
+    state.racingPhase='active';state.racingSession={target:{type:Racing.TARGET_SPEED},progressBase:0,routeDistance:100};
+    state.racingCourse={source:'new',checkpoints:[{latitude:37,longitude:127.001}],checkpointAlong:[100]};
+    const fast={timestamp:8000,position:{latitude:37,longitude:127.001,accuracy:3},quality:{fresh:true,monotonic:true,plausiblePosition:true}};
+    Racing.updateRace=()=>({currentRouteProgress:70,offRouteDistance:1,targetPosition:{latitude:37,longitude:127.001}});
+    const insufficient=updateActiveRacing(fast,{moving:true});
+    Racing.updateRace=()=>({currentRouteProgress:100,offRouteDistance:60,targetPosition:{latitude:37,longitude:127.001}});
+    const outsideCorridor=updateActiveRacing({...fast,timestamp:9000},{moving:true});
+    const invalid=updateActiveRacing({...fast,timestamp:10000,quality:{fresh:false,monotonic:true,plausiblePosition:true}},{moving:true});
+    return{insufficient,outsideCorridor,invalid,phase:state.racingPhase,reached:state.racingReachedDestination,records,cards};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{insufficient:true,outsideCorridor:true,invalid:false,phase:'active',reached:false,records:0,cards:0});
+});
+
+test('Racing delayed reroute responses cannot mutate frozen arrival or manual stop', async () => {
+  const context=loadApp('',false,true);
+  const result=await vm.runInContext(`(async()=>{
+    const outcomes=[];
+    for(const completed of [true,false]){
+      let resolveRoutes,rebaseCalls=0,drawCalls=0,level=3;
+      const pendingRoutes=new Promise(resolve=>{resolveRoutes=resolve});
+      fetchRoutes=()=>pendingRoutes;prepareRoutes=value=>value;drawRoutes=()=>{drawCalls++};
+      Racing.rebaseRaceRoute=()=>{rebaseCalls++;return true};
+      createRacingRecord=(now,{completed:value})=>({id:value?'arrival':'manual',completed:value,endedAt:now,distance:100,movingTime:10000,route:[{latitude:37,longitude:127,timestamp:0},{latitude:37,longitude:127.001,timestamp:now}]});
+      openRacingSaveDecision=()=>true;
+      state.map={getLevel:()=>level,setLevel(value){level=value},setBounds(){},relayout(){},panTo(){}};
+      state.screen='racing';state.racingPhase='active';state.racingFrozenRecord=null;state.racingReachedDestination=false;state.racingLastRerouteAt=0;state.racingRouteRequestSeq=0;
+      state.racingSession={target:{type:Racing.TARGET_SPEED},progressBase:0,routeDistance:100,lastMovingTime:10000};
+      state.racingSnapshot={currentRouteProgress:60,targetRouteProgress:50,distanceDifference:10,timeDifference:500,offRouteDistance:80};
+      state.racingCapture={startedAt:0,startedRide:false,distance:0,movingTime:0,routeIndex:0,detailedIndex:0};
+      state.racingCourse={source:'new',name:'course',route:[{latitude:37,longitude:127},{latitude:37,longitude:127.001}],distance:100,routeMode:'BIKE_ONLY',destination:{name:'destination',latitude:37,longitude:127.001},checkpoints:[{name:'destination',latitude:37,longitude:127.001}],checkpointAlong:[100]};
+      state.routes=[{id:'original'}];state.selectedRoute=0;
+      const before={course:JSON.stringify(state.racingCourse),snapshot:JSON.stringify(state.racingSnapshot),routes:JSON.stringify(state.routes),level};
+      const reroute=recalculateRacingRoute({timestamp:20000,position:{latitude:37,longitude:127.0005,accuracy:3},quality:{fresh:true,monotonic:true,plausiblePosition:true}});
+      freezeRacingSession({completed,now:21000});
+      const frozen=JSON.stringify(state.racingFrozenRecord),phase=state.racingPhase;
+      resolveRoutes([{id:'late',routeMode:'BIKE_ONLY',totalDistance:80,totalTime:40,_points:[{latitude:37,longitude:127.0005},{latitude:37,longitude:127.001}]}]);
+      const applied=await reroute;
+      outcomes.push({completed,applied,phase,frozenUnchanged:JSON.stringify(state.racingFrozenRecord)===frozen,courseUnchanged:JSON.stringify(state.racingCourse)===before.course,snapshotUnchanged:JSON.stringify(state.racingSnapshot)===before.snapshot,routesUnchanged:JSON.stringify(state.routes)===before.routes,levelUnchanged:level===before.level,rebaseCalls,drawCalls});
+    }
+    return outcomes;
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),[
+    {completed:true,applied:false,phase:'completion-pending',frozenUnchanged:true,courseUnchanged:true,snapshotUnchanged:true,routesUnchanged:true,levelUnchanged:true,rebaseCalls:0,drawCalls:0},
+    {completed:false,applied:false,phase:'completion-pending',frozenUnchanged:true,courseUnchanged:true,snapshotUnchanged:true,routesUnchanged:true,levelUnchanged:true,rebaseCalls:0,drawCalls:0},
+  ]);
+});
+
+test('Racing completion save card persists once, shows the result, and discard writes nothing', () => {
+  assert.match(html,/id="racingSaveDecisionDialog"[\s\S]*?레이싱을 완료했습니다![\s\S]*?목적지에 도착했습니다\.[\s\S]*?기록을 저장하시겠습니까\?[\s\S]*?id="saveFrozenRacingBtn"[\s\S]*?>저장<[\s\S]*?id="discardFrozenRacingBtn"[\s\S]*?>저장 안 함</);
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    const storageData=new Map(),storage={getItem:key=>storageData.get(key)??null,setItem:(key,value)=>storageData.set(key,value)};
+    profileRepository=RideMateProfiles.createProfileRepository(storage,{createId:()=> 'profile-a',now:()=> '2026-10-14T00:00:00.000Z'});profileRepository.initialize();activeProfileId='profile-a';
+    const record={name:'완주 코스',completed:true,distance:100,movingTime:10000,averageMovingSpeed:10,maxSpeed:12,route:[{latitude:37,longitude:127,timestamp:0},{latitude:37,longitude:127.001,timestamp:10000}]};
+    state.screen='racing';state.racingPhase='completion-pending';state.racingFrozenRecord=record;
+    openRacingSaveDecision(true);
+    const card={visible:!$('#racingSaveDecisionDialog').classList.contains('hidden'),title:$('#racingSaveDecisionTitle').textContent,message:$('#racingSaveDecisionMessage').textContent};
+    $('#saveFrozenRacingBtn').onclick();$('#saveFrozenRacingBtn').onclick();
+    const saved={count:profileRepository.readRacing(activeProfileId).length,phase:state.racingPhase,frozen:state.racingFrozenRecord,resultVisible:!$('#rideResultModal').classList.contains('hidden'),decisionHidden:$('#racingSaveDecisionDialog').classList.contains('hidden'),saveActionsHidden:$('#saveResultRacingBtn').classList.contains('hidden')&&$('#saveResultRideBtn').classList.contains('hidden')};
+    state.ride.recordingState='recording';rideGpsSubscribed=true;closeRideResult();const sharedRide={recordingState:state.ride.recordingState,subscribed:rideGpsSubscribed};
+    state.racingPhase='completion-pending';state.racingFrozenRecord={...record,name:'버릴 코스'};openRacingSaveDecision(true);$('#discardFrozenRacingBtn').onclick();
+    const discarded={count:profileRepository.readRacing(activeProfileId).length,phase:state.racingPhase,frozen:state.racingFrozenRecord,screen:state.screen,decisionHidden:$('#racingSaveDecisionDialog').classList.contains('hidden')};
+    return{card,saved,sharedRide,discarded};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    card:{visible:true,title:'레이싱을 완료했습니다!',message:'목적지에 도착했습니다.\n기록을 저장하시겠습니까?'},
+    saved:{count:1,phase:'idle',frozen:null,resultVisible:true,decisionHidden:true,saveActionsHidden:true},
+    sharedRide:{recordingState:'recording',subscribed:true},
+    discarded:{count:1,phase:'idle',frozen:null,screen:'map',decisionHidden:true},
+  });
+});
+
+test('Racing completion save failure keeps the frozen record and permits one retry', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    let attempts=0;const stored=[];profileRepository={prependRacing(profileId,record){attempts++;if(attempts===1)throw new Error('quota');stored.push(record)},readRacing(){return stored.slice()},readSettings(){return{distanceUnit:'km',clockFormat:'device'}}};activeProfileId='profile-a';
+    testToast='';toast=message=>{testToast=message};
+    state.screen='racing';state.racingPhase='completion-pending';state.racingFrozenRecord={name:'재시도',completed:true,distance:100,movingTime:10000,averageMovingSpeed:10,maxSpeed:12,route:[{latitude:37,longitude:127,timestamp:0},{latitude:37,longitude:127.001,timestamp:10000}]};
+    openRacingSaveDecision(true);
+    const first=saveFrozenRacingRecord(),afterFailure={phase:state.racingPhase,kept:state.racingFrozenRecord?.name,disabled:$('#saveFrozenRacingBtn').disabled,toast:testToast,stored:stored.length};
+    const second=saveFrozenRacingRecord(),afterRetry={phase:state.racingPhase,frozen:state.racingFrozenRecord,stored:stored.length,resultVisible:!$('#rideResultModal').classList.contains('hidden')};
+    return{first,afterFailure,second,afterRetry,attempts};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{first:false,afterFailure:{phase:'completion-pending',kept:'재시도',disabled:false,toast:'저장하지 못했습니다. 저장공간을 확인해주세요.',stored:0},second:true,afterRetry:{phase:'idle',frozen:null,stored:1,resultVisible:true},attempts:2});
+});
+
+test('Racing manual stop confirmation preserves riding or freezes an incomplete record', () => {
+  assert.match(html,/id="racingEndConfirmDialog"[\s\S]*?여기서 레이싱을 멈추시겠습니까\?[\s\S]*?id="continueRacingBtn"[\s\S]*?>계속 주행<[\s\S]*?id="confirmRacingEndBtn"[\s\S]*?>레이싱 중단</);
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    let records=0;createRacingRecord=(now,{completed})=>{records++;return{name:'중도 중단',completed,endedAt:now,distance:80,movingTime:8000,route:[{latitude:37,longitude:127,timestamp:0},{latitude:37,longitude:127.0008,timestamp:now}]}};
+    state.screen='racing';state.racingPhase='active';state.racingSession={target:{type:Racing.TARGET_SPEED}};state.racingCapture={startedRide:false};
+    requestManualRacingEnd();const opened=!$('#racingEndConfirmDialog').classList.contains('hidden');$('#continueRacingBtn').onclick();
+    const continued={phase:state.racingPhase,records,confirmHidden:$('#racingEndConfirmDialog').classList.contains('hidden')};
+    requestManualRacingEnd();$('#confirmRacingEndBtn').onclick();
+    const stopped={phase:state.racingPhase,records,completed:state.racingFrozenRecord?.completed,saveVisible:!$('#racingSaveDecisionDialog').classList.contains('hidden'),title:$('#racingSaveDecisionTitle').textContent};
+    profileRepository={readRacing:()=>[{completed:false,route:[{},{}]},{completed:true,route:[{},{}]}]};activeProfileId='profile-a';
+    return{opened,continued,stopped,opponents:racingRecordChoices().map(choice=>choice.index)};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{opened:true,continued:{phase:'active',records:0,confirmHidden:true},stopped:{phase:'completion-pending',records:1,completed:false,saveVisible:true,title:'레이싱을 중단했습니다.'},opponents:[1]});
+});
+
+test('Racing checkpoint distances preserve saved and return-to-start destinations', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    const start={latitude:37,longitude:127},turn={latitude:37,longitude:127.001},route=[start,turn,start];
+    const round=racingCheckpointDistances(route,[turn,start]);
+    const saved={name:'saved',completed:true,ghostDataVersion:1,distance:222,movingTime:20000,route:[
+      {...start,timestamp:0,distance:0,movingTime:0,filteredSpeed:0,moving:false},
+      {...turn,timestamp:10000,distance:111,movingTime:10000,filteredSpeed:11.1,moving:true},
+      {...start,timestamp:20000,distance:222,movingTime:20000,filteredSpeed:11.1,moving:true}
+    ]};
+    activeProfileId='profile-a';profileRepository={readRacing:()=>[saved],readSettings:()=>({distanceUnit:'km'})};
+    closeRecordsScreen=()=>true;showRacingCourseOnMap=()=>true;renderRacingSetupControls=()=>true;
+    const challenged=challengeRacingRecord(0);
+    return{round,challenged,savedAlong:state.racingCourse.checkpointAlong,destination:state.racingCourse.destination};
+  })()`,context);
+  assert.equal(result.challenged,true);
+  assert.ok(result.round[0]>80);
+  assert.ok(result.round[1]>result.round[0]);
+  assert.ok(result.savedAlong[0]>160);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.destination)),{latitude:37,longitude:127});
+});
+
+test('Racing completion pending survives navigation until save or discard', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    state.screen='racing';state.racingPhase='completion-pending';state.racingFrozenRecord={name:'frozen',completed:true};
+    openRacingSaveDecision(true);
+    renderScreen('map',false);
+    return{phase:state.racingPhase,record:state.racingFrozenRecord?.name,dialogVisible:!$('#racingSaveDecisionDialog').classList.contains('hidden')};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{phase:'completion-pending',record:'frozen',dialogVisible:true});
 });
 
 test('Racing reroute redraws the new route without fitting the full route bounds', async () => {

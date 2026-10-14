@@ -467,6 +467,27 @@
         </div>
       </section>
 
+      <section id="racingSaveDecisionDialog" class="dialog-backdrop hidden" aria-hidden="true">
+        <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="racingSaveDecisionTitle">
+          <h2 id="racingSaveDecisionTitle">레이싱을 완료했습니다!</h2>
+          <p id="racingSaveDecisionMessage">목적지에 도착했습니다.<br>기록을 저장하시겠습니까?</p>
+          <div class="racing-decision-actions">
+            <button id="saveFrozenRacingBtn" class="primary-btn" type="button">저장</button>
+            <button id="discardFrozenRacingBtn" class="secondary-btn" type="button">저장 안 함</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="racingEndConfirmDialog" class="dialog-backdrop hidden" aria-hidden="true">
+        <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="racingEndConfirmTitle">
+          <h2 id="racingEndConfirmTitle">여기서 레이싱을 멈추시겠습니까?</h2>
+          <div class="racing-decision-actions">
+            <button id="continueRacingBtn" class="secondary-btn" type="button">계속 주행</button>
+            <button id="confirmRacingEndBtn" class="danger-btn" type="button">레이싱 중단</button>
+          </div>
+        </div>
+      </section>
+
       <section id="racingTripTypeDialog" class="dialog-backdrop hidden" aria-hidden="true">
         <div class="dialog racing-course-dialog" role="dialog" aria-modal="true" aria-labelledby="racingTripTypeTitle">
           <h2 id="racingTripTypeTitle">레이싱 코스 선택</h2>
