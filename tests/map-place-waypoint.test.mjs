@@ -1362,22 +1362,47 @@ test('Racing speed clears variable bottom panels and restores its normal positio
   assert.match(styles,/\.racing-speed-readout\{[^}]*bottom:max\([^}]*var\(--map-speed-clearance,0px\)/);
 });
 
-test('Racing speed input follows the iOS visual viewport without shrinking the map layout', () => {
+test('Racing speed keyboard keeps the map camera and visual layout fixed while moving only the setup card', () => {
   const context=loadApp('',false,true);
   const result=vm.runInContext(`(()=>{
-    window.visualViewport.height=800;window.visualViewport.offsetTop=0;syncViewportMetrics();
-    const input=$('#racingTargetSpeed');
+    const logs=[];let diagnosticsEnabled=false;console={debug(...values){logs.push(values)}};
+    localStorage={getItem(key){return diagnosticsEnabled&&key==='ridemate_racing_keyboard_diagnostics'?'1':null}};
+    window.scrollY=0;window.visualViewport.height=800;window.visualViewport.offsetTop=0;syncViewportMetrics();
+    const input=$('#racingTargetSpeed'),map=$('#map'),bottom=$('#bottomNav');
+    map.boundingRect={top:0,right:390,bottom:800,left:0,width:390,height:800};
+    bottom.boundingRect={top:748,right:390,bottom:800,left:0,width:390,height:52};
+    let relayouts=0,pans=0,zooms=0;const center={latitude:37,longitude:127};let level=3;
+    state.screen='racing';state.map={relayout(){relayouts++},panTo(){pans++},setLevel(){zooms++},getCenter:()=>center,getLevel:()=>level};
+    reportRacingKeyboardDiagnostic('disabled');const disabledLogCount=logs.length;diagnosticsEnabled=true;
+    input.dispatch('pointerdown',{pointerType:'touch'});
+    const prepared=document.body.classList.contains('racing-keyboard-preparing');
     dispatchDocumentEvent('focusin',input);
-    window.visualViewport.height=420;window.visualViewport.offsetTop=80;dispatchViewportEvent('resize');
-    const open={height:document.documentElement.style.getPropertyValue('--viewport-height'),inset:document.documentElement.style.getPropertyValue('--keyboard-inset'),visible:document.documentElement.style.getPropertyValue('--racing-visible-height'),className:document.body.classList.contains('racing-keyboard-open')};
-    dispatchDocumentEvent('focusout',input);window.visualViewport.height=800;window.visualViewport.offsetTop=0;dispatchViewportEvent('resize');
-    return{open,closed:{height:document.documentElement.style.getPropertyValue('--viewport-height'),inset:document.documentElement.style.getPropertyValue('--keyboard-inset'),className:document.body.classList.contains('racing-keyboard-open')}};
+    window.scrollY=12;window.visualViewport.height=420;window.visualViewport.offsetTop=80;
+    map.boundingRect={top:80,right:390,bottom:880,left:0,width:390,height:800};
+    bottom.boundingRect={top:828,right:390,bottom:880,left:0,width:390,height:52};
+    dispatchViewportEvent('resize');dispatchViewportEvent('scroll');
+    const open={height:document.documentElement.style.getPropertyValue('--viewport-height'),inset:document.documentElement.style.getPropertyValue('--keyboard-inset'),offset:document.documentElement.style.getPropertyValue('--racing-keyboard-offset-top'),viewportBottom:document.documentElement.style.getPropertyValue('--viewport-bottom'),className:document.body.classList.contains('racing-keyboard-open'),prepared:document.body.classList.contains('racing-keyboard-preparing')};
+    dispatchDocumentEvent('focusout',input);window.scrollY=0;window.visualViewport.height=800;window.visualViewport.offsetTop=0;map.boundingRect={top:0,right:390,bottom:800,left:0,width:390,height:800};bottom.boundingRect={top:748,right:390,bottom:800,left:0,width:390,height:52};dispatchViewportEvent('resize');
+    const closed={height:document.documentElement.style.getPropertyValue('--viewport-height'),inset:document.documentElement.style.getPropertyValue('--keyboard-inset'),offset:document.documentElement.style.getPropertyValue('--racing-keyboard-offset-top'),className:document.body.classList.contains('racing-keyboard-open'),prepared:document.body.classList.contains('racing-keyboard-preparing')};
+    input.dispatch('pointerdown',{pointerType:'touch'});dispatchDocumentEvent('focusin',input);window.visualViewport.height=420;window.visualViewport.offsetTop=80;dispatchViewportEvent('resize');dispatchDocumentEvent('focusout',input);window.visualViewport.height=800;window.visualViewport.offsetTop=0;dispatchViewportEvent('resize');
+    const repeated={inset:document.documentElement.style.getPropertyValue('--keyboard-inset'),offset:document.documentElement.style.getPropertyValue('--racing-keyboard-offset-top'),className:document.body.classList.contains('racing-keyboard-open'),prepared:document.body.classList.contains('racing-keyboard-preparing')};
+    return{disabledLogCount,prepared,open,camera:{relayouts,pans,zooms,center:state.map.getCenter(),level:state.map.getLevel()},logs:logs.slice(0,3).map(([,stage,data])=>({stage,scrollY:data.scrollY,offsetTop:data.visualViewport.offsetTop,mapVisualTop:data.map.visualTop,bottomVisualTop:data.bottomNav.visualTop})),closed,repeated};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    open:{height:'800px',inset:'300px',visible:'420px',className:true},
-    closed:{height:'800px',inset:'0px',className:false},
+    disabledLogCount:0,prepared:true,
+    open:{height:'800px',inset:'300px',offset:'80px',viewportBottom:'0px',className:true,prepared:false},
+    camera:{relayouts:0,pans:0,zooms:0,center:{latitude:37,longitude:127},level:3},
+    logs:[
+      {stage:'before-focus',scrollY:0,offsetTop:0,mapVisualTop:0,bottomVisualTop:748},
+      {stage:'keyboard-open',scrollY:12,offsetTop:80,mapVisualTop:0,bottomVisualTop:748},
+      {stage:'keyboard-closed',scrollY:0,offsetTop:0,mapVisualTop:0,bottomVisualTop:748},
+    ],
+    closed:{height:'800px',inset:'0px',offset:'0px',className:false,prepared:false},
+    repeated:{inset:'0px',offset:'0px',className:false,prepared:false},
   });
-  assert.match(styles,/\.racing-setup-panel\{[^}]*var\(--keyboard-inset,0px\)[^}]*var\(--racing-visible-height,100dvh\)/);
+  assert.match(styles,/\.racing-keyboard-preparing \.racing-setup-panel\{[^}]*bottom:max\([^}]*50%/);
+  assert.match(styles,/\.racing-keyboard-open #map,\.racing-keyboard-open #overlayRoot\{[^}]*translateY\(var\(--racing-keyboard-offset-top,0px\)\)/);
+  assert.doesNotMatch(appSource,/scrollTo\(/);
 });
 
 test('Racing diagnostics are disabled by default and report live target state only when enabled', () => {

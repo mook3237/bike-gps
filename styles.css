@@ -656,6 +656,8 @@
 .racing-target-indicator{position:absolute;top:88px;left:50%;transform:translateX(-50%);z-index:6;color:#ff7a84;font-size:13px;font-weight:900;text-shadow:0 2px 7px #020a18}
 .racing-target-indicator::before{content:'▲';display:inline-block;margin-right:6px;transform:rotate(var(--target-angle));-webkit-text-stroke:2px #fff;paint-order:stroke fill}
 .racing-setup-panel{position:absolute;z-index:7;left:50%;bottom:calc(env(safe-area-inset-bottom) + var(--keyboard-inset,0px) + 82px);transform:translateX(-50%);width:min(330px,calc(100vw - 36px));max-height:calc(var(--racing-visible-height,100dvh) - 118px);padding:14px;border:1px solid #163253;border-radius:16px;background:rgba(2,10,24,.9);color:#fff;box-shadow:0 6px 24px rgba(2,10,24,.38);backdrop-filter:blur(10px);pointer-events:auto;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.racing-keyboard-preparing .racing-setup-panel{bottom:max(calc(env(safe-area-inset-bottom) + 82px),50%)}
+.racing-keyboard-open #map,.racing-keyboard-open #overlayRoot{transform:translateY(var(--racing-keyboard-offset-top,0px))}
 .racing-setup-panel>strong{display:block;margin-bottom:10px;color:#2cf0ff}.racing-setup-panel label{display:flex;align-items:center;justify-content:space-between;gap:12px;font-weight:800}.racing-setup-panel input{width:90px;height:40px;border:1px solid #2d7797;border-radius:10px;background:#071b2c;color:#fff;padding:0 8px;font-size:18px;font-weight:800}.racing-setup-panel label small{margin-left:5px;color:#7cc4f2}
 .racing-controls-hidden #mapHeader,.racing-controls-hidden .right-controls,.racing-controls-hidden .zoom-controls{opacity:0;pointer-events:none;transition:opacity .2s ease}
 
