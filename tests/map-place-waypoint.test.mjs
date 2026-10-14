@@ -1971,17 +1971,15 @@ test('orientation changes relayout and refit using the current viewport without 
   assert.doesNotMatch(styles,/#overlayRoot:has\(\.riding-board:not\(\.hidden\)\)/);
 });
 
-test('screen transitions isolate Racing overlays, retire stale course responses, and refresh viewport metrics', async () => {
+test('screen transitions retire stale Racing course responses and refresh viewport metrics', async () => {
   const context=loadApp('',false,true);
   const result=await vm.runInContext(`(async()=>{
     let releaseRoute;
     let relayouts=0;
     state.map={relayout(){relayouts++},setBounds(){}};
     state.currentLocation=null;
-    state.racingCourseSetup={stage:'trip-type',origin:{latitude:37,longitude:127},destination:{name:'도착',latitude:37.01,longitude:127.01}};
-    renderScreen('racing',false);showRacingTripType(false);
-    const racingDialogVisible=!$('#racingTripTypeDialog').classList.contains('hidden');
-    state.racingCourseSetup.stage='route-alternatives';
+    state.racingCourseSetup={stage:'route-alternatives',origin:{latitude:37,longitude:127},destination:{name:'도착',latitude:37.01,longitude:127.01}};
+    renderScreen('racing',false);
     fetchRoutes=()=>new Promise(resolve=>{releaseRoute=resolve});
     const pending=loadRacingCourseAlternatives(null);
     window.visualViewport.height=500;
@@ -1992,19 +1990,14 @@ test('screen transitions isolate Racing overlays, retire stale course responses,
     renderScreen('map',false);
     releaseRoute([{id:'late',routeMode:'BIKE_ONLY',totalDistance:100,totalTime:60,route:{legs:[{steps:[{properties:{x:127,y:37,distance:100,time:60},path:{points:[[127,37],[127.01,37.01]]}}]}]}}]);
     await pending;
-    state.racingCourseSetup.stage='trip-type';
     $('#racingTabBtn').onclick();
-    const resumedTripDialog=!$('#racingTripTypeDialog').classList.contains('hidden');
     renderScreen('map',false);
     window.visualViewport.height=800;syncViewportMetrics();document.activeElement=$('#racingTargetSpeed');window.visualViewport.height=500;syncViewportMetrics();
     const keyboard={layoutHeight:document.documentElement.style.getPropertyValue('--viewport-height'),inset:document.documentElement.style.getPropertyValue('--keyboard-inset'),open:document.body.classList.contains('racing-keyboard-open')};
     document.activeElement=null;window.visualViewport.height=800;syncViewportMetrics();
     return{
-      racingDialogVisible,
       racingClass:document.body.classList.contains('racing-active'),
       ordinarySearchRacingClass,
-      resumedTripDialog,
-      tripHidden:$('#racingTripTypeDialog').classList.contains('hidden'),
       returnHidden:$('#racingReturnDialog').classList.contains('hidden'),
       navMenuHidden:$('#navMenu').classList.contains('hidden'),
       setupPreserved:!!state.racingCourseSetup,
@@ -2013,7 +2006,7 @@ test('screen transitions isolate Racing overlays, retire stale course responses,
     };
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    racingDialogVisible:true,racingClass:false,ordinarySearchRacingClass:false,resumedTripDialog:true,tripHidden:true,returnHidden:true,navMenuHidden:true,
+    racingClass:false,ordinarySearchRacingClass:false,returnHidden:true,navMenuHidden:true,
     setupPreserved:true,staleRouteApplied:false,viewportHeight:'800px',keyboard:{layoutHeight:'800px',inset:'300px',open:true},
   });
   assert.match(styles,/\.main-menu-drawer\{[^}]*width:min\(42vw,170px\)/);
@@ -3856,7 +3849,7 @@ test('Riding Board unit setting converts display only and keeps canonical ride v
   assert.equal(result.gaugeUnit,'mph');
 });
 
-test('Racing destination selection shows the shared visible pin and place card before trip type choice', async () => {
+test('Racing destination selection shows the shared visible pin and direct trip choices', async () => {
   const context=loadApp('',true,true);
   const result=await vm.runInContext(`(async()=>{
     class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
@@ -3873,34 +3866,51 @@ test('Racing destination selection shows the shared visible pin and place card b
     const marker=state.routeEndpointMarkers[0];
     const preview={
       screen:state.screen,stage:state.racingCourseSetup.stage,
-      sheetVisible:!ui.sheet.classList.contains('hidden'),tripHidden:$('#racingTripTypeDialog').classList.contains('hidden'),
+      sheetVisible:!ui.sheet.classList.contains('hidden'),
       markerCount:state.routeEndpointMarkers.length,markerClass:marker?.content.className,markerMap:marker?.map===state.map,
       markerPosition:[marker?.position.latitude,marker?.position.longitude],markerZ:marker?.zIndex,
-      card:$('#sheetContent').innerHTML,confirmVisible:$('#sheetContent').innerHTML.includes('id="confirmRacingDestinationBtn"'),pans:pans.slice(),
+      card:$('#sheetContent').innerHTML,oneWayVisible:$('#sheetContent').innerHTML.includes('id="racingOneWayChoiceBtn"'),roundVisible:$('#sheetContent').innerHTML.includes('id="racingRoundTripChoiceBtn"'),pans:pans.slice(),
     };
     clearRouteEndpointMarkers();restoreScreen('place');
     const restoredMarker=state.routeEndpointMarkers[0];
     const restored={count:state.routeEndpointMarkers.length,position:[restoredMarker?.position.latitude,restoredMarker?.position.longitude],sheetVisible:!ui.sheet.classList.contains('hidden')};
-    const confirm=$('#confirmRacingDestinationBtn');
-    if(preview.confirmVisible&&typeof confirm.onclick==='function')await confirm.onclick();
-    const confirmed={screen:state.screen,stage:state.racingCourseSetup.stage,sheetHidden:ui.sheet.classList.contains('hidden'),tripVisible:!$('#racingTripTypeDialog').classList.contains('hidden'),markerCount:state.routeEndpointMarkers.length};
-    return{preview,restored,confirmed};
+    return{preview,restored};
   })()`,context);
   const {card,...preview}=result.preview;
   assert.deepEqual(JSON.parse(JSON.stringify(preview)),{
-    screen:'place',stage:'destination-discovery',sheetVisible:true,tripHidden:true,
+    screen:'place',stage:'destination-discovery',sheetVisible:true,
     markerCount:1,markerClass:'route-endpoint-marker destination',markerMap:true,
     markerPosition:[37.5284,126.9348],markerZ:10,
-    confirmVisible:true,pans:[[37.5284,126.9348]],
+    oneWayVisible:true,roundVisible:true,pans:[[37.5284,126.9348]],
   });
   assert.match(card,/한강공원/);
   assert.match(card,/공원/);
   assert.match(card,/서울 영등포구 여의동로 330/);
   assert.match(card,/class="detail-actions racing-place-actions"/);
-  assert.match(card,/레이싱 코스 선택/);
-  assert.match(styles,/\.racing-place-actions\{grid-template-columns:1fr\}/);
+  assert.doesNotMatch(card,/레이싱 코스 선택/);
+  assert.match(card,/>편도</);
+  assert.match(card,/>왕복</);
+  assert.match(styles,/\.racing-place-actions\{grid-template-columns:1fr 1fr\}/);
   assert.deepEqual(JSON.parse(JSON.stringify(result.restored)),{count:1,position:[37.5284,126.9348],sheetVisible:true});
-  assert.deepEqual(JSON.parse(JSON.stringify(result.confirmed)),{screen:'racing',stage:'trip-type',sheetHidden:true,tripVisible:true,markerCount:1});
+});
+
+test('Racing place card offers direct one-way and round-trip choices without the trip type modal', async () => {
+  const context=loadApp('',true,true);
+  const result=await vm.runInContext(`(async()=>{
+    const destination={id:'finish',name:'Destination',category:'Park',address:'Seoul',latitude:37.5,longitude:127};
+    const calls=[];
+    state.racingCourseSetup={stage:'destination-discovery',previousSelectedPlace:null};
+    confirmRacingDestination=async(place,tripType)=>{calls.push([place.id,tripType]);return true};
+    renderPlaceContent(destination);
+    await $('#racingOneWayChoiceBtn').onclick();
+    await $('#racingRoundTripChoiceBtn').onclick();
+    return{card:ui.sheetContent.innerHTML,calls};
+  })()`,context);
+  assert.match(result.card,/id="racingOneWayChoiceBtn"[^>]*>편도</);
+  assert.match(result.card,/id="racingRoundTripChoiceBtn"[^>]*>왕복</);
+  assert.doesNotMatch(result.card,/레이싱 코스 선택/);
+  assert.doesNotMatch(html,/id="racingTripTypeDialog"/);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.calls)),[['finish','one-way'],['finish','round']]);
 });
 
 test('Racing destination preview replaces duplicate pins and cancel restores the confirmed course', async () => {
@@ -3959,7 +3969,7 @@ test('Racing destination setup stays isolated through shared place selection and
     class TestPolyline {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setOptions(options){Object.assign(this,options)}setZIndex(value){this.zIndex=value}}
     class TestOverlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setPosition(position){this.position=position}}
     kakao={maps:{LatLng:TestLatLng,LatLngBounds:TestBounds,Polyline:TestPolyline,CustomOverlay:TestOverlay}};
-    state.map={getLevel:()=>4,getCenter:()=>({}),setBounds(){},relayout(){},panTo(){}};
+    state.map={getLevel:()=>4,setLevel(){},getCenter:()=>({}),setBounds(){},relayout(){},panTo(){}};
     saveRecentSearch=()=>{};renderRecentSearches=()=>{};
     history={state:{screen:'racing'},pushState(entry){this.state=entry},replaceState(entry){this.state=entry},back(){}};
     testSettingsOpened=0;testRacingFinishes=0;openAppSettings=()=>{testSettingsOpened++};finishRacingSession=()=>{testRacingFinishes++};
@@ -3971,23 +3981,21 @@ test('Racing destination setup stays isolated through shared place selection and
     fetchRoutes=async(from,to)=>[rawRoute(from,to,'BIKE_ONLY'),rawRoute(from,to,'SHORTEST',120)];
 
     state.screen='racing';await openPlace(destination,true);
-    const pinCard={screen:state.screen,stage:state.racingCourseSetup?.stage,tripShown:!$('#racingTripTypeDialog').classList.contains('hidden'),placeSheetHidden:ui.sheet.classList.contains('hidden'),finish:testRacingFinishes};
-    await $('#confirmRacingDestinationBtn').onclick();
-    const tripFirst={stage:state.racingCourseSetup?.stage,shown:!$('#racingTripTypeDialog').classList.contains('hidden'),screen:state.screen};
-    await chooseOneWayRacingCourse();
+    const pinCard={screen:state.screen,stage:state.racingCourseSetup?.stage,placeSheetHidden:ui.sheet.classList.contains('hidden'),finish:testRacingFinishes};
+    await $('#racingOneWayChoiceBtn').onclick();
     const oneWayRoutes={screen:state.screen,count:state.routes.length,cards:$('#routeCards').querySelectorAll('[data-i]').length,start:$('#startNavBtn').textContent,points:state.routes[0]._points.length};
     $('#startNavBtn').onclick();
     const oneWay={source:state.racingCourse.source,points:state.racingCourse.route.length,settings:testSettingsOpened,phase:state.racingPhase,setupVisible:!$('#racingSetupPanel').classList.contains('hidden'),startText:$('#racingStartBtn').textContent,speedVisible:!$('#racingSpeedSettingRow').classList.contains('hidden')};
 
-    state.screen='racing';state.racingCourseSetup=null;await openPlace(destination,true);await $('#confirmRacingDestinationBtn').onclick();showRacingReturnChoice();await chooseCurrentRacingReturn();
+    state.screen='racing';state.racingCourseSetup=null;await openPlace(destination,true);await $('#racingRoundTripChoiceBtn').onclick();
     const roundRoutes={screen:state.screen,count:state.routes.length,points:state.routes[0]._points.map(point=>[point.latitude,point.longitude])};
     $('#startNavBtn').onclick();
     const round={mode:state.racingCourse.routeMode,points:state.racingCourse.route.map(point=>[point.latitude,point.longitude]),settings:testSettingsOpened};
 
     state.screen='racing';state.racingCourseSetup=null;startRacingCourseSelection();await choosePlace(destination);
     const searchCard={screen:state.screen,stage:state.racingCourseSetup?.stage};
-    await $('#confirmRacingDestinationBtn').onclick();showRacingReturnChoice();chooseOtherRacingReturn();await choosePlace(returnDestination);
-    const returnCard={screen:state.screen,stage:state.racingCourseSetup?.stage,tripShown:!$('#racingTripTypeDialog').classList.contains('hidden')};
+    state.racingCourseSetup={...state.racingCourseSetup,origin,destination};showRacingReturnChoice();chooseOtherRacingReturn();await choosePlace(returnDestination);
+    const returnCard={screen:state.screen,stage:state.racingCourseSetup?.stage};
     await $('#confirmRacingDestinationBtn').onclick();
     const otherReturn={screen:state.screen,points:state.routes[0]._points.map(point=>[point.latitude,point.longitude])};
     cancelRacingCourseSelection();
@@ -3999,17 +4007,16 @@ test('Racing destination setup stays isolated through shared place selection and
     const backedOut={screen:state.screen,setup:state.racingCourseSetup,finish:testRacingFinishes};
 
     state.racingCourseSetup=null;state.screen='map';let navigationLoads=0;loadRoutes=async()=>{navigationLoads++};openPlace(destination,true);const normalMap={screen:state.screen,hasMapPlaceActions:!!$('#setStart')&&!!$('#setEnd')};await $('#setEnd').onclick();
-    return{pinCard,tripFirst,oneWayRoutes,oneWay,roundRoutes,round,searchCard,returnCard,otherReturn,cancelled,manualCard,backedOut,normalMap,navigationLoads};
+    return{pinCard,oneWayRoutes,oneWay,roundRoutes,round,searchCard,returnCard,otherReturn,cancelled,manualCard,backedOut,normalMap,navigationLoads};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    pinCard:{screen:'place',stage:'destination-discovery',tripShown:false,placeSheetHidden:false,finish:0},
-    tripFirst:{stage:'trip-type',shown:true,screen:'racing'},
+    pinCard:{screen:'place',stage:'destination-discovery',placeSheetHidden:false,finish:0},
     oneWayRoutes:{screen:'racing-route',count:2,cards:2,start:'코스 선택',points:2},
     oneWay:{source:'new',points:2,settings:0,phase:'idle',setupVisible:true,startText:'레이싱 시작',speedVisible:true},
     roundRoutes:{screen:'racing-route',count:2,points:[[37,126.999],[37,127],[37,126.999]]},
     round:{mode:'BIKE_ONLY',points:[[37,126.999],[37,127],[37,126.999]],settings:0},
     searchCard:{screen:'place',stage:'destination-discovery'},
-    returnCard:{screen:'place',stage:'return-destination-discovery',tripShown:false},
+    returnCard:{screen:'place',stage:'return-destination-discovery'},
     otherReturn:{screen:'racing-route',points:[[37,126.999],[37,127],[37,127.001]]},
     cancelled:{screen:'racing',setup:null,finish:0},navigationLoads:1,
     manualCard:{screen:'place',stage:'destination-discovery',finish:0},
@@ -4025,12 +4032,11 @@ test('Racing course selection joins return routes and saved replay enforces the 
     class TestPolyline {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setOptions(options){Object.assign(this,options)}setZIndex(value){this.zIndex=value}}
     class TestOverlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setPosition(position){this.position=position}}
     kakao={maps:{LatLng:TestLatLng,LatLngBounds:TestBounds,Polyline:TestPolyline,CustomOverlay:TestOverlay}};
-    state.map={getLevel:()=>4,getCenter:()=>({}),setBounds(){},relayout(){},panTo(){}};
+    state.map={getLevel:()=>4,setLevel(){},getCenter:()=>({}),setBounds(){},relayout(){},panTo(){}};
     let testSettingsOpened=false;openAppSettings=()=>{testSettingsOpened=true};closeRecordsScreen=()=>true;
     const origin={name:'출발',latitude:37,longitude:126.999},turn={name:'목적지',latitude:37,longitude:127},returnDestination={name:'복귀',latitude:37,longitude:127.001};
     const outbound={label:'출발 경로',routeMode:'BIKE_ONLY',totalDistance:111,totalTime:60,_points:[origin,turn],_steps:[]};
-    state.routes=[outbound];state.selectedRoute=0;state.racingCourseSetup={stage:'trip-type',origin,destination:turn};
-    const tripShown=showRacingTripType();
+    state.routes=[outbound];state.selectedRoute=0;
     state.racingCourseSetup={stage:'route-alternatives',tripType:'one-way',origin,destination:turn};
     const oneWayApplied=confirmRacingCourseSelection();
     const oneWay={source:state.racingCourse.source,points:state.racingCourse.route.length,name:state.racingCourse.name};
@@ -4056,10 +4062,10 @@ test('Racing course selection joins return routes and saved replay enforces the 
     state.racingPhase='armed';state.racingArmedStart={...before.start,route:savedRoute,target:Racing.createSavedRideTarget(saved),startedRide:false};
     const jitterStarted=maybeStartArmedRacing(fast(127.00001),{moving:true});
     const crossingStarted=maybeStartArmedRacing(fast(127.00005),{moving:true});
-    return{tripShown,oneWayApplied,oneWay,roundApplied,round,challenge,shownRoute,invalidChallenge,invalidMessage,eligibility:{near:near.allowed,before:before.allowed,past:past.allowed,pastMessage:past.reason},jitterStarted,crossingStarted,phase:state.racingPhase,courseSource:state.racingCourse.source,opponentIndex:state.racingOpponentRecordIndex,settingsOpened:testSettingsOpened};
+    return{oneWayApplied,oneWay,roundApplied,round,challenge,shownRoute,invalidChallenge,invalidMessage,eligibility:{near:near.allowed,before:before.allowed,past:past.allowed,pastMessage:past.reason},jitterStarted,crossingStarted,phase:state.racingPhase,courseSource:state.racingCourse.source,opponentIndex:state.racingOpponentRecordIndex,settingsOpened:testSettingsOpened};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    tripShown:true,oneWayApplied:true,oneWay:{source:'new',points:2,name:'편도 · 목적지'},
+    oneWayApplied:true,oneWay:{source:'new',points:2,name:'편도 · 목적지'},
     roundApplied:true,round:{mode:'BIKE_ONLY',points:[[37,126.999],[37,127],[37,127.001]],distance:222},
     challenge:true,shownRoute:[[37,127],[37,127.001]],invalidChallenge:false,invalidMessage:'GPS 경로 또는 시간 정보가 부족해 이 기록에 도전할 수 없습니다.',
     eligibility:{near:true,before:true,past:false,pastMessage:'기록 시작 위치보다 앞에 있어 기록을 시작할 수 없습니다.'},
