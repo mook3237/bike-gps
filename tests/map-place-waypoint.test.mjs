@@ -1234,6 +1234,48 @@ test('App Settings stores profile voice volume and navigation speech preempts te
   });
 });
 
+test('profile photo crop editor supports drag pinch slider apply and cancel without changing stored avatar early', async () => {
+  const context=loadApp('',true,true);
+  const result=await vm.runInContext(`(async()=>{
+    const stage=$('#profilePhotoCropStage'),slider=$('#profilePhotoCropZoom');
+    stage.boundingRect={left:0,top:0,right:240,bottom:240,width:240,height:240};
+    const oldAvatar={type:'photo',photoId:'existing-photo'},file={type:'image/jpeg'},croppedBlob={type:'image/jpeg',cropped:true};
+    pendingProfileAvatar=oldAvatar;testCropArgument=null;
+    URL={createObjectURL:()=> 'blob:cropped-preview',revokeObjectURL(){}};
+    Image=class {set src(value){this.currentSrc=value;this.naturalWidth=800;this.naturalHeight=400;this.onload()}};
+    RideMateSettings.renderProfilePhotoCrop=async(source,crop)=>{testCropArgument={sameSource:source===$('#profilePhotoCropImage'),crop};return croppedBlob};
+    await selectProfilePhoto(file);
+    const opened={visible:!$('#profilePhotoCropDialog').classList.contains('hidden'),pendingSame:pendingProfileAvatar===oldAvatar,zoom:profilePhotoCrop.zoom};
+    slider.value='2';slider.dispatch('input',{target:slider});
+    const sliderZoom=profilePhotoCrop.zoom;
+    slider.value='1';slider.dispatch('input',{target:slider});
+    stage.dispatch('pointerdown',{pointerId:1,clientX:100,clientY:100});
+    stage.dispatch('pointermove',{pointerId:1,clientX:260,clientY:140});
+    stage.dispatch('pointerup',{pointerId:1,clientX:260,clientY:140});
+    const dragged={x:profilePhotoCrop.offsetX,y:profilePhotoCrop.offsetY};
+    stage.dispatch('pointerdown',{pointerId:2,clientX:80,clientY:120});
+    stage.dispatch('pointerdown',{pointerId:3,clientX:160,clientY:120});
+    stage.dispatch('pointermove',{pointerId:3,clientX:240,clientY:120});
+    stage.dispatch('pointerup',{pointerId:3,clientX:240,clientY:120});
+    stage.dispatch('pointerup',{pointerId:2,clientX:80,clientY:120});
+    const pinchZoom=profilePhotoCrop.zoom;
+    await $('#profilePhotoCropApply').onclick();
+    const applied={hidden:$('#profilePhotoCropDialog').classList.contains('hidden'),type:pendingProfileAvatar.type,sameBlob:pendingProfileAvatar.blob===croppedBlob,crop:testCropArgument};
+    pendingProfileAvatar=oldAvatar;beginProfilePhotoCrop(file,'blob:cancel-photo',400,800);$('#profilePhotoCropCancel').onclick();
+    return{opened,sliderZoom,dragged,pinchZoom,applied,cancelledSame:pendingProfileAvatar===oldAvatar};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    opened:{visible:true,pendingSame:true,zoom:1},sliderZoom:2,dragged:{x:120,y:0},pinchZoom:2,
+    applied:{hidden:true,type:'pending-photo',sameBlob:true,crop:{sameSource:true,crop:{scale:1.2,renderedWidth:960,renderedHeight:480,maxOffsetX:360,maxOffsetY:120,offsetX:120,offsetY:0,sourceX:200,sourceY:100,sourceSize:200}}},
+    cancelledSame:true,
+  });
+  const cropStageRule=styles.match(/\.profile-photo-crop-stage\{([^}]*)\}/)?.[1]||'';
+  assert.match(cropStageRule,/touch-action:none/);
+  assert.match(cropStageRule,/border-radius:50%/);
+  assert.match(cropStageRule,/overflow:hidden/);
+  assert.match(styles,/#profileScreen \.profile-avatar\{[^}]*overflow:hidden/);
+});
+
 test('Voice guidance maps every supported percentage to the Web Speech volume range', () => {
   const context=loadApp('',false,true);
   const result=vm.runInContext(`(()=>{

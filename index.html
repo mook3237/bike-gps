@@ -64,6 +64,24 @@
       </form>
     </section>
 
+    <section id="profilePhotoCropDialog" class="profile-photo-crop-backdrop hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="profilePhotoCropTitle">
+      <div class="profile-photo-crop-dialog">
+        <h2 id="profilePhotoCropTitle">프로필 사진 조절</h2>
+        <p>원 안에 보일 위치와 크기를 조절하세요.</p>
+        <div id="profilePhotoCropStage" class="profile-photo-crop-stage">
+          <img id="profilePhotoCropImage" alt="선택한 프로필 사진 미리보기" draggable="false">
+        </div>
+        <label class="profile-photo-crop-zoom">확대·축소
+          <input id="profilePhotoCropZoom" type="range" min="1" max="4" step="0.01" value="1">
+        </label>
+        <div class="profile-photo-crop-actions">
+          <button id="profilePhotoCropCancel" type="button" class="profile-dialog-secondary">취소</button>
+          <button id="profilePhotoCropApply" type="button" class="profile-dialog-primary">적용</button>
+        </div>
+        <p id="profilePhotoCropError" class="profile-editor-error" role="alert"></p>
+      </div>
+    </section>
+
     <section id="profileDeleteConfirm" class="profile-dialog-backdrop hidden" role="alertdialog" aria-modal="true" aria-labelledby="profileDeleteTitle">
       <div class="profile-dialog">
         <h2 id="profileDeleteTitle">프로필을 삭제할까요?</h2>

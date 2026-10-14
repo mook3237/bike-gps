@@ -66,6 +66,40 @@
     };
   }
 
+  function calculateProfilePhotoCrop(sourceWidth, sourceHeight, frameSize, zoom = 1, offsetX = 0, offsetY = 0) {
+    const width = Math.max(1, Number(sourceWidth) || 1);
+    const height = Math.max(1, Number(sourceHeight) || 1);
+    const frame = Math.max(1, Number(frameSize) || 1);
+    const zoomLevel = Math.max(1, Math.min(4, Number(zoom) || 1));
+    const scale = Math.max(frame / width, frame / height) * zoomLevel;
+    const renderedWidth = width * scale;
+    const renderedHeight = height * scale;
+    const maxOffsetX = Math.max(0, (renderedWidth - frame) / 2);
+    const maxOffsetY = Math.max(0, (renderedHeight - frame) / 2);
+    const clampedX = maxOffsetX ? Math.max(-maxOffsetX, Math.min(maxOffsetX, Number(offsetX) || 0)) : 0;
+    const clampedY = maxOffsetY ? Math.max(-maxOffsetY, Math.min(maxOffsetY, Number(offsetY) || 0)) : 0;
+    return {
+      scale, renderedWidth, renderedHeight, maxOffsetX, maxOffsetY,
+      offsetX: clampedX, offsetY: clampedY,
+      sourceX: (renderedWidth / 2 - frame / 2 - clampedX) / scale,
+      sourceY: (renderedHeight / 2 - frame / 2 - clampedY) / scale,
+      sourceSize: frame / scale,
+    };
+  }
+
+  function renderProfilePhotoCrop(source, crop, size = 384) {
+    const width = source.naturalWidth || source.width;
+    const height = source.naturalHeight || source.height;
+    const sourceSize = Math.max(1, Math.min(Number(crop?.sourceSize) || Math.min(width, height), width, height));
+    const sourceX = Math.max(0, Math.min(width - sourceSize, Number(crop?.sourceX) || 0));
+    const sourceY = Math.max(0, Math.min(height - sourceSize, Number(crop?.sourceY) || 0));
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    canvas.getContext('2d').drawImage(source, sourceX, sourceY, sourceSize, sourceSize, 0, 0, size, size);
+    return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('사진을 처리할 수 없습니다.')), 'image/jpeg', .82));
+  }
+
   async function resizeProfilePhoto(file, size = 384) {
     if (!file?.type?.startsWith('image/')) throw new Error('이미지 파일을 선택해주세요.');
     let source;
@@ -129,5 +163,5 @@
     return { setEnabled, sync, release, isActive: () => Boolean(sentinel) };
   }
 
-  return { formatDistance, formatSpeed, formatPace, formatClock, createProfilePhotoStore, resizeProfilePhoto, createWakeLockController };
+  return { formatDistance, formatSpeed, formatPace, formatClock, createProfilePhotoStore, calculateProfilePhotoCrop, renderProfilePhotoCrop, resizeProfilePhoto, createWakeLockController };
 });

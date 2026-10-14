@@ -125,6 +125,70 @@ test('clock formatter supports device, 12-hour and 24-hour preferences', () => {
   assert.equal(typeof foundation.formatClock(date, 'device', 'en-US', 'UTC'), 'string');
 });
 
+test('profile photo crop always covers the circular frame and clamps dragging for landscape and portrait photos', () => {
+  assert.ok(foundation, 'settings-foundation.js must exist');
+  const landscape = foundation.calculateProfilePhotoCrop(800, 400, 200, 1, 150, 40);
+  assert.deepEqual(landscape, {
+    scale: .5, renderedWidth: 400, renderedHeight: 200,
+    maxOffsetX: 100, maxOffsetY: 0, offsetX: 100, offsetY: 0,
+    sourceX: 0, sourceY: 0, sourceSize: 400,
+  });
+  const portrait = foundation.calculateProfilePhotoCrop(400, 800, 200, 1, -30, -150);
+  assert.deepEqual(portrait, {
+    scale: .5, renderedWidth: 200, renderedHeight: 400,
+    maxOffsetX: 0, maxOffsetY: 100, offsetX: 0, offsetY: -100,
+    sourceX: 0, sourceY: 400, sourceSize: 400,
+  });
+});
+
+test('profile photo crop zoom keeps its focal position while increasing scale', () => {
+  const crop = foundation.calculateProfilePhotoCrop(800, 400, 200, 2, 80, -25);
+  assert.deepEqual(crop, {
+    scale: 1, renderedWidth: 800, renderedHeight: 400,
+    maxOffsetX: 300, maxOffsetY: 100, offsetX: 80, offsetY: -25,
+    sourceX: 220, sourceY: 125, sourceSize: 200,
+  });
+});
+
+test('profile photo crop renderer exports the visible square from the oriented preview source', async () => {
+  const originalDocument = global.document;
+  const calls = {};
+  global.document = { createElement(tag) {
+    assert.equal(tag, 'canvas');
+    return {
+      width: 0, height: 0,
+      getContext() { return { drawImage(...args) { calls.draw = args; } }; },
+      toBlob(callback, type, quality) { calls.output = { type, quality, width: this.width, height: this.height }; callback(new Blob(['photo'], { type })); },
+    };
+  } };
+  try {
+    const source = { naturalWidth: 800, naturalHeight: 400 };
+    const blob = await foundation.renderProfilePhotoCrop(source, { sourceX: 220, sourceY: 125, sourceSize: 200 });
+    assert.equal(blob.type, 'image/jpeg');
+    assert.deepEqual(calls.draw.slice(1), [220, 125, 200, 200, 0, 0, 384, 384]);
+    assert.deepEqual(calls.output, { type: 'image/jpeg', quality: .82, width: 384, height: 384 });
+  } finally {
+    global.document = originalDocument;
+  }
+});
+
+test('profile photo renderer uses image natural dimensions instead of its scaled preview size', async () => {
+  const originalDocument = global.document;
+  let draw;
+  global.document = { createElement() { return {
+    width: 0, height: 0,
+    getContext() { return { drawImage(...args) { draw = args; } }; },
+    toBlob(callback) { callback(new Blob(['photo'], { type: 'image/jpeg' })); },
+  }; } };
+  try {
+    const image = { width: 400, height: 200, naturalWidth: 800, naturalHeight: 400 };
+    await foundation.renderProfilePhotoCrop(image, { sourceX: 220, sourceY: 125, sourceSize: 200 });
+    assert.deepEqual(draw.slice(1, 5), [220, 125, 200, 200]);
+  } finally {
+    global.document = originalDocument;
+  }
+});
+
 test('wake lock rejection is harmless and disabling releases an acquired lock', async () => {
   assert.ok(foundation, 'settings-foundation.js must exist');
   const listeners = new Map();
