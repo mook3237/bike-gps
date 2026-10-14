@@ -133,51 +133,12 @@
   color:#fff;
 }
 
-#ridingMenu{
-  position:fixed;
-  inset:0;
-  display:flex;
-  justify-content:flex-end;
-  overflow:hidden;
-  pointer-events:auto;
-  background:rgba(2,10,24,.56);
-  z-index:40;
-  visibility:visible;
-  transition:background-color .18s ease,visibility 0s;
-}
-
-#ridingMenu.hidden{
-  display:flex!important;
-  pointer-events:none;
-  background:rgba(2,10,24,0);
-  visibility:hidden;
-  transition:background-color .18s ease,visibility 0s .18s;
-}
-
-#ridingMenu .riding-menu-drawer{
-  position:relative;
-  width:min(39vw,160px);
-  height:100%;
-  padding:calc(env(safe-area-inset-top) + 20px) calc(env(safe-area-inset-right) + 18px) calc(env(safe-area-inset-bottom) + 20px) 18px;
-  overflow-y:auto;
-  -webkit-overflow-scrolling:touch;
-  background:#07131f;
-  color:#fff;
-  box-shadow:-12px 0 34px #0008;
-  transform:translateX(0);
-  transition:transform .2s ease;
-}
-
-#ridingMenu.hidden .riding-menu-drawer{
-  transform:translateX(100%);
-}
-
-#ridingMenu h3{margin:0 0 18px;font-size:20px}
-#ridingMenu .menu-grid{grid-template-columns:1fr;gap:10px;margin:0 0 14px}
-#ridingMenu .menu-grid button{min-height:52px;padding:0 16px;border:1px solid #294257;border-radius:14px;background:#0d2132;color:#e6edf3;text-align:left;font-size:15px;font-weight:800}
-#ridingMenu .menu-grid span{font-size:inherit;margin:0}
-#ridingMenu .menu-grid button:disabled{opacity:.42;cursor:default}
-#ridingMenu .danger-btn{margin:0;border:1px solid #7f2730;background:#2b1118;color:#ff8f98}
+#ridingMenu{z-index:60}
+#ridingMenu .riding-menu-drawer{width:min(42vw,170px)}
+#ridingMenu h3{margin:8px 6px 12px;color:#15243a;font-size:17px}
+#ridingMenu .main-menu-primary{margin-bottom:7px}
+#ridingMenu .main-menu-primary button:disabled{opacity:.42;cursor:default}
+#ridingMenu .danger-btn{height:44px;margin:0;border-radius:10px}
 
 #ridingMetricDialog,
 #rideResultModal{
@@ -193,16 +154,21 @@
 .racing-decision-actions button{min-height:48px;margin-top:0}
 .racing-decision-actions button:disabled{opacity:.55;cursor:default}
 
+.app-setting-action{width:100%;padding:0;border-right:0;border-bottom:0;border-left:0;background:transparent;color:inherit;text-align:left}
+.app-setting-action>span:last-child{color:#0878ee;font-size:24px}
+#voiceVolumeDialog{position:fixed;z-index:70;padding:calc(env(safe-area-inset-top) + 22px) calc(env(safe-area-inset-right) + 22px) calc(env(safe-area-inset-bottom) + 22px) calc(env(safe-area-inset-left) + 22px)}
+.app-setting-dialog{width:min(100%,520px);border:1px solid #e1e8f0;background:#fff;color:#15243a;box-shadow:0 12px 36px #1e293b33}
+.app-setting-dialog h2{margin-top:0;color:#15243a}
+.app-setting-dialog p{color:#718198}
+.voice-volume-range{width:100%;min-height:44px;margin:4px 0 14px;accent-color:#0878ee;touch-action:pan-x}
+.voice-volume-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.voice-volume-actions button{min-height:48px;margin:0}
+
 #ridingBoardMenu,
 #ridingBoardMenu *{
   -webkit-user-select:none;
   user-select:none;
   -webkit-touch-callout:none;
-}
-
-@media (prefers-reduced-motion:reduce){
-  #ridingMenu,
-  #ridingMenu .riding-menu-drawer{transition:none}
 }
 
 .riding-metric-grid [data-riding-metric]{
@@ -255,26 +221,7 @@
   box-shadow:0 0 calc(var(--riding-u) * 18) rgba(25,211,167,.62);
 }
 
-.riding-board-header button{
-  justify-self:end;
-  display:grid;
-  width:calc(var(--riding-u) * 78);
-  height:calc(var(--riding-u) * 78);
-  padding:calc(var(--riding-u) * 17);
-  border:calc(var(--riding-u) * 2) solid #163253;
-  border-radius:calc(var(--riding-u) * 20);
-  background:rgba(16,42,74,.35);
-  box-shadow:none;
-}
-
-.riding-board-header button span{
-  display:block;
-  width:calc(var(--riding-u) * 38);
-  height:calc(var(--riding-u) * 4);
-  margin:auto;
-  border-radius:999px;
-  background:#fff;
-}
+#ridingBoardMenu{position:fixed;top:calc(env(safe-area-inset-top) + 12px);right:calc(14px + env(safe-area-inset-right));width:44px;height:44px;border:1px solid #163253;background:rgba(2,10,24,.88);color:#7cc4f2;box-shadow:0 3px 14px rgba(2,10,24,.34);font-size:25px}
 
 .riding-board-body{
   width:calc(var(--riding-u) * 852);

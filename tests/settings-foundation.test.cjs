@@ -62,17 +62,29 @@ test('settings are validated and remain isolated per profile', () => {
   const second = repo.addProfile('둘째');
 
   assert.deepEqual(repo.readSettings('profile-a'), {
-    distanceUnit: 'km', keepScreenAwake: false, saveShortRides: false, clockFormat: 'device',
+    distanceUnit: 'km', keepScreenAwake: false, saveShortRides: false, clockFormat: 'device', voiceVolumePercent: 100,
   });
-  repo.updateSettings('profile-a', { distanceUnit: 'mi', keepScreenAwake: true, clockFormat: '24h' });
-  repo.updateSettings(second.id, { distanceUnit: 'invalid', saveShortRides: true, clockFormat: 'invalid' });
+  repo.updateSettings('profile-a', { distanceUnit: 'mi', keepScreenAwake: true, clockFormat: '24h', voiceVolumePercent: 25 });
+  repo.updateSettings(second.id, { distanceUnit: 'invalid', saveShortRides: true, clockFormat: 'invalid', voiceVolumePercent: 101 });
 
   assert.deepEqual(repo.readSettings('profile-a'), {
-    distanceUnit: 'mi', keepScreenAwake: true, saveShortRides: false, clockFormat: '24h',
+    distanceUnit: 'mi', keepScreenAwake: true, saveShortRides: false, clockFormat: '24h', voiceVolumePercent: 25,
   });
   assert.deepEqual(repo.readSettings(second.id), {
-    distanceUnit: 'km', keepScreenAwake: false, saveShortRides: true, clockFormat: 'device',
+    distanceUnit: 'km', keepScreenAwake: false, saveShortRides: true, clockFormat: 'device', voiceVolumePercent: 100,
   });
+});
+
+test('voice volume accepts zero through one hundred and rejects malformed stored values', () => {
+  const repo = repository();
+  repo.initialize();
+
+  for (const value of [0, 25, 50, 75, 100]) {
+    assert.equal(repo.updateSettings('profile-a', { voiceVolumePercent: value }).voiceVolumePercent, value);
+  }
+  for (const value of [-1, 101, '50', NaN, Infinity]) {
+    assert.equal(repo.updateSettings('profile-a', { voiceVolumePercent: value }).voiceVolumePercent, 100);
+  }
 });
 
 test('photo avatar metadata is normalized and replaced/deleted photo ids are cleaned up', () => {

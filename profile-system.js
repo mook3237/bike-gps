@@ -8,7 +8,7 @@
   const LEGACY_RECENT_KEY = 'ridemate_recent_searches';
   const LEGACY_RIDES_KEY = 'ridemate_rides';
   const DEFAULT_AVATAR = Object.freeze({ type: 'icon', iconId: 'rider' });
-  const DEFAULT_SETTINGS = Object.freeze({ distanceUnit: 'km', keepScreenAwake: false, saveShortRides: false, clockFormat: 'device' });
+  const DEFAULT_SETTINGS = Object.freeze({ distanceUnit: 'km', keepScreenAwake: false, saveShortRides: false, clockFormat: 'device', voiceVolumePercent: 100 });
 
   const clone = value => JSON.parse(JSON.stringify(value));
 
@@ -65,6 +65,7 @@
       keepScreenAwake: settings.keepScreenAwake === true,
       saveShortRides: settings.saveShortRides === true,
       clockFormat: ['12h', '24h'].includes(settings.clockFormat) ? settings.clockFormat : 'device',
+      voiceVolumePercent: Number.isFinite(settings.voiceVolumePercent) && settings.voiceVolumePercent >= 0 && settings.voiceVolumePercent <= 100 ? settings.voiceVolumePercent : 100,
       ...(settings.dashboard && typeof settings.dashboard === 'object' ? { dashboard: clone(settings.dashboard) } : {}),
     };
   }

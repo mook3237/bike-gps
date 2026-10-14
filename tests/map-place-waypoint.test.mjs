@@ -104,7 +104,7 @@ function loadApp(search = '', deferTimers = false, staticDom = false) {
     });
     return element;
   };
-  const navActions = ['volume', 'theme', 'recalc', 'pause', 'add-route', 'alternate-route'].map(navAction => makeElement({classes:[], dataset:{navAction}}));
+  const navActions = ['theme', 'recalc', 'pause', 'add-route', 'alternate-route'].map(navAction => makeElement({classes:[], dataset:{navAction}}));
   if (staticDom) {
     for (const match of html.matchAll(/<\w+\b([^>]*\bid="([^"]+)"[^>]*)>/gi)) {
       const attributes = match[1];
@@ -1147,7 +1147,7 @@ test('Racing map shows only valid comparison data and switches distance or time 
     return{waiting,distance,time:$('#racingComparisonValue').textContent,speed:$('#racingSpeedValue').textContent,mode:state.racingDisplayMode};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    waiting:{screen:'racing',overlay:true,navigation:false,comparison:'',comparisonHidden:true,speed:'--',zoomHidden:true,menuVisible:true,searchVisible:true},
+    waiting:{screen:'racing',overlay:true,navigation:false,comparison:'',comparisonHidden:true,speed:'0',zoomHidden:true,menuVisible:true,searchVisible:true},
     distance:'120m 앞섬',time:'18초 뒤처짐',speed:'27',mode:'time',
   });
   assert.match(html,/data-menu-item="racing-settings"[^>]*>[\s\S]*?레이싱 모드 설정/);
@@ -1156,6 +1156,94 @@ test('Racing map shows only valid comparison data and switches distance or time 
   assert.match(html,/id="racingSetupPanel"[\s\S]*?id="racingTargetSpeed"[\s\S]*?id="racingStartBtn"/);
   assert.match(html,/data-menu-item="racing-records"[^>]*>[\s\S]*?과거 기록과 레이싱/);
   assert.doesNotMatch(html,/id="racingDistanceModeBtn"|id="racingTimeModeBtn"|레이싱 데이터 대기 중/);
+  assert.match(html,/id="racingSpeedValue">0<\/b>/);
+  assert.doesNotMatch(html,/id="racingSpeedUnit"/);
+});
+
+test('Map and Racing use the same safe-area current-location control position', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    state.map={relayout(){}};state.currentLocation=null;
+    renderScreen('map',false);const mapBottom=$('#mapControls').style.getPropertyValue('--control-bottom');
+    renderScreen('racing',false);const racingBottom=$('#mapControls').style.getPropertyValue('--control-bottom');
+    return{mapBottom,racingBottom};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{mapBottom:'78px',racingBottom:'78px'});
+  assert.match(html,/id="mapControls"[\s\S]*?class="right-controls"[\s\S]*?id="locateBtn"/);
+  assert.match(styles,/\.right-controls\{[^}]*bottom:calc\(var\(--control-bottom,96px\) \+ env\(safe-area-inset-bottom\) \+ var\(--viewport-bottom,0px\)\)/);
+  assert.match(styles,/\.map-controls button\{[^}]*width:44px[^}]*height:44px/);
+});
+
+test('App Settings stores profile voice volume and navigation speech preempts test speech', () => {
+  assert.doesNotMatch(html,/data-nav-action="volume"/);
+  assert.match(html,/id="voiceVolumeSettingsBtn"[\s\S]*?음성 안내 음량/);
+  assert.match(html,/id="voiceVolumeDialog"[\s\S]*?id="voiceVolumeRange"[^>]*min="0"[^>]*max="100"[\s\S]*?id="testVoiceVolumeBtn"[\s\S]*?테스트 음성 듣기/);
+  assert.match(styles,/#voiceVolumeDialog\{[^}]*position:fixed[^}]*z-index:70[^}]*env\(safe-area-inset-bottom\)/);
+  assert.match(styles,/\.app-setting-dialog\{[^}]*background:#fff[^}]*color:#15243a/);
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    const values=new Map(),storage={getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,String(value))};
+    profileRepository=RideMateProfiles.createProfileRepository(storage,{createId:()=> 'profile-a',now:()=> '2026-10-14T00:00:00.000Z'});profileRepository.initialize();activeProfileId='profile-a';
+    const spoken=[];let cancels=0;
+    class TestUtterance{constructor(text){this.text=text;this.lang='';this.volume=1;this.onend=null;this.onerror=null}}
+    SpeechSynthesisUtterance=TestUtterance;window.SpeechSynthesisUtterance=TestUtterance;
+    window.speechSynthesis={cancel(){cancels++},speak(utterance){spoken.push({text:utterance.text,volume:utterance.volume,utterance})}};
+    $('#voiceVolumeSettingsBtn').onclick();
+    const range=$('#voiceVolumeRange');range.value='25';range.oninput({target:range});
+    const saved=profileRepository.readSettings(activeProfileId).voiceVolumePercent;
+    $('#testVoiceVolumeBtn').onclick();
+    const afterTest={cancels,spoken:spoken.map(item=>({text:item.text,volume:item.volume}))};
+    const guidance=speakRideMateVoice('300미터 앞에서 우회전입니다.','navigation');
+    const afterGuidance={guidance,cancels,spoken:spoken.map(item=>({text:item.text,volume:item.volume}))};
+    const blockedTest=speakRideMateVoice('음성 안내 음량 테스트입니다.','test');
+    closeVoiceVolumeSettings();const dialogClosed=$('#voiceVolumeDialog').classList.contains('hidden');
+    openVoiceVolumeSettings();const reopenedValue=$('#voiceVolumeRange').value;
+    return{saved,label:$('#voiceVolumeValue').textContent,dialogVisible:!$('#voiceVolumeDialog').classList.contains('hidden'),dialogClosed,reopenedValue,afterTest,afterGuidance,blockedTest};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    saved:25,label:'현재 음량: 25%',dialogVisible:true,dialogClosed:true,reopenedValue:'25',
+    afterTest:{cancels:1,spoken:[{text:'음성 안내 음량 테스트입니다.',volume:.25}]},
+    afterGuidance:{guidance:true,cancels:2,spoken:[{text:'음성 안내 음량 테스트입니다.',volume:.25},{text:'300미터 앞에서 우회전입니다.',volume:.25}]},
+    blockedTest:false,
+  });
+});
+
+test('Voice guidance maps every supported percentage to the Web Speech volume range', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    let settings={voiceVolumePercent:100};profileRepository={readSettings:()=>settings};activeProfileId='profile-a';
+    const volumes=[];
+    class TestUtterance{constructor(text){this.text=text;this.lang='';this.volume=1}}
+    SpeechSynthesisUtterance=TestUtterance;window.SpeechSynthesisUtterance=TestUtterance;
+    window.speechSynthesis={cancel(){},speak(utterance){volumes.push(utterance.volume);utterance.onend?.()}};
+    for(const percent of [0,25,50,75,100]){settings={voiceVolumePercent:percent};speakRideMateVoice('안내','navigation')}
+    return volumes;
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),[0,.25,.5,.75,1]);
+});
+
+test('Voice test playback replaces itself, yields to guidance, and reports unsupported speech synthesis', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    profileRepository={readSettings:()=>({voiceVolumePercent:50})};activeProfileId='profile-a';
+    const queue=[];let cancels=0,toastText='';
+    class TestUtterance{constructor(text){this.text=text;this.volume=1}}
+    SpeechSynthesisUtterance=TestUtterance;window.SpeechSynthesisUtterance=TestUtterance;
+    window.speechSynthesis={cancel(){cancels++;queue.length=0},speak(utterance){queue.push(utterance)}};
+    testVoiceVolume();testVoiceVolume();
+    const afterRepeated={cancels,queue:queue.map(item=>item.text)};
+    speakRideMateVoice('곧 우회전입니다.','navigation');
+    const afterGuidance={cancels,queue:queue.map(item=>item.text),blocked:testVoiceVolume()};
+    window.speechSynthesis=null;SpeechSynthesisUtterance=undefined;window.SpeechSynthesisUtterance=undefined;
+    toast=message=>{toastText=message};
+    const unsupported=testVoiceVolume();
+    return{afterRepeated,afterGuidance,unsupported,hasNotice:toastText.length>0};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    afterRepeated:{cancels:2,queue:['음성 안내 음량 테스트입니다.']},
+    afterGuidance:{cancels:3,queue:['곧 우회전입니다.'],blocked:false},
+    unsupported:false,hasNotice:true,
+  });
 });
 
 test('Racing setup stays touchable, starts countdown, and settings screens remain separate', () => {
@@ -1862,7 +1950,7 @@ test('screen transitions isolate Racing overlays, retire stale course responses,
   });
   assert.match(styles,/\.main-menu-drawer\{[^}]*width:min\(42vw,170px\)/);
   assert.match(styles,/#navMenu\{[^}]*width:50%/);
-  assert.match(styles,/#ridingMenu \.riding-menu-drawer\{[^}]*width:min\(39vw,160px\)/);
+  assert.match(styles,/#ridingMenu \.riding-menu-drawer\{[^}]*width:min\(42vw,170px\)/);
   assert.match(styles,/\.icon-btn\{[^}]*width:44px[^}]*height:44px/);
 });
 
@@ -3386,10 +3474,14 @@ test('Riding Board interactive overlays stay above the board and suppress only t
   const dialogZ=Number(styles.match(/#ridingMetricDialog,\s*#rideResultModal\{[^}]*z-index:(\d+)/)?.[1]);
   assert.ok(overlayZ>boardZ,'Riding Board overlays must stack above the board');
   assert.ok(dialogZ>boardZ,'Riding Board dialogs must stack above the board');
-  assert.match(styles,/#ridingMenu\{[^}]*position:fixed[^}]*inset:0[^}]*background:[^;}]*rgba[^}]*z-index:40/);
-  assert.match(styles,/#ridingMenu \.riding-menu-drawer\{[^}]*width:min\(39vw,160px\)[^}]*transform:translateX\(0\)/);
-  assert.match(styles,/#ridingMenu\.hidden \.riding-menu-drawer\{[^}]*transform:translateX\(100%\)/);
-  assert.match(styles,/@media \(prefers-reduced-motion:reduce\)\{[^}]*#ridingMenu[^}]*transition:none/);
+  assert.match(html,/id="ridingBoardMenu"[^>]*class="[^"]*screen-menu-button[^"]*"[^>]*>☰<\/button>/);
+  assert.match(html,/id="ridingMenu"[^>]*class="[^"]*main-menu-layer[^"]*"[\s\S]*?class="[^"]*main-menu-drawer[^"]*"/);
+  assert.match(html,/id="ridingMenuBackdrop"[^>]*class="[^"]*main-menu-backdrop[^"]*"/);
+  assert.match(html,/id="ridingPauseBtn"[^>]*>[\s\S]*?<strong>일시정지<\/strong>/);
+  assert.match(appSource,/pause\.querySelector\('strong'\)\.textContent/);
+  assert.match(appSource,/\$\('#ridingMenuBackdrop'\)\.onclick=\(\)=>closeRidingMenu\(\)/);
+  assert.match(styles,/#ridingBoardMenu\{[^}]*top:calc\(env\(safe-area-inset-top\) \+ 12px\)[^}]*right:calc\(14px \+ env\(safe-area-inset-right\)\)[^}]*width:44px[^}]*height:44px/);
+  assert.match(styles,/#ridingMenu \.riding-menu-drawer\{[^}]*width:min\(42vw,170px\)/);
   assert.match(styles,/#ridingBoardMenu,\s*#ridingBoardMenu \*\{[^}]*-webkit-user-select:none[^}]*user-select:none[^}]*-webkit-touch-callout:none/);
   assert.match(styles,/\.riding-metric-grid \[data-riding-metric\]\{[^}]*touch-action:pan-y[^}]*-webkit-user-select:none[^}]*user-select:none[^}]*-webkit-touch-callout:none/);
   assert.match(styles,/\.riding-metric-grid \[data-riding-metric\] \*\{[^}]*-webkit-user-select:none[^}]*user-select:none[^}]*-webkit-touch-callout:none/);
