@@ -3788,6 +3788,101 @@ test('Riding Board unit setting converts display only and keeps canonical ride v
   assert.equal(result.gaugeUnit,'mph');
 });
 
+test('Racing destination selection shows the shared visible pin and place card before trip type choice', async () => {
+  const context=loadApp('',true,true);
+  const result=await vm.runInContext(`(async()=>{
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    class TestOverlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}}
+    kakao={maps:{LatLng:TestLatLng,CustomOverlay:TestOverlay}};
+    const pans=[];state.map={panTo(point){pans.push([point.latitude,point.longitude])},relayout(){},getLevel:()=>4,getCenter:()=>({})};
+    history={state:{screen:'search'},pushState(entry){this.state=entry},replaceState(entry){this.state=entry},back(){}};
+    saveRecentSearch=()=>{};renderRecentSearches=()=>{};
+    const origin={name:'현재 위치',latitude:37.5,longitude:126.9};
+    const destination={id:'finish',name:'한강공원',category:'공원',address:'서울 영등포구 여의동로 330',latitude:37.5284,longitude:126.9348};
+    locate=async()=>origin;
+    state.screen='search';state.editingEndpoint='racing-destination';state.racingCourseSetup={stage:'destination-discovery',previousSelectedPlace:null};
+    await choosePlace(destination);
+    const marker=state.routeEndpointMarkers[0];
+    const preview={
+      screen:state.screen,stage:state.racingCourseSetup.stage,
+      sheetVisible:!ui.sheet.classList.contains('hidden'),tripHidden:$('#racingTripTypeDialog').classList.contains('hidden'),
+      markerCount:state.routeEndpointMarkers.length,markerClass:marker?.content.className,markerMap:marker?.map===state.map,
+      markerPosition:[marker?.position.latitude,marker?.position.longitude],markerZ:marker?.zIndex,
+      card:$('#sheetContent').innerHTML,confirmVisible:$('#sheetContent').innerHTML.includes('id="confirmRacingDestinationBtn"'),pans:pans.slice(),
+    };
+    clearRouteEndpointMarkers();restoreScreen('place');
+    const restoredMarker=state.routeEndpointMarkers[0];
+    const restored={count:state.routeEndpointMarkers.length,position:[restoredMarker?.position.latitude,restoredMarker?.position.longitude],sheetVisible:!ui.sheet.classList.contains('hidden')};
+    const confirm=$('#confirmRacingDestinationBtn');
+    if(preview.confirmVisible&&typeof confirm.onclick==='function')await confirm.onclick();
+    const confirmed={screen:state.screen,stage:state.racingCourseSetup.stage,sheetHidden:ui.sheet.classList.contains('hidden'),tripVisible:!$('#racingTripTypeDialog').classList.contains('hidden'),markerCount:state.routeEndpointMarkers.length};
+    return{preview,restored,confirmed};
+  })()`,context);
+  const {card,...preview}=result.preview;
+  assert.deepEqual(JSON.parse(JSON.stringify(preview)),{
+    screen:'place',stage:'destination-discovery',sheetVisible:true,tripHidden:true,
+    markerCount:1,markerClass:'route-endpoint-marker destination',markerMap:true,
+    markerPosition:[37.5284,126.9348],markerZ:10,
+    confirmVisible:true,pans:[[37.5284,126.9348]],
+  });
+  assert.match(card,/한강공원/);
+  assert.match(card,/공원/);
+  assert.match(card,/서울 영등포구 여의동로 330/);
+  assert.match(card,/class="detail-actions racing-place-actions"/);
+  assert.match(card,/레이싱 코스 선택/);
+  assert.match(styles,/\.racing-place-actions\{grid-template-columns:1fr\}/);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.restored)),{count:1,position:[37.5284,126.9348],sheetVisible:true});
+  assert.deepEqual(JSON.parse(JSON.stringify(result.confirmed)),{screen:'racing',stage:'trip-type',sheetHidden:true,tripVisible:true,markerCount:1});
+});
+
+test('Racing destination preview replaces duplicate pins and cancel restores the confirmed course', async () => {
+  const context=loadApp('',true,true);
+  const result=await vm.runInContext(`(async()=>{
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    class TestBounds {constructor(){this.points=[]}extend(point){this.points.push(point)}isEmpty(){return this.points.length===0}}
+    class TestPolyline {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setOptions(options){Object.assign(this,options)}setZIndex(value){this.zIndex=value}}
+    class TestOverlay {constructor(options){Object.assign(this,options);this.mapHistory=[options.map]}setMap(map){this.map=map;this.mapHistory.push(map)}}
+    kakao={maps:{LatLng:TestLatLng,LatLngBounds:TestBounds,Polyline:TestPolyline,CustomOverlay:TestOverlay}};
+    state.map={panTo(){},relayout(){},setBounds(){},getLevel:()=>4,getCenter:()=>({})};
+    history={state:{screen:'racing'},pushState(entry){this.state=entry},replaceState(entry){this.state=entry},back(){}};
+    saveRecentSearch=()=>{};renderRecentSearches=()=>{};
+    const start={name:'출발',latitude:37.5,longitude:126.9},oldDestination={id:'old',name:'기존 목적지',latitude:37.51,longitude:126.91};
+    const first={id:'a',name:'목적지 A',latitude:37.52,longitude:126.92},second={id:'b',name:'목적지 B',latitude:37.53,longitude:126.93};
+    state.screen='racing';state.selectedPlace=oldDestination;
+    state.racingCourse={source:'new',name:'기존 코스',route:[start,oldDestination],distance:1000,time:300,routeMode:'BIKE_ONLY',departure:start,destination:oldDestination,checkpoints:[oldDestination],checkpointAlong:[1000]};
+    startRacingCourseSelection();await choosePlace(first);
+    const firstMarker=state.routeEndpointMarkers[0];
+    await openPlace(second);const secondMarker=state.routeEndpointMarkers[0];
+    await openPlace(second);const repeatedMarker=state.routeEndpointMarkers[0];
+    const preview={count:state.routeEndpointMarkers.length,position:[repeatedMarker.position.latitude,repeatedMarker.position.longitude],firstRemoved:firstMarker.map===null,secondRemoved:secondMarker.map===null};
+    cancelRacingCourseSelection();
+    const destinationMarker=state.routeEndpointMarkers.find(marker=>marker.content.className.includes('destination'));
+    return{preview,cancelled:{screen:state.screen,setup:state.racingCourseSetup,selected:state.selectedPlace.id,route:state.routes[0]._points.map(point=>point.name),destinationPosition:[destinationMarker.position.latitude,destinationMarker.position.longitude],tempRemoved:repeatedMarker.map===null}};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    preview:{count:1,position:[37.53,126.93],firstRemoved:true,secondRemoved:true},
+    cancelled:{screen:'racing',setup:null,selected:'old',route:['출발','기존 목적지'],destinationPosition:[37.51,126.91],tempRemoved:true},
+  });
+});
+
+test('Racing map place selection keeps racing context and map GPS while the card is open', async () => {
+  const context=loadApp('',true,true);
+  const result=await vm.runInContext(`(async()=>{
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    class TestOverlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}}
+    kakao={maps:{LatLng:TestLatLng,CustomOverlay:TestOverlay}};
+    state.map={panTo(){},relayout(){},getLevel:()=>4,getCenter:()=>({})};
+    history={state:{screen:'racing'},pushState(entry){this.state=entry},replaceState(entry){this.state=entry}};
+    saveRecentSearch=()=>{};
+    let starts=0,stops=0;rideGpsSubscribed=false;
+    startMapMovementGps=()=>{starts++;rideGpsSubscribed=true};stopMapMovementGps=()=>{stops++;rideGpsSubscribed=false};
+    state.screen='racing';state.racingCourseSetup=null;state.editingEndpoint=null;
+    await openPlace({id:'finish',name:'목적지',address:'서울',latitude:37.5,longitude:127},true);
+    return{screen:state.screen,endpoint:state.editingEndpoint,racingActive:document.body.classList.contains('racing-active'),mapActive:document.body.classList.contains('map-active'),starts,stops,subscribed:rideGpsSubscribed};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'place',endpoint:'racing-destination',racingActive:true,mapActive:true,starts:1,stops:0,subscribed:true});
+});
+
 test('Racing destination setup stays isolated through shared place selection and complete route cards', async () => {
   const context=loadApp('',true,true);
   const result=await vm.runInContext(`(async()=>{
@@ -3809,21 +3904,23 @@ test('Racing destination setup stays isolated through shared place selection and
 
     state.screen='racing';await openPlace(destination,true);
     const pinCard={screen:state.screen,stage:state.racingCourseSetup?.stage,tripShown:!$('#racingTripTypeDialog').classList.contains('hidden'),placeSheetHidden:ui.sheet.classList.contains('hidden'),finish:testRacingFinishes};
+    await $('#confirmRacingDestinationBtn').onclick();
     const tripFirst={stage:state.racingCourseSetup?.stage,shown:!$('#racingTripTypeDialog').classList.contains('hidden'),screen:state.screen};
     await chooseOneWayRacingCourse();
     const oneWayRoutes={screen:state.screen,count:state.routes.length,cards:$('#routeCards').querySelectorAll('[data-i]').length,start:$('#startNavBtn').textContent,points:state.routes[0]._points.length};
     $('#startNavBtn').onclick();
     const oneWay={source:state.racingCourse.source,points:state.racingCourse.route.length,settings:testSettingsOpened,phase:state.racingPhase,setupVisible:!$('#racingSetupPanel').classList.contains('hidden'),startText:$('#racingStartBtn').textContent,speedVisible:!$('#racingSpeedSettingRow').classList.contains('hidden')};
 
-    state.screen='racing';state.racingCourseSetup=null;await openPlace(destination,true);showRacingReturnChoice();await chooseCurrentRacingReturn();
+    state.screen='racing';state.racingCourseSetup=null;await openPlace(destination,true);await $('#confirmRacingDestinationBtn').onclick();showRacingReturnChoice();await chooseCurrentRacingReturn();
     const roundRoutes={screen:state.screen,count:state.routes.length,points:state.routes[0]._points.map(point=>[point.latitude,point.longitude])};
     $('#startNavBtn').onclick();
     const round={mode:state.racingCourse.routeMode,points:state.racingCourse.route.map(point=>[point.latitude,point.longitude]),settings:testSettingsOpened};
 
     state.screen='racing';state.racingCourseSetup=null;startRacingCourseSelection();await choosePlace(destination);
     const searchCard={screen:state.screen,stage:state.racingCourseSetup?.stage};
-    showRacingReturnChoice();chooseOtherRacingReturn();await choosePlace(returnDestination);
+    await $('#confirmRacingDestinationBtn').onclick();showRacingReturnChoice();chooseOtherRacingReturn();await choosePlace(returnDestination);
     const returnCard={screen:state.screen,stage:state.racingCourseSetup?.stage,tripShown:!$('#racingTripTypeDialog').classList.contains('hidden')};
+    await $('#confirmRacingDestinationBtn').onclick();
     const otherReturn={screen:state.screen,points:state.routes[0]._points.map(point=>[point.latitude,point.longitude])};
     cancelRacingCourseSelection();
     const cancelled={screen:state.screen,setup:state.racingCourseSetup,finish:testRacingFinishes};
@@ -3837,17 +3934,17 @@ test('Racing destination setup stays isolated through shared place selection and
     return{pinCard,tripFirst,oneWayRoutes,oneWay,roundRoutes,round,searchCard,returnCard,otherReturn,cancelled,manualCard,backedOut,normalMap,navigationLoads};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    pinCard:{screen:'racing',stage:'trip-type',tripShown:true,placeSheetHidden:true,finish:0},
+    pinCard:{screen:'place',stage:'destination-discovery',tripShown:false,placeSheetHidden:false,finish:0},
     tripFirst:{stage:'trip-type',shown:true,screen:'racing'},
     oneWayRoutes:{screen:'racing-route',count:2,cards:2,start:'코스 선택',points:2},
     oneWay:{source:'new',points:2,settings:0,phase:'idle',setupVisible:true,startText:'레이싱 시작',speedVisible:true},
     roundRoutes:{screen:'racing-route',count:2,points:[[37,126.999],[37,127],[37,126.999]]},
     round:{mode:'BIKE_ONLY',points:[[37,126.999],[37,127],[37,126.999]],settings:0},
-    searchCard:{screen:'racing',stage:'trip-type'},
-    returnCard:{screen:'racing-route',stage:'route-alternatives',tripShown:false},
+    searchCard:{screen:'place',stage:'destination-discovery'},
+    returnCard:{screen:'place',stage:'return-destination-discovery',tripShown:false},
     otherReturn:{screen:'racing-route',points:[[37,126.999],[37,127],[37,127.001]]},
     cancelled:{screen:'racing',setup:null,finish:0},navigationLoads:1,
-    manualCard:{screen:'racing',stage:'trip-type',finish:0},
+    manualCard:{screen:'place',stage:'destination-discovery',finish:0},
     backedOut:{screen:'racing',setup:null,finish:0},normalMap:{screen:'place',hasMapPlaceActions:true},
   });
 });
