@@ -80,7 +80,7 @@ function runGpsSamples(samples) {
     sharedGpsSource=Ride.createGpsSource(navigator.geolocation,undefined,{now:()=>testReceivedAt});
     kakao={maps:{LatLng:class {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}}};
     testMarkerPositions=[];setGpsMarker=position=>testMarkerPositions.push(position);updateNavHud=()=>{};
-    state.screen='navigation';state.map={panTo(){this.panCalls=(this.panCalls||0)+1}};ensureSharedRide(testReceivedAt);startWatch();
+    testLevels=[];state.screen='navigation';state.map={level:null,panTo(){this.panCalls=(this.panCalls||0)+1},getLevel(){return this.level},setLevel(level){this.level=level;testLevels.push(level)}};ensureSharedRide(testReceivedAt);startWatch();
     for(const sample of testSamples){testReceivedAt=Date.now()+sample.timestamp;testGpsCallback({timestamp:testReceivedAt,coords:{latitude:sample.latitude,longitude:sample.longitude,speed:sample.speed,accuracy:sample.accuracy,heading:null}})};
   `, context);
   return {
@@ -89,6 +89,7 @@ function runGpsSamples(samples) {
     distance: vm.runInContext('state.ride.distance', context),
     speedMoving: vm.runInContext('state.ride.motion.moving', context),
     followCalls: vm.runInContext('state.map.panCalls||0', context),
+    levels: JSON.parse(vm.runInContext('JSON.stringify(testLevels)', context)),
     markerPositions: JSON.parse(vm.runInContext('JSON.stringify(testMarkerPositions)', context)),
   };
 }
@@ -454,13 +455,13 @@ test('navigation start discards stale speed and starts at the stopped level', ()
   assert.equal(vm.runInContext('state.nav.currentSpeed', context), 0);
 });
 
-test('map interaction stays unfollowed until ten seconds then returns at current speed', () => {
+test('map interaction stays unfollowed until five seconds then returns at current speed', () => {
   const { context, advance } = loadApp({ manualTimers: true });
   assert.equal(vm.runInContext('typeof beginNavigationMapInteraction', context), 'function');
   assert.equal(vm.runInContext('typeof endNavigationMapInteraction', context), 'function');
   vm.runInContext("state.screen='navigation';state.nav.follow=true;state.nav.currentSpeed=40/3.6;state.currentLocation=null;state.map={setLevel(level){this.level=level}};beginNavigationMapInteraction();endNavigationMapInteraction()", context);
   assert.equal(vm.runInContext('state.nav.follow', context), false);
-  advance(9999);
+  advance(4999);
   assert.equal(vm.runInContext('state.nav.follow', context), false);
   advance(1);
   assert.equal(vm.runInContext('state.nav.follow', context), true);
@@ -473,16 +474,51 @@ test('another interaction resets the single return timer', () => {
   assert.equal(vm.runInContext('typeof endNavigationMapInteraction', context), 'function');
   vm.runInContext("state.screen='navigation';state.nav.follow=true;state.currentLocation=null;state.map={setLevel(level){this.level=level}};beginNavigationMapInteraction();endNavigationMapInteraction()", context);
   const firstTimer = vm.runInContext('navReturnTimer', context);
-  advance(8000);
+  advance(4000);
   vm.runInContext('beginNavigationMapInteraction();endNavigationMapInteraction()', context);
   const secondTimer = vm.runInContext('navReturnTimer', context);
   assert.notEqual(secondTimer, firstTimer);
   assert.equal(hasTimer(firstTimer), false);
   assert.equal(hasTimer(secondTimer), true);
-  advance(2000);
+  advance(1000);
   assert.equal(vm.runInContext('state.nav.follow', context), false);
-  advance(8000);
+  advance(4000);
   assert.equal(vm.runInContext('state.nav.follow', context), true);
+});
+
+test('live navigation GPS changes zoom at speed thresholds without repeating the same level', () => {
+  const result = runGpsSamples([
+    {timestamp:1000,latitude:37.5,longitude:127,speed:20/3.6,accuracy:5},
+    {timestamp:2000,latitude:37.50005,longitude:127,speed:20/3.6,accuracy:5},
+    {timestamp:3000,latitude:37.50015,longitude:127,speed:40/3.6,accuracy:5},
+    {timestamp:4000,latitude:37.50031,longitude:127,speed:65/3.6,accuracy:5},
+  ]);
+  assert.deepEqual(result.levels, [2, 3, 4]);
+});
+
+test('manual empty-navigation zoom is preserved until five-second follow return', () => {
+  const { context, advance } = loadApp({ manualTimers: true });
+  vm.runInContext(`
+    kakao={maps:{LatLng:class {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}}};
+    state.screen='navigation';state.nav.empty=true;state.nav.follow=true;state.nav.currentSpeed=20/3.6;
+    state.currentLocation={latitude:37.5,longitude:127};
+    state.map={level:2,getLevel(){return this.level},setLevel(level){this.level=level},panTo(){}};
+    setGpsMarker=()=>{};
+    beginNavigationMapInteraction();
+    renderEmptyNavigationFix(
+      {timestamp:1000,latitude:37.5001,longitude:127,accuracy:5},
+      {timestamp:1000,position:{latitude:37.5001,longitude:127,accuracy:5},speed:{valid:true,mps:65/3.6},heading:{degrees:null}},
+      {filteredSpeed:65/3.6}
+    );
+    endNavigationMapInteraction();
+  `, context);
+  assert.equal(vm.runInContext('state.map.level', context), 2);
+  assert.equal(vm.runInContext('state.nav.follow', context), false);
+  advance(4999);
+  assert.equal(vm.runInContext('state.map.level', context), 2);
+  advance(1);
+  assert.equal(vm.runInContext('state.nav.follow', context), true);
+  assert.equal(vm.runInContext('state.map.level', context), 4);
 });
 
 test('current-location button cancels the timer and immediately restores speed zoom', () => {
