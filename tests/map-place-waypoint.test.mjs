@@ -1412,18 +1412,25 @@ test('Racing speed keyboard keeps the map camera and visual layout fixed while m
 test('Racing diagnostics are disabled by default and report live target state only when enabled', () => {
   const context=loadApp('',false,true);
   const result=vm.runInContext(`(()=>{
-    testLogs=[];let enabled=false;
+    testLogs=[];let enabled=false,targetInBounds=false;
     console={debug(...values){testLogs.push(values)}};
     localStorage={getItem(key){return enabled&&key==='ridemate_racing_diagnostics'?'1':null}};
     state.racingPhase='active';state.racingTargetSpeedKmh=24;state.racingCapture={movingTime:1000};state.ride.movingTime=6000;
-    state.racingSnapshot={targetRouteProgress:40,targetPosition:{latitude:37.1,longitude:127.1}};
-    const values={fix:{timestamp:1234,speed:4.5,accuracy:6},fast:{receivedAt:1250,position:{accuracy:6},speed:{rawMps:4.5}},movement:{moving:true},snapshotUpdated:true,markerUpdated:true};
+    state.racingSnapshot={targetRouteProgress:40,targetPosition:{latitude:37.1,longitude:127.101}};
+    state.map={getLevel:()=>4,getBounds:()=>({contain:()=>targetInBounds})};
+    state.racingTargetMarker={map:state.map,position:{latitude:37.1,longitude:127.101}};
+    $('#racingTargetIndicator').classList.remove('hidden');$('#racingSpeedValue').textContent='60';
+    const values={fix:{timestamp:1234,latitude:37.1,longitude:127.1,speed:4.5,accuracy:6},fast:{receivedAt:1250,position:{latitude:37.1,longitude:127.1,accuracy:6},speed:{rawMps:4.5}},movement:{moving:true},snapshotUpdated:true,markerUpdated:true};
     reportRacingDiagnostic('gps',values);const disabledCount=testLogs.length;
     enabled=true;reportRacingDiagnostic('gps',values);
-    return{disabledCount,enabledCount:testLogs.length,prefix:testLogs[0]?.[0],stage:testLogs[0]?.[1],data:testLogs[0]?.[2]};
+    targetInBounds=true;state.racingTargetMarker.map=null;$('#racingTargetIndicator').classList.add('hidden');reportRacingDiagnostic('gps',values);
+    const normalize=data=>({...data,targetDistanceM:Math.round(data.targetDistanceM)});
+    return{disabledCount,enabledCount:testLogs.length,prefix:testLogs[0]?.[0],stage:testLogs[0]?.[1],outside:normalize(testLogs[0]?.[2]),inside:normalize(testLogs[1]?.[2])};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    disabledCount:0,enabledCount:1,prefix:'[RideMate Racing]',stage:'gps',data:{gpsTimestamp:1234,gpsReceivedAt:1250,gpsSpeed:4.5,gpsAccuracy:6,moving:true,movingTime:5000,targetSpeedKmh:24,targetRouteProgress:40,targetPosition:{latitude:37.1,longitude:127.1},snapshotUpdated:true,markerUpdated:true},
+    disabledCount:0,enabledCount:2,prefix:'[RideMate Racing]',stage:'gps',
+    outside:{gpsTimestamp:1234,gpsReceivedAt:1250,gpsSpeed:4.5,hudSpeedText:'60',gpsAccuracy:6,riderPosition:{latitude:37.1,longitude:127.1},moving:true,movingTime:5000,targetSpeedKmh:24,targetRouteProgress:40,targetPosition:{latitude:37.1,longitude:127.101},targetDistanceM:89,mapLevel:4,targetInBounds:false,targetMarkerAttached:true,targetIndicatorVisible:true,snapshotUpdated:true,markerUpdated:true},
+    inside:{gpsTimestamp:1234,gpsReceivedAt:1250,gpsSpeed:4.5,hudSpeedText:'60',gpsAccuracy:6,riderPosition:{latitude:37.1,longitude:127.1},moving:true,movingTime:5000,targetSpeedKmh:24,targetRouteProgress:40,targetPosition:{latitude:37.1,longitude:127.101},targetDistanceM:89,mapLevel:4,targetInBounds:true,targetMarkerAttached:false,targetIndicatorVisible:false,snapshotUpdated:true,markerUpdated:true},
   });
   assert.match(appSource,/reportRacingDiagnostic\('start'/);
   assert.match(appSource,/reportRacingDiagnostic\('gps'/);
