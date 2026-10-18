@@ -587,7 +587,7 @@
 
 .speed-pill b{font-size:42px;line-height:.9;font-weight:800;letter-spacing:-1.5px;font-variant-numeric:tabular-nums}
 .speed-pill small{margin-top:6px;color:#7cc4f2;font-size:12px;line-height:1;font-weight:700}
-.gps-arrow{background:#0a84ff;border-color:#fff;box-shadow:0 0 16px rgba(44,240,255,.65)}
+.gps-arrow{background:#0a84ff;border-color:#fff;box-shadow:0 0 0 2px #0a84ff,0 0 16px rgba(44,240,255,.65)}
 .route-card.active{border-color:#0a84ff;background:#f5faff}
 
 .racing-overlay{

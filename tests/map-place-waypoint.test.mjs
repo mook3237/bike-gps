@@ -601,7 +601,7 @@ test('long press pins the exact address and uses state-based actions in every in
   assert.match(css,/\.route-endpoint-marker\.destination img\{[^}]*width:100%;height:100%/);
 });
 
-test('destination and current-location overlays use shared SVG assets with the correct coordinate anchors', () => {
+test('destination and current-location overlays use the expected marker design and coordinate anchors', () => {
   const context=loadApp('',true);
   const result=vm.runInContext(`(()=>{
     class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
@@ -614,16 +614,20 @@ test('destination and current-location overlays use shared SVG assets with the c
     state.screen='map';setGpsMarker({latitude:37.5,longitude:127},false,0);
     const mapLocation={className:state.gpsMarkerEl.className,html:state.gpsMarkerEl.innerHTML,xAnchor:state.gpsMarker.xAnchor,yAnchor:state.gpsMarker.yAnchor};
     state.screen='racing';setGpsMarker({latitude:37.51,longitude:127.01},false,123);
+    const racingLocation={className:state.gpsMarkerEl.className,html:state.gpsMarkerEl.innerHTML,position:[state.gpsMarker.position.latitude,state.gpsMarker.position.longitude],transform:state.gpsMarkerEl.style.transform};
+    state.screen='navigation';setGpsMarker({latitude:37.52,longitude:127.02},true,123);
     return{
       destination:{html:destination.content.innerHTML,xAnchor:destination.xAnchor,yAnchor:destination.yAnchor},
       mapLocation,
-      racingLocation:{className:state.gpsMarkerEl.className,html:state.gpsMarkerEl.innerHTML,position:[state.gpsMarker.position.latitude,state.gpsMarker.position.longitude],transform:state.gpsMarkerEl.style.transform},
+      racingLocation,
+      navigationLocation:{className:state.gpsMarkerEl.className,html:state.gpsMarkerEl.innerHTML,position:[state.gpsMarker.position.latitude,state.gpsMarker.position.longitude],transform:state.gpsMarkerEl.style.transform},
     };
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
     destination:{html:'<img src="assets/destination-pin.svg" alt="">',xAnchor:.5,yAnchor:1},
-    mapLocation:{className:'gps-bicycle',html:'<img src="assets/current-location-bicycle.svg" alt="">',xAnchor:.5,yAnchor:.5},
-    racingLocation:{className:'gps-bicycle',html:'<img src="assets/current-location-bicycle.svg" alt="">',position:[37.51,127.01],transform:''},
+    mapLocation:{className:'gps-arrow',html:'▲',xAnchor:.5,yAnchor:.5},
+    racingLocation:{className:'gps-arrow',html:'▲',position:[37.51,127.01],transform:''},
+    navigationLocation:{className:'gps-arrow',html:'▲',position:[37.52,127.02],transform:'rotate(123deg)'},
   });
 });
 
