@@ -4283,6 +4283,18 @@ test('Racing manual stop confirmation preserves riding or freezes an incomplete 
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{opened:true,continued:{phase:'active',records:0,confirmHidden:true},stopped:{phase:'completion-pending',records:1,completed:false,saveVisible:true,title:'레이싱을 중단했습니다.'},opponents:[1]});
 });
 
+test('Racing end releases temporary route versions without mutating record data', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    const record={route:[{latitude:37,longitude:127,timestamp:1}],movingTime:1000,distance:10};
+    const before=JSON.stringify(record);
+    state.screen='map';state.racingPhase='active';state.racingCapture=null;state.racingSession={routeVersions:[{route:[{latitude:37,longitude:127}],progressBase:0,endProgress:10}]};
+    const ended=finishRacingSession({offerSave:false});
+    return{ended,session:state.racingSession,recordUnchanged:JSON.stringify(record)===before};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{ended:true,session:null,recordUnchanged:true});
+});
+
 test('Racing checkpoint distances preserve saved and return-to-start destinations', () => {
   const context=loadApp('',false,true);
   const result=vm.runInContext(`(()=>{
@@ -4347,6 +4359,70 @@ test('Racing reroute redraws the new route without fitting the full route bounds
     {label:'level-8',updated:true,before:8,after:8,fits:0,routePoints:2},
     {label:'user-changed',updated:true,before:7,after:7,fits:0,routePoints:2},
   ]);
+});
+
+test('Racing reroute applies one signed-gap scaling segment through the real foundation', async () => {
+  const context=loadApp('',false,true);
+  const result=await vm.runInContext(`(async()=>{
+    const start={latitude:0,longitude:0},checkpoint={latitude:0,longitude:1000/111195},destination={latitude:0,longitude:2000/111195};
+    const detour={latitude:375/111195,longitude:500/111195};
+    prepareRoutes=value=>value;
+    fetchRoutes=async()=>[{routeMode:'BIKE_ONLY',totalDistance:2250,totalTime:200,_points:[start,detour,checkpoint,destination]}];
+    drawRoutes=()=>true;renderRacingHud=()=>true;
+    state.racingPhase='active';state.racingReachedDestination=false;state.racingLastRerouteAt=0;state.racingRouteRequestSeq=0;
+    state.racingSession=Racing.createRaceSession({route:[start,checkpoint,destination],target:Racing.createTargetSpeedTarget(10),currentMovingTime:0});
+    state.racingSnapshot=Racing.updateRace(state.racingSession,{currentProgressDistance:0,currentMovingTime:150000});
+    state.racingCourse={source:'new',route:[start,checkpoint,destination],routeMode:'BIKE_ONLY',checkpoints:[checkpoint,destination],checkpointAlong:[1000,2000]};
+    const applied=await recalculateRacingRoute({timestamp:20000,position:{...start,accuracy:3},quality:{fresh:true,monotonic:true,plausiblePosition:true}});
+    return{applied,target:state.racingSnapshot.targetRouteProgress,targetLongitude:state.racingSnapshot.targetPosition.longitude,adjustment:state.racingSession.lastRerouteAdjustment};
+  })()`,context);
+  assert.equal(result.applied,true);
+  assert.ok(Math.abs(result.target-1750)<1);
+  assert.ok(Math.abs(result.targetLongitude-(1500/111195))<1e-7);
+  assert.ok(Math.abs(result.adjustment.oldLength-1000)<1);
+  assert.ok(Math.abs(result.adjustment.newLength-1250)<1);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.adjustment.oldBoundaries)),[0,1000,2000]);
+  assert.ok(Math.abs(result.adjustment.newBoundaries[1]-1250)<1);
+  assert.ok(Math.abs(result.adjustment.newBoundaries[2]-2250)<1);
+  assert.equal(result.adjustment.sequence,1);
+});
+
+test('Racing participant camera fits both through level 4 and falls back to rider at level 5', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    class TestBounds {constructor(){this.points=[]}extend(point){this.points.push(point)}}
+    kakao={maps:{LatLng:TestLatLng,LatLngBounds:TestBounds}};
+    const rider={latitude:37,longitude:127},target={latitude:37,longitude:127.01};
+    state.screen='racing';state.racingPhase='active';state.racingCameraFollow=true;state.racingDisplaySpeed=20/3.6;state.racingSnapshot={targetPosition:target};
+    let level=2,fits=0,pans=0,levels=[];
+    state.map={setBounds(){fits++;level=4},getLevel:()=>level,setLevel(value){level=value;levels.push(value)},panTo(){pans++}};
+    const fitted=followRacingPosition(rider,true,1000);
+    const fitState={fitted,level,fits,pans,active:state.racingParticipantFitActive,speedChanged:updateRacingMapLevel(75/3.6)};
+    level=2;fits=0;pans=0;levels=[];state.racingParticipantFitActive=false;
+    state.map.setBounds=()=>{fits++;level=5};
+    const fallback=followRacingPosition(rider,true,2000);
+    return{fitState,fallbackState:{fallback,level,fits,pans,levels,active:state.racingParticipantFitActive}};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    fitState:{fitted:true,level:4,fits:1,pans:0,active:true,speedChanged:false},
+    fallbackState:{fallback:true,level:2,fits:1,pans:1,levels:[2],active:false},
+  });
+});
+
+test('Racing offscreen target indicator includes direction and rounded distance', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    class TestOverlay {constructor(options){Object.assign(this,options)}setPosition(position){this.position=position}setMap(map){this.map=map}}
+    kakao={maps:{LatLng:TestLatLng,CustomOverlay:TestOverlay}};
+    state.screen='racing';state.racingPhase='active';state.currentLocation={latitude:0,longitude:0};
+    state.map={getBounds:()=>({contain:()=>false})};
+    renderRacingTargetMarker({targetPosition:{latitude:0,longitude:100/111195},targetBeforeRouteStart:0});
+    return{text:$('#racingTargetIndicator').textContent,hidden:$('#racingTargetIndicator').classList.contains('hidden')};
+  })()`,context);
+  assert.equal(result.hidden,false);
+  assert.match(result.text,/100m/);
 });
 
 test('Racing live speed changes map levels at exact boundaries without overriding manual control', () => {

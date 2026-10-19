@@ -174,7 +174,51 @@
       progressBase: 0,
       targetProgressOffset: 0,
       lastCurrentProgress: 0,
+      activeRouteStartProgress: 0,
+      routeVersions: [],
+      rerouteSequence: 0,
     };
+  }
+
+  function targetPositionAtProgress(session, targetProgress) {
+    const activeStart = finite(session.activeRouteStartProgress) ? session.activeRouteStartProgress : session.progressBase || 0;
+    if (targetProgress >= activeStart) {
+      return pointAtRouteDistance(session.route, targetProgress - (session.progressBase || 0));
+    }
+    const versions = Array.isArray(session.routeVersions) ? session.routeVersions : [];
+    for (let index = versions.length - 1; index >= 0; index -= 1) {
+      const version = versions[index];
+      if (targetProgress >= version.activeStartProgress && targetProgress <= version.endProgress) {
+        return pointAtRouteDistance(version.route, targetProgress - version.progressBase);
+      }
+    }
+    const oldest = versions[0];
+    return oldest
+      ? pointAtRouteDistance(oldest.route, targetProgress - oldest.progressBase)
+      : pointAtRouteDistance(session.route, targetProgress - (session.progressBase || 0));
+  }
+
+  function validRerouteBoundaries(boundaries) {
+    if (!Array.isArray(boundaries) || boundaries.length < 2 || boundaries[0] !== 0) return false;
+    return boundaries.every((value, index) => finite(value) && value >= 0 && (index === 0 || value > boundaries[index - 1]));
+  }
+
+  function mapRerouteOffset(targetOffset, oldBoundaries, newBoundaries) {
+    if (targetOffset < 0) {
+      const oldLength = oldBoundaries[1] - oldBoundaries[0];
+      const newLength = newBoundaries[1] - newBoundaries[0];
+      return targetOffset * (newLength / oldLength);
+    }
+    const oldEnd = oldBoundaries.at(-1);
+    if (targetOffset >= oldEnd) return newBoundaries.at(-1);
+    for (let index = 0; index < oldBoundaries.length - 1; index += 1) {
+      if (targetOffset > oldBoundaries[index + 1]) continue;
+      const oldLength = oldBoundaries[index + 1] - oldBoundaries[index];
+      const newLength = newBoundaries[index + 1] - newBoundaries[index];
+      const ratio = (targetOffset - oldBoundaries[index]) / oldLength;
+      return newBoundaries[index] + ratio * newLength;
+    }
+    return newBoundaries.at(-1);
   }
 
   function updateRace(session, observation = {}) {
@@ -199,7 +243,7 @@
     const distanceDifference = currentRouteProgress - targetRouteProgress;
     const historicalTimeAtCurrentProgress = targetTimeAtProgress(session.target, Math.max(0, currentRouteProgress - (session.targetProgressOffset || 0)));
     const timeDifference = historicalTimeAtCurrentProgress - session.raceElapsedTime;
-    const targetLocalProgress = targetRouteProgress - routeStartProgress;
+    const activeRouteStartProgress = finite(session.activeRouteStartProgress) ? session.activeRouteStartProgress : routeStartProgress;
     return {
       currentRouteProgress,
       targetRouteProgress,
@@ -207,25 +251,68 @@
       timeDifference,
       historicalTimeAtCurrentProgress,
       status: distanceDifference > 0 ? 'ahead' : distanceDifference < 0 ? 'behind' : 'even',
-      targetPosition: pointAtRouteDistance(session.route, Math.max(0, targetLocalProgress)),
-      targetBeforeRouteStart: Math.max(0, -targetLocalProgress),
+      targetPosition: targetPositionAtProgress(session, targetRouteProgress),
+      targetBeforeRouteStart: Math.max(0, activeRouteStartProgress - targetRouteProgress),
       offRouteDistance: projected?.offRouteDistance ?? 0,
       projectedPosition: projected?.projectedPoint || null,
       raceElapsedTime: session.raceElapsedTime,
     };
   }
 
-  function rebaseRaceRoute(session, { route, currentPosition, snapshot } = {}) {
+  function rebaseRaceRoute(session, { route, currentPosition, snapshot, oldLength, newLength, oldBoundaries, newBoundaries, rerouteSequence } = {}) {
     if (!session || session.target?.type !== TARGET_SPEED || !Array.isArray(route) || route.length < 2 || !route.every(validPoint) || !snapshot) return false;
+    const sequence = finite(rerouteSequence) ? rerouteSequence : (session.rerouteSequence || 0) + 1;
+    if (sequence <= (session.rerouteSequence || 0)) return false;
+    const suppliedBoundaries = oldBoundaries !== undefined || newBoundaries !== undefined;
+    const previousBoundaries = suppliedBoundaries ? oldBoundaries : [0, oldLength];
+    const nextBoundaries = suppliedBoundaries ? newBoundaries : [0, newLength];
+    if (!validRerouteBoundaries(previousBoundaries)
+      || !validRerouteBoundaries(nextBoundaries)
+      || previousBoundaries.length !== nextBoundaries.length) return false;
     const nextRoute = route.map(point => ({ latitude: point.latitude, longitude: point.longitude }));
     const projection = projectOnRoute(nextRoute, currentPosition || nextRoute[0]);
     const currentProgress = Math.max(0, finite(snapshot.currentRouteProgress) ? snapshot.currentRouteProgress : session.lastCurrentProgress || 0);
     const targetProgress = Math.max(0, finite(snapshot.targetRouteProgress) ? snapshot.targetRouteProgress : targetProgressAtTime(session.target, session.raceElapsedTime));
+    const previousRoute = session.route.map(point => ({ latitude: point.latitude, longitude: point.longitude }));
+    const previousProgressBase = finite(session.progressBase) ? session.progressBase : 0;
+    const previousActiveStart = finite(session.activeRouteStartProgress) ? session.activeRouteStartProgress : previousProgressBase;
+    const oldGap = targetProgress - currentProgress;
+    const mappedGap = mapRerouteOffset(oldGap, previousBoundaries, nextBoundaries);
+    const desiredTargetProgress = currentProgress + mappedGap;
+    const nextProgressBase = currentProgress - projection.alongDistance;
+    const nextRouteDistance = routeDistance(nextRoute);
+    const nextRouteEnd = nextProgressBase + nextRouteDistance;
+    const correctedTargetProgress = Math.max(0, Math.min(nextRouteEnd, desiredTargetProgress));
+    const correctionDistance = correctedTargetProgress - targetProgress;
+    if (!Array.isArray(session.routeVersions)) session.routeVersions = [];
+    session.routeVersions.push({
+      route: previousRoute,
+      progressBase: previousProgressBase,
+      activeStartProgress: previousActiveStart,
+      endProgress: currentProgress,
+      sequence: session.rerouteSequence || 0,
+    });
     session.route = nextRoute;
-    session.routeDistance = routeDistance(nextRoute);
-    session.progressBase = currentProgress - projection.alongDistance;
-    session.targetProgressOffset = targetProgress - targetProgressAtTime(session.target, session.raceElapsedTime);
+    session.routeDistance = nextRouteDistance;
+    session.progressBase = nextProgressBase;
+    session.activeRouteStartProgress = currentProgress;
+    session.targetProgressOffset = (session.targetProgressOffset || 0) + correctionDistance;
     session.lastCurrentProgress = currentProgress;
+    session.rerouteSequence = sequence;
+    session.lastRerouteAdjustment = {
+      sequence,
+      currentProgress,
+      oldLength: previousBoundaries[1],
+      newLength: nextBoundaries[1],
+      oldBoundaries: previousBoundaries.slice(),
+      newBoundaries: nextBoundaries.slice(),
+      scale: nextBoundaries[1] / previousBoundaries[1],
+      oldGap,
+      newGap: correctedTargetProgress - currentProgress,
+      correctionDistance,
+      targetProgressBefore: targetProgress,
+      targetProgressAfter: correctedTargetProgress,
+    };
     return true;
   }
 
