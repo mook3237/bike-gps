@@ -8,6 +8,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function createRacingFoundationApi(Ride) {
   const SAVED_RIDE = 'SAVED_RIDE';
   const TARGET_SPEED = 'TARGET_SPEED';
+  const MAX_CONTIGUOUS_GPS_GAP_MS = 30000;
   const GHOST_DATA_VERSION = Ride?.GHOST_DATA_VERSION;
   const distanceBetween = Ride?.haversineDistance;
 
@@ -51,14 +52,27 @@
     return { latitude: last.latitude, longitude: last.longitude };
   }
 
-  function projectOnRoute(route, position) {
-    if (!Array.isArray(route) || !route.length || !validPoint(position)) {
-      return { alongDistance: 0, totalDistance: 0, offRouteDistance: Infinity, projectedPoint: null };
+  function routeBearing(start, end) {
+    const radians = Math.PI / 180;
+    const latitude1 = start.latitude * radians;
+    const latitude2 = end.latitude * radians;
+    const longitude = (end.longitude - start.longitude) * radians;
+    const y = Math.sin(longitude) * Math.cos(latitude2);
+    const x = Math.cos(latitude1) * Math.sin(latitude2)
+      - Math.sin(latitude1) * Math.cos(latitude2) * Math.cos(longitude);
+    return (Math.atan2(y, x) / radians + 360) % 360;
+  }
+
+  function headingDifference(first, second) {
+    return Math.abs(((first - second + 540) % 360) - 180);
+  }
+
+  function projectOnRoute(route, position, options = {}) {
+    if (!Array.isArray(route) || route.length < 2 || !validPoint(position)) {
+      return { alongDistance: 0, totalDistance: 0, offRouteDistance: Infinity, projectedPoint: null, progressAccepted: false };
     }
     let walked = 0;
-    let bestAlong = 0;
-    let bestDistance = Infinity;
-    let projectedPoint = route[0];
+    const candidates = [];
     for (let index = 1; index < route.length; index += 1) {
       const start = route[index - 1];
       const end = route[index];
@@ -75,14 +89,111 @@
         longitude: start.longitude + (end.longitude - start.longitude) * ratio,
       };
       const offRouteDistance = distanceBetween(position, projected);
-      if (offRouteDistance < bestDistance) {
-        bestDistance = offRouteDistance;
-        bestAlong = walked + segment * ratio;
-        projectedPoint = projected;
-      }
+      candidates.push({
+        alongDistance: walked + segment * ratio,
+        offRouteDistance,
+        projectedPoint: projected,
+        heading: routeBearing(start, end),
+      });
       walked += segment;
     }
-    return { alongDistance: bestAlong, totalDistance: walked, offRouteDistance: bestDistance, projectedPoint };
+
+    const nearestDistance = Math.min(...candidates.map(candidate => candidate.offRouteDistance));
+    const accuracy = finite(options.accuracy) && options.accuracy > 0 ? options.accuracy : 0;
+    const previousAccuracy = finite(options.previousAccuracy) && options.previousAccuracy > 0 ? options.previousAccuracy : 0;
+    const spatialAllowance = Math.max(3, accuracy * 0.75);
+    let spatialCandidates = candidates.filter(candidate => candidate.offRouteDistance <= nearestDistance + spatialAllowance);
+    const previousAlong = finite(options.previousAlong) ? options.previousAlong : null;
+    const minimumAlong = finite(options.minimumAlong) ? Math.max(0, options.minimumAlong) : null;
+    const previousPosition = validPoint(options.previousPosition) ? options.previousPosition : null;
+    if (minimumAlong != null) spatialCandidates = spatialCandidates.filter(candidate => candidate.alongDistance >= minimumAlong - 1);
+    let expectedMovement = 0;
+    let movementBearing = null;
+    let movementLimit = Infinity;
+
+    if (previousAlong != null && previousPosition) {
+      const displacement = distanceBetween(previousPosition, position);
+      const elapsed = finite(options.timestamp) && finite(options.previousTimestamp)
+        ? Math.max(0, options.timestamp - options.previousTimestamp) / 1000
+        : 0;
+      const longGpsGap = elapsed * 1000 > MAX_CONTIGUOUS_GPS_GAP_MS;
+      // Speed is only a tie-break hint for overlapping route segments; the
+      // movement limit below is based on GPS displacement, not speed × gap.
+      const speedDistanceHint = finite(options.speedMps) && options.speedMps >= 0 ? options.speedMps * elapsed : 0;
+      expectedMovement = longGpsGap ? 0 : Math.max(displacement, speedDistanceHint);
+      movementLimit = longGpsGap
+        ? Infinity
+        : displacement <= 2
+          ? 8
+          : Math.max(displacement * 1.35 + Math.max(8, accuracy + previousAccuracy), displacement + 21);
+      if (!longGpsGap && elapsed > 0) movementLimit = Math.min(movementLimit, elapsed * 60 + Math.max(8, accuracy + previousAccuracy));
+      if (displacement > Math.max(2, accuracy * 0.5)) movementBearing = routeBearing(previousPosition, position);
+
+      spatialCandidates = spatialCandidates.filter(candidate => {
+        const delta = candidate.alongDistance - previousAlong;
+        return delta <= movementLimit && delta >= -movementLimit;
+      });
+
+      if (longGpsGap) {
+        const nearestAlong = spatialCandidates.reduce((selected, candidate) =>
+          !selected || Math.abs(candidate.alongDistance - previousAlong) < Math.abs(selected.alongDistance - previousAlong)
+            ? candidate
+            : selected, null);
+        if (nearestAlong) {
+          return {
+            alongDistance: nearestAlong.alongDistance,
+            matchAlongDistance: nearestAlong.alongDistance,
+            totalDistance: walked,
+            offRouteDistance: nearestAlong.offRouteDistance,
+            projectedPoint: nearestAlong.projectedPoint,
+            progressAccepted: false,
+            anchorAccepted: true,
+            reanchorWithoutCredit: true,
+          };
+        }
+      }
+    }
+
+    if (!spatialCandidates.length && previousAlong != null && previousPosition) {
+      const nearest = candidates.reduce((best, candidate) => !best || candidate.offRouteDistance < best.offRouteDistance ? candidate : best, null);
+      return {
+        alongDistance: previousAlong,
+        matchAlongDistance: nearest.alongDistance,
+        totalDistance: walked,
+        offRouteDistance: nearest.offRouteDistance,
+        projectedPoint: pointAtRouteDistance(route, previousAlong),
+        progressAccepted: false,
+        anchorAccepted: false,
+      };
+    }
+
+    const best = spatialCandidates.reduce((selected, candidate) => {
+      if (!selected) return candidate;
+      const candidateDelta = previousAlong == null ? 0 : candidate.alongDistance - previousAlong;
+      const selectedDelta = previousAlong == null ? 0 : selected.alongDistance - previousAlong;
+      const candidateDirection = candidateDelta < 0 ? (candidate.heading + 180) % 360 : candidate.heading;
+      const selectedDirection = selectedDelta < 0 ? (selected.heading + 180) % 360 : selected.heading;
+      const reverseThreshold = Math.max(5, accuracy + previousAccuracy);
+      const candidateScore = candidate.offRouteDistance * 2
+        + Math.abs(Math.abs(candidateDelta) - expectedMovement) * 0.25
+        + (candidateDelta < -reverseThreshold ? 12 : 0)
+        + (movementBearing == null || Math.abs(candidateDelta) < 2 ? 0 : headingDifference(candidateDirection, movementBearing) * 0.08);
+      const selectedScore = selected.offRouteDistance * 2
+        + Math.abs(Math.abs(selectedDelta) - expectedMovement) * 0.25
+        + (selectedDelta < -reverseThreshold ? 12 : 0)
+        + (movementBearing == null || Math.abs(selectedDelta) < 2 ? 0 : headingDifference(selectedDirection, movementBearing) * 0.08);
+      return candidateScore < selectedScore ? candidate : selected;
+    }, null);
+
+    return {
+      alongDistance: best.alongDistance,
+      matchAlongDistance: best.alongDistance,
+      totalDistance: walked,
+      offRouteDistance: best.offRouteDistance,
+      projectedPoint: best.projectedPoint,
+      progressAccepted: true,
+      anchorAccepted: true,
+    };
   }
 
   function createSavedRideTarget(savedRide) {
@@ -174,6 +285,11 @@
       progressBase: 0,
       targetProgressOffset: 0,
       lastCurrentProgress: 0,
+      lastRouteMatchProgress: 0,
+      routeMatchProgressOffset: 0,
+      lastMatchedPosition: null,
+      lastMatchedTimestamp: null,
+      lastMatchedAccuracy: 0,
       activeRouteStartProgress: 0,
       routeVersions: [],
       rerouteSequence: 0,
@@ -229,14 +345,41 @@
 
     const projected = finite(observation.currentProgressDistance)
       ? null
-      : projectOnRoute(session.route, observation.currentPosition);
+      : projectOnRoute(session.route, observation.currentPosition, {
+        previousAlong: session.lastRouteMatchProgress,
+        previousPosition: session.lastMatchedPosition,
+        previousTimestamp: session.lastMatchedTimestamp,
+        previousAccuracy: session.lastMatchedAccuracy,
+        minimumAlong: finite(observation.minimumCurrentProgress)
+          ? Math.max(0, observation.minimumCurrentProgress - (finite(session.progressBase) ? session.progressBase : 0))
+          : null,
+        timestamp: observation.currentTimestamp,
+        accuracy: observation.currentAccuracy ?? observation.currentPosition?.accuracy,
+        speedMps: observation.currentSpeedMps,
+        heading: observation.currentHeading,
+      });
+    if (projected?.anchorAccepted) {
+      session.lastRouteMatchProgress = projected.matchAlongDistance;
+      session.lastMatchedPosition = { latitude: observation.currentPosition.latitude, longitude: observation.currentPosition.longitude };
+      session.lastMatchedTimestamp = finite(observation.currentTimestamp) ? observation.currentTimestamp : null;
+      session.lastMatchedAccuracy = finite(observation.currentAccuracy ?? observation.currentPosition?.accuracy)
+        ? Math.max(0, observation.currentAccuracy ?? observation.currentPosition.accuracy)
+        : 0;
+    }
+    const routeStartProgress = finite(session.progressBase) ? session.progressBase : 0;
+    if (projected?.reanchorWithoutCredit) {
+      const currentProgress = finite(session.lastCurrentProgress) ? session.lastCurrentProgress : routeStartProgress;
+      session.routeMatchProgressOffset = currentProgress - routeStartProgress - projected.matchAlongDistance;
+    }
     const rawLocalProgress = finite(observation.currentProgressDistance)
       ? observation.currentProgressDistance
-      : projected.alongDistance;
-    const routeStartProgress = finite(session.progressBase) ? session.progressBase : 0;
+      : projected.alongDistance + (session.routeMatchProgressOffset || 0);
     const routeEndProgress = routeStartProgress + session.routeDistance;
     const rawCurrentProgress = routeStartProgress + Math.max(0, rawLocalProgress);
-    const currentRouteProgress = Math.max(session.lastCurrentProgress || routeStartProgress, Math.min(routeEndProgress, rawCurrentProgress));
+    const progressLimit = finite(observation.currentProgressLimit)
+      ? Math.max(routeStartProgress, Math.min(routeEndProgress, observation.currentProgressLimit))
+      : routeEndProgress;
+    const currentRouteProgress = Math.min(progressLimit, Math.max(session.lastCurrentProgress || routeStartProgress, Math.min(routeEndProgress, rawCurrentProgress)));
     session.lastCurrentProgress = currentRouteProgress;
     const rawTargetProgress = targetProgressAtTime(session.target, session.raceElapsedTime) + (session.targetProgressOffset || 0);
     const targetRouteProgress = Math.max(0, Math.min(routeEndProgress, rawTargetProgress));
@@ -296,6 +439,11 @@
     session.routeDistance = nextRouteDistance;
     session.progressBase = nextProgressBase;
     session.activeRouteStartProgress = currentProgress;
+    session.lastRouteMatchProgress = projection.alongDistance;
+    session.routeMatchProgressOffset = 0;
+    session.lastMatchedPosition = { latitude: (currentPosition || nextRoute[0]).latitude, longitude: (currentPosition || nextRoute[0]).longitude };
+    session.lastMatchedTimestamp = null;
+    session.lastMatchedAccuracy = 0;
     session.targetProgressOffset = (session.targetProgressOffset || 0) + correctionDistance;
     session.lastCurrentProgress = currentProgress;
     session.rerouteSequence = sequence;

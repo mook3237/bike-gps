@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RIDE MATE - 레이싱 결과</title>
+<style>
+  :root{
+    --bg:#070d17;
+    --panel:#0a1626;
+    --panel2:#0c1c30;
+    --line:#16304d;
+    --line-glow:#1d4f86;
+    --text:#f2f6fb;
+    --sub:#7f93ad;
+    --blue:#1f7bff;
+    --cyan:#18c8f0;
+    --green:#22d3a0;
+    --red:#ff4d5e;
+    --gold:#f5b82e;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;background:#000}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Noto Sans KR",sans-serif;
+    color:var(--text);
+    display:flex;justify-content:center;
+  }
+  .phone{
+    position:relative;width:100%;max-width:430px;min-height:100vh;overflow:hidden;
+    background:
+      radial-gradient(120% 60% at 20% 10%, #12233a 0%, transparent 60%),
+      linear-gradient(180deg,#0b1626 0%,#08111d 100%);
+  }
+  /* 배경 지도 느낌 */
+  .map-bg{position:absolute;inset:0;opacity:.35}
+  .map-bg svg{width:100%;height:100%}
+
+  /* 상단 검색 */
+  .topbar{position:absolute;top:calc(env(safe-area-inset-top) + 14px);left:16px;right:16px;display:flex;gap:12px;z-index:2}
+  .search{
+    flex:1;height:50px;border-radius:20px;background:rgba(5,10,18,.92);
+    display:flex;align-items:center;gap:12px;padding:0 18px;color:#5e7a9c;font-size:18px;
+    border:1px solid rgba(255,255,255,.03)
+  }
+  .menu{
+    width:54px;height:50px;border-radius:18px;background:rgba(5,10,18,.92);
+    display:grid;place-items:center;border:1px solid rgba(255,255,255,.03)
+  }
+
+  /* 바텀 시트 */
+  .sheet{
+    position:relative;z-index:3;margin:calc(env(safe-area-inset-top) + 82px) 8px 0;
+    border-radius:28px;padding:12px 16px 18px;
+    background:linear-gradient(180deg,#0b1a2e 0%,#08121f 100%);
+    border:1.5px solid var(--line-glow);
+    box-shadow:0 0 0 1px rgba(31,123,255,.12),0 0 28px rgba(31,123,255,.18),inset 0 0 40px rgba(31,123,255,.04);
+  }
+  .handle{width:70px;height:5px;border-radius:3px;background:#3b4a5e;margin:0 auto 14px}
+  .close{position:absolute;right:20px;top:26px;width:34px;height:34px;display:grid;place-items:center;color:#8da2bb;background:none;border:0;cursor:pointer}
+
+  .head{display:flex;justify-content:space-between;align-items:flex-start;padding:2px 4px 0}
+  .brand{font-size:13px;letter-spacing:.32em;color:#2f8bff;font-weight:700;margin-bottom:6px}
+  h1{font-size:34px;font-weight:800;letter-spacing:-.02em;line-height:1.15}
+  .course{color:var(--sub);font-size:17px;margin-top:8px}
+  .badge{
+    margin-top:28px;display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:14px;
+    border:1.5px solid #b98a1c;background:linear-gradient(180deg,rgba(245,184,46,.10),rgba(245,184,46,.04));
+    box-shadow:0 0 14px rgba(245,184,46,.12);
+  }
+  .badge b{display:block;color:var(--gold);font-size:18px;font-weight:800}
+  .badge span{display:block;color:var(--gold);font-size:12.5px;margin-top:2px;white-space:nowrap}
+
+  /* 비교 카드 */
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:18px}
+  .compare{margin-top:20px;display:grid;grid-template-columns:1fr 70px 1fr;align-items:center;padding:14px 8px 12px}
+  .compare .col{text-align:center}
+  .lab{display:inline-flex;align-items:center;gap:7px;font-size:15px;color:#c6d3e3}
+  .dot{width:10px;height:10px;border-radius:50%}
+  .time{font-size:44px;font-weight:800;letter-spacing:-.01em;margin:4px 0 2px;font-variant-numeric:tabular-nums}
+  .avg{font-size:15px;color:var(--sub)}
+  .mid{text-align:center;border-left:1px solid var(--line);border-right:1px solid var(--line);padding:6px 0;display:flex;flex-direction:column;align-items:center;gap:6px}
+  .mid em{font-style:normal;color:var(--green);font-weight:800;font-size:19px}
+
+  /* 스탯 타일 */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px}
+  .tile{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px 4px 12px;text-align:center}
+  .tile svg{display:block;margin:0 auto 8px}
+  .tile .k{font-size:14.5px;color:#a9b9cd}
+  .tile .v{font-size:29px;font-weight:800;margin-top:6px;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .tile .u{font-size:14.5px;color:var(--sub);margin-top:4px}
+
+  /* 진행 바 */
+  .race{display:grid;grid-template-columns:1fr auto;align-items:center;margin-top:22px;padding:0 6px}
+  .bars{display:flex;flex-direction:column;gap:18px}
+  .bar-row{display:flex;align-items:center;gap:10px;font-size:17px;color:#d6e0ee}
+  .bar-row .name{width:84px;display:flex;align-items:center;gap:10px}
+  .track{flex:0 0 40%;height:6px;border-radius:3px;background:#1a2b42;overflow:hidden}
+  .fill{height:100%;border-radius:3px}
+  .gap{text-align:center;padding-left:8px}
+  .gap small{display:block;color:#b8c6d9;font-size:15px}
+  .gap strong{display:block;color:var(--green);font-size:30px;font-weight:800;margin:6px 0 4px;letter-spacing:-.02em}
+  .gap span{color:#8ea1b9;font-size:14.5px}
+
+  /* 코스 정보 */
+  .info{margin-top:18px;display:grid;grid-template-columns:132px 1fr;gap:14px;align-items:center;padding:12px}
+  .mini{width:132px;height:90px;border-radius:12px;background:#0b1b30;border:1px solid var(--line);overflow:hidden}
+  .rows{display:flex;flex-direction:column;gap:14px;font-size:15.5px}
+  .rows .r{display:grid;grid-template-columns:90px 1fr;align-items:center}
+  .rows .r .l{display:flex;align-items:center;gap:8px;color:#8ea1b9}
+  .rows .r .rv{color:#e8eef7;font-weight:600}
+  .rows .ok{display:flex;align-items:center;gap:7px;color:var(--green);font-weight:700}
+
+  /* 저장 */
+  .ask{text-align:center;margin-top:22px}
+  .ask h2{font-size:21px;font-weight:800}
+  .ask p{color:var(--sub);font-size:15px;margin-top:6px}
+  .actions{display:flex;flex-direction:column;gap:11px;margin-top:14px}
+  .btn{
+    display:flex;align-items:center;gap:16px;width:100%;text-align:left;cursor:pointer;color:var(--text);
+    border-radius:16px;padding:14px 16px;border:1px solid var(--line);background:#0d1d33;font-family:inherit;
+    transition:transform .08s ease,filter .15s;
+  }
+  .btn:active{transform:scale(.985)}
+  .btn .ic{width:40px;display:grid;place-items:center;color:#a9b9cd}
+  .btn .tx{flex:1}
+  .btn .tx b{display:block;font-size:19px;font-weight:800}
+  .btn .tx span{display:block;font-size:14.5px;margin-top:4px;color:#8ea1b9}
+  .btn .chev{color:#8ea1b9}
+  .btn.primary{background:linear-gradient(90deg,#1670f0,#1e86ff);border-color:#2f8bff;box-shadow:0 6px 18px rgba(31,123,255,.35)}
+  .btn.primary .ic,.btn.primary .tx span,.btn.primary .chev{color:#dbeaff}
+  .btn.primary .tx span{color:#cfe2ff}
+  .btn.ghost{background:transparent;border-color:#2a3d57}
+
+  .toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,40px);opacity:0;background:#10233b;border:1px solid var(--line-glow);
+    color:#fff;padding:12px 18px;border-radius:14px;font-size:15px;transition:.25s;z-index:10;pointer-events:none}
+  .toast.show{transform:translate(-50%,0);opacity:1}
+</style>
+</head>
+<body>
+<div class="phone">
+
+  <!-- 배경 지도 -->
+  <div class="map-bg" aria-hidden="true">
+    <svg viewBox="0 0 430 900" preserveAspectRatio="xMidYMid slice" fill="none" stroke="#2b4a6e" stroke-width="1">
+      <path d="M-20 200 C80 160 160 260 260 220 S400 150 460 210"/>
+      <path d="M-20 420 C60 380 150 470 240 430 S380 380 460 440"/>
+      <path d="M40 -10 C70 120 20 260 90 380 S160 640 120 920"/>
+      <path d="M300 -10 C330 150 270 300 340 450 S400 700 360 920"/>
+      <path d="M-20 640 C100 600 200 700 300 650 S420 610 460 660"/>
+      <path d="M-20 780 C120 740 220 830 330 790 S430 760 460 800"/>
+    </svg>
+  </div>
+
+  <!-- 상단 검색 -->
+  <div class="topbar">
+    <div class="search">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2f8bff" stroke-width="2.4" stroke-linecap="round"><circle cx="10" cy="10" r="6"/><path d="M15 15l5 5"/></svg>
+      목적지 검색
+    </div>
+    <div class="menu">
+      <svg width="28" height="28" viewBox="0 0 24 24" stroke="#23a7ff" stroke-width="2.4" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </div>
+  </div>
+
+  <!-- 결과 시트 -->
+  <section class="sheet" id="sheet">
+    <div class="handle"></div>
+    <button class="close" aria-label="닫기" onclick="toast('닫기')">
+      <svg width="26" height="26" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg>
+    </button>
+
+    <div class="head">
+      <div>
+        <div class="brand">RIDE MATE</div>
+        <h1>레이싱 결과</h1>
+        <div class="course">왕복 · 쿠팡 남양주2캠프</div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:-62px;margin-bottom:0">
+      <div class="badge">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#f5b82e" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round">
+          <path d="M7 4h10v5a5 5 0 0 1-10 0V4z" fill="#f5b82e" fill-opacity=".9"/>
+          <path d="M7 6H4v1a3 3 0 0 0 3 3M17 6h3v1a3 3 0 0 1-3 3"/>
+          <path d="M12 14v3M8 20h8M9.5 17h5v3h-5z" fill="#f5b82e" fill-opacity=".9"/>
+        </svg>
+        <div><b>신기록 달성!</b><span>기존 기록보다 1분 34초 단축</span></div>
+      </div>
+    </div>
+
+    <!-- 이번 기록 vs 최고 기록 -->
+    <div class="card compare">
+      <div class="col">
+        <div class="lab"><span class="dot" style="background:var(--green);box-shadow:0 0 8px var(--green)"></span>이번 기록</div>
+        <div class="time">24:38</div>
+        <div class="avg">평균 24.8 km/h</div>
+      </div>
+      <div class="mid">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#f5b82e" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round">
+          <path d="M7 4h10v5a5 5 0 0 1-10 0V4z" fill="#f5b82e" fill-opacity=".9"/>
+          <path d="M7 6H4v1a3 3 0 0 0 3 3M17 6h3v1a3 3 0 0 1-3 3"/>
+          <path d="M12 14v3M8 20h8" />
+        </svg>
+        <em>-1:34</em>
+      </div>
+      <div class="col">
+        <div class="lab"><span class="dot" style="background:#7f93ad"></span>기준 최고 기록</div>
+        <div class="time">26:12</div>
+        <div class="avg">평균 22.9 km/h</div>
+      </div>
+    </div>
+
+    <!-- 스탯 -->
+    <div class="stats">
+      <div class="tile">
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#6f86a3" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"><path d="M8 4L3 20h18L16 4z"/><path d="M12 6v2M12 11v2M12 16v2"/></svg>
+        <div class="k">주행 거리</div><div class="v">10.2</div><div class="u">km</div>
+      </div>
+      <div class="tile">
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#22d3a0" stroke-width="1.6" stroke-linecap="round"><path d="M4.5 17a8.5 8.5 0 1 1 15 0"/><path d="M12 14l3.5-4.5"/><circle cx="12" cy="14" r="1.2" fill="#22d3a0"/></svg>
+        <div class="k">평균 속도</div><div class="v">24.8</div><div class="u">km/h</div>
+      </div>
+      <div class="tile">
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#ff4d5e" stroke-width="1.6" stroke-linecap="round"><path d="M4.5 17a8.5 8.5 0 1 1 15 0"/><path d="M12 14l3-5"/><circle cx="12" cy="14" r="1.2" fill="#ff4d5e"/></svg>
+        <div class="k">최고 속도</div><div class="v">38.6</div><div class="u">km/h</div>
+      </div>
+      <div class="tile">
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#3b8cff" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        <div class="k">이동 시간</div><div class="v">24:38</div><div class="u">mm:ss</div>
+      </div>
+    </div>
+
+    <!-- 내 기록 vs 가상 라이더 -->
+    <div class="race">
+      <div class="bars">
+        <div class="bar-row">
+          <div class="name">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="#12b8f0"><path d="M3 5h18l-2.4 3.2H9.6L9 10h8.6l-2.4 3.2H8.2L6.6 19H3.8L6 9z" transform="skewX(-8) translate(2 0)"/></svg>
+            내 기록
+          </div>
+          <div class="track"><div class="fill" style="width:100%;background:linear-gradient(90deg,#18c8f0,#1f7bff)"></div></div>
+        </div>
+        <div class="bar-row">
+          <div class="name">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="#e0334a"><path d="M4 21L12 2l8 19-8-5z"/></svg>
+            가상 라이더
+          </div>
+          <div class="track"><div class="fill" style="width:62%;background:#5b6b80"></div></div>
+        </div>
+      </div>
+      <div class="gap">
+        <small>최종 격차</small>
+        <strong>-1분 34초</strong>
+        <span>(약 610 m 앞서감)</span>
+      </div>
+    </div>
+
+    <!-- 코스 정보 -->
+    <div class="card info">
+      <div class="mini">
+        <svg viewBox="0 0 132 90" width="100%" height="100%">
+          <g stroke="#17406b" stroke-width=".8" fill="none" opacity=".8">
+            <path d="M0 20C30 10 50 40 90 25S120 10 140 30"/><path d="M0 60C30 50 60 80 100 62S125 70 140 55"/><path d="M30 0C40 30 20 60 45 90"/><path d="M95 0C85 30 110 60 100 90"/>
+          </g>
+          <path d="M104 14 L66 50 L48 62 L64 80 L80 84" stroke="#25c9ef" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round" style="filter:drop-shadow(0 0 4px #25c9ef)"/>
+          <circle cx="104" cy="14" r="7" fill="#fff" stroke="#111" stroke-width="1"/>
+          <circle cx="82" cy="82" r="7" fill="#12c5a0" stroke="#fff" stroke-width="1.5"/>
+        </svg>
+      </div>
+      <div class="rows">
+        <div class="r">
+          <div class="l"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8h10a4 4 0 0 1 0 8H8"/><path d="M8 5L5 8l3 3M8 13l-3 3 3 3" transform="translate(0 -1)"/></svg>코스 정보</div>
+          <div class="rv">왕복 · 쿠팡 남양주2캠프</div>
+        </div>
+        <div class="r">
+          <div class="l"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>완주 여부</div>
+          <div class="ok"><svg width="22" height="22" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#22d3a0"/><path d="M7 12.5l3.2 3.2L17 9" stroke="#06231b" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>완주</div>
+        </div>
+        <div class="r">
+          <div class="l"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M16 4a4 4 0 0 1-4 4H9a3 3 0 0 0 0 6h6a3 3 0 0 1 0 6H8"/></svg>주행 방향</div>
+          <div class="rv">왕복 (복귀 포함)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 저장 선택 -->
+    <div class="ask">
+      <h2>기록을 어떻게 저장할까요?</h2>
+      <p>저장 방식에 따라 기록 확인 및 지도 경로가 달라집니다.</p>
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" onclick="toast('레이싱 기록을 저장했어요 🏆')">
+        <div class="ic">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><path d="M7 4h10v5a5 5 0 0 1-10 0V4z" fill="#fff"/><path d="M7 6H4v1a3 3 0 0 0 3 3M17 6h3v1a3 3 0 0 1-3 3"/><path d="M12 14v3M8 20h8"/></svg>
+        </div>
+        <div class="tx"><b>레이싱 기록 저장</b><span>이 코스의 최고 기록을 갱신하고 지도 경로를 저장합니다.</span></div>
+        <svg class="chev" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>
+      </button>
+
+      <button class="btn" onclick="toast('일반 기록으로 저장했어요')">
+        <div class="ic">
+          <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="#b6c4d6" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3h10a2 2 0 0 1 2 2v14l-3-2-3 2-3-2-3 2V5a2 2 0 0 1 2-2z" transform="translate(-1 0)"/><path d="M11 8h6M11 12h6M11 16h3"/></svg>
+        </div>
+        <div class="tx"><b>일반 기록 저장</b><span>주행 요약만 저장합니다. 지도 경로는 저장되지 않습니다.</span></div>
+        <svg class="chev" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>
+      </button>
+
+      <button class="btn ghost" onclick="toast('저장하지 않고 종료')">
+        <div class="ic">
+          <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="#b6c4d6" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/></svg>
+        </div>
+        <div class="tx"><b>저장 안 함</b><span>이번 주행 기록을 저장하지 않고 종료합니다.</span></div>
+      </button>
+    </div>
+  </section>
+  <div style="height:24px"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+  let t;
+  function toast(msg){
+    const el=document.getElementById('toast');
+    el.textContent=msg; el.classList.add('show');
+    clearTimeout(t); t=setTimeout(()=>el.classList.remove('show'),1600);
+  }
+</script>
+</body>
+</html>

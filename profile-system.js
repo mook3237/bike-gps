@@ -202,7 +202,9 @@
     }
 
     function readSettings(profileId) {
-      return normalizeSettings(getProfileData(profileId).settings);
+      const data = ensureStore().dataByProfileId[profileId];
+      if (!data) throw new Error('프로필을 찾을 수 없습니다.');
+      return normalizeSettings(clone(data.settings || {}));
     }
 
     function updateSettings(profileId, updates = {}) {

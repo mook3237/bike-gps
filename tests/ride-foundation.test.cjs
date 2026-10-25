@@ -6,12 +6,16 @@ const {
   calculateBestKilometer,
   createFastObservationState,
   createNavigationArrivalState,
+  createRouteArrivalGate,
+  createRouteArrivalState,
   createGpsSource,
   createRideSession,
   discardRide,
   ensureRideStarted,
   evaluateNavigationArrival,
+  evaluateRouteArrival,
   finishRide,
+  haversineDistance,
   ingestRideFix,
   pauseRide,
   permanentRideRecord,
@@ -49,6 +53,37 @@ test('shared GPS source keeps one native watcher for multiple consumers', () => 
   assert.deepEqual(cleared, []);
   stopNavigation();
   assert.deepEqual(cleared, [41]);
+});
+
+test('shared GPS source isolates onStatus and onFix errors per consumer', () => {
+  let success;
+  const received = [];
+  const errors = [];
+  const source = createGpsSource({
+    watchPosition(onSuccess) { success = onSuccess; return 42; },
+    clearWatch() {},
+  }, undefined, {
+    now: () => 1000,
+    reportError(error, details) { errors.push({ message: error.message, ...details }); },
+  });
+  source.subscribe('broken', {
+    onStatus(status) { if (status === 'ready') throw new Error('status failed'); },
+    onFix() { throw new Error('fix failed'); },
+  });
+  source.subscribe('healthy', {
+    onStatus(status) { received.push(['status', status]); },
+    onFix(fix, fast) { received.push(['fix', fix.longitude, fast.sequence]); },
+  });
+
+  assert.doesNotThrow(() => success({
+    timestamp: 1000,
+    coords: { latitude: 37, longitude: 127, accuracy: 3, speed: 5, heading: 90 },
+  }));
+  assert.deepEqual(received.slice(-2), [['status', 'ready'], ['fix', 127, 1]]);
+  assert.deepEqual(errors, [
+    { message: 'status failed', consumerKey: 'broken', callback: 'onStatus' },
+    { message: 'fix failed', consumerKey: 'broken', callback: 'onFix' },
+  ]);
 });
 
 test('FAST observation reacts immediately to acceleration deceleration and stop', () => {
@@ -372,4 +407,91 @@ test('arrival accepts a legitimate route endpoint offset from the selected pin',
     detector = result.state;
   }
   assert.equal(result.arrived, true);
+});
+
+test('route arrival gate is perpendicular to the final road approach and bounds a forward semicircle', () => {
+  const route = [pointAtMeters(0, 0), pointAtMeters(30, 1000)];
+  const gate = createRouteArrivalGate(route);
+
+  assert.ok(Math.abs(gate.alongDistance - 30) < 0.1);
+  assert.ok(Math.abs(haversineDistance(gate.lineStart, gate.lineEnd) - 3) < 0.1);
+  assert.ok(Math.abs(haversineDistance(gate.center, gate.arcPoints[0]) - 5) < 0.1);
+  assert.ok(Math.abs(haversineDistance(gate.center, gate.arcPoints.at(-1)) - 5) < 0.1);
+  assert.ok(gate.arcPoints[Math.floor(gate.arcPoints.length / 2)].longitude > gate.center.longitude);
+});
+
+test('route arrival confirms immediately when an approached rider enters the forward five-metre semicircle', () => {
+  const route = [pointAtMeters(0, 0), pointAtMeters(30, 1000)];
+  const gate = createRouteArrivalGate(route);
+  let state = createRouteArrivalState();
+  const observe = (timestamp, meters, progress, overrides = {}) => {
+    const result = evaluateRouteArrival(state, gate, {
+      position: pointAtMeters(meters, timestamp), timestamp, accuracy: 3,
+      routeProgress: progress, offRouteDistance: 0, ...overrides,
+    });
+    state = result.state;
+    return result;
+  };
+
+  assert.equal(observe(0, 15, 15).arrived, false);
+  assert.equal(observe(1000, 31, 30, { offRouteDistance: 5 }).arrived, true);
+});
+
+test('route arrival rejects pre-line proximity and proximity without a selected-route approach', () => {
+  const route = [pointAtMeters(0, 0), pointAtMeters(30, 1000)];
+  const gate = createRouteArrivalGate(route);
+  const run = observations => {
+    let state = createRouteArrivalState();
+    let result;
+    for (const observation of observations) {
+      result = evaluateRouteArrival(state, gate, { accuracy: 3, offRouteDistance: 0, ...observation });
+      state = result.state;
+    }
+    return result;
+  };
+  const point = (meters, northMeters = 0) => ({ latitude: northMeters / 111195, longitude: meters / 111195 });
+
+  assert.equal(run([
+    { position: point(15), timestamp: 0, routeProgress: 15 },
+    { position: point(25), timestamp: 1000, routeProgress: 25 },
+    { position: point(25), timestamp: 2000, routeProgress: 25 },
+  ]).arrived, false);
+  assert.equal(run([{ position: point(31), timestamp: 0, routeProgress: 30 }]).arrived, false);
+  assert.equal(run([
+    { position: point(15, 6), timestamp: 0, routeProgress: 15, offRouteDistance: 6 },
+    { position: point(31, 4), timestamp: 1000, routeProgress: 30, offRouteDistance: 4 },
+  ]).arrived, false);
+});
+
+test('route arrival keeps selected-route approach across low accuracy and more than five seconds', () => {
+  const route = [pointAtMeters(0, 0), pointAtMeters(30, 1000)];
+  const gate = createRouteArrivalGate(route);
+  let state = createRouteArrivalState();
+  const observe = (timestamp, meters, accuracy, progress = meters) => {
+    const result = evaluateRouteArrival(state, gate, {
+      position: pointAtMeters(meters, timestamp), timestamp, accuracy,
+      routeProgress: progress, offRouteDistance: 0,
+    });
+    state = result.state;
+    return result;
+  };
+
+  assert.equal(observe(0, 15, 3).arrived, false);
+  assert.equal(observe(7000, 31, 30, 30).arrived, true);
+});
+
+test('route arrival accepts five metres of lateral GPS error at the semicircle boundary after route approach', () => {
+  const route = [pointAtMeters(0, 0), pointAtMeters(30, 1000)];
+  const gate = createRouteArrivalGate(route);
+  const point = (meters, lateral) => ({ latitude: lateral / 111195, longitude: meters / 111195 });
+  const run = positions => {
+    let state = createRouteArrivalState(), result;
+    for (const [timestamp, meters, lateral, progress] of positions) {
+      result = evaluateRouteArrival(state, gate, { position: point(meters, lateral), timestamp, accuracy: 3, routeProgress: progress, offRouteDistance: 4 });
+      state = result.state;
+    }
+    return result;
+  };
+
+  assert.equal(run([[0, 15, 0, 15], [1000, 30, 5, 30]]).arrived, true);
 });

@@ -83,6 +83,26 @@ test('adding a profile creates an isolated namespace and rejects blank names', (
   });
 });
 
+test('reading settings does not clone ride and racing records', () => {
+  const repo = repository(memoryStorage());
+  repo.initialize();
+  repo.prependRide('profile-dad', { distance: 100, route: [{ latitude: 37, longitude: 127 }] });
+  repo.prependRacing('profile-dad', { distance: 200, route: [{ latitude: 38, longitude: 128 }] });
+  repo.updateSettings('profile-dad', { distanceUnit: 'mi' });
+  const originalStringify = JSON.stringify;
+  let serializedProfileData = false;
+  JSON.stringify = function observedStringify(value, ...args) {
+    if (value && Array.isArray(value.rides) && Array.isArray(value.racing)) serializedProfileData = true;
+    return originalStringify.call(this, value, ...args);
+  };
+  try {
+    assert.equal(repo.readSettings('profile-dad').distanceUnit, 'mi');
+  } finally {
+    JSON.stringify = originalStringify;
+  }
+  assert.equal(serializedProfileData, false);
+});
+
 test('renaming preserves the stable id and every owned data namespace', () => {
   const storage = memoryStorage();
   const repo = repository(storage);

@@ -100,12 +100,12 @@
     <div id="overlayRoot">
       <header id="mapHeader" class="top-ui">
         <button id="searchEntry" class="search-entry"><span>⌕</span><b>목적지 검색</b></button>
-        <button id="menuBtn" class="icon-btn screen-menu-button" aria-label="메뉴">☰</button>
       </header>
 
       <section id="mainMenu" class="main-menu-layer hidden" aria-hidden="true">
         <button id="mainMenuBackdrop" class="main-menu-backdrop" type="button" aria-label="메뉴 닫기"></button>
         <aside id="mainMenuDrawer" class="main-menu-drawer" role="dialog" aria-modal="true" aria-label="RideMate 메뉴">
+          <button id="mainMenuClose" class="main-menu-close" type="button" aria-label="메뉴 닫기">×</button>
           <div id="mainMenuContent" class="main-menu-content">
             <button id="mainMenuProfile" class="main-menu-profile" type="button" data-menu-profile-change>
               <span id="mainMenuProfileAvatar" class="main-menu-avatar" aria-hidden="true"></span>
@@ -118,7 +118,6 @@
               <button type="button" data-menu-item="riding-records"><strong>라이딩 기록</strong></button>
               <button type="button" data-menu-item="racing-records"><strong>과거 기록과 레이싱</strong></button>
               <button type="button" class="racing-menu-settings hidden" data-menu-item="racing-settings"><strong>레이싱 모드 설정</strong></button>
-              <button type="button" class="racing-menu-end hidden" data-menu-item="racing-end"><strong>레이싱 종료</strong></button>
               <button type="button" data-menu-item="app-settings"><strong>앱 설정</strong></button>
             </nav>
             <div class="main-menu-divider"></div>
@@ -128,7 +127,9 @@
               <button type="button" data-menu-item="app-info">앱 정보</button>
             </nav>
           </div>
-          <button id="mainMenuClose" class="main-menu-close" type="button">닫기</button>
+          <div class="main-menu-footer">
+            <button type="button" class="racing-menu-end hidden" data-menu-item="racing-end"><strong>레이싱 종료</strong></button>
+          </div>
         </aside>
       </section>
 
@@ -413,7 +414,10 @@
       </div>
 
       <div id="mapControls" class="map-controls">
-        <div class="right-controls"><button id="locateBtn" aria-label="현재 위치">⌾</button></div>
+        <div class="right-controls">
+          <button id="locateBtn" aria-label="현재 위치">⌾</button>
+          <button id="menuBtn" class="screen-menu-button" aria-label="메뉴">☰</button>
+        </div>
       </div>
       <button id="searchHereBtn" class="search-here-btn hidden">여기서 재검색</button>
 
@@ -468,7 +472,6 @@
         <div class="modal-grab"></div>
         <h3>주행 메뉴</h3>
         <div class="menu-grid">
-          <button data-nav-action="theme">☾<span>주야간</span></button>
           <button data-nav-action="recalc">↻<span>경로 재탐색</span></button>
           <button data-nav-action="pause">Ⅱ<span>일시정지</span></button>
           <button data-nav-action="add-route">＋<span>경로 추가</span></button>

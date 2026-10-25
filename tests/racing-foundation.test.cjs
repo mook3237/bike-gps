@@ -7,6 +7,7 @@ const Racing = require('../racing-foundation.js');
 const Ride = require('../ride-foundation.js');
 
 const metersPoint = meters => ({ latitude: 0, longitude: meters / 111195 });
+const metersPoint2D = (x, y) => ({ latitude: y / 111195, longitude: x / 111195 });
 const raceRoute = [metersPoint(0), metersPoint(100), metersPoint(200)];
 
 function savedRideTargetRecord() {
@@ -50,6 +51,340 @@ test('constant-speed target progresses along the route in canonical units', () =
   assert.ok(Math.abs(snapshot.distanceDifference - 30) < 0.1);
   assert.ok(Math.abs(snapshot.timeDifference - 6000) < 1);
   assert.equal(snapshot.status, 'ahead');
+});
+
+test('GPS map matching advances through the return leg of an out-and-back route', () => {
+  const route = [0, 100, 200, 100, 0].map(metersPoint);
+  const race = Racing.createRaceSession({ route, target: Racing.createTargetSpeedTarget(5), currentMovingTime: 0 });
+  const fixes = [
+    { meters: 0, timestamp: 0, movingTime: 0 },
+    { meters: 100, timestamp: 20000, movingTime: 20000 },
+    { meters: 200, timestamp: 40000, movingTime: 40000 },
+    { meters: 150, timestamp: 50000, movingTime: 50000 },
+    { meters: 100, timestamp: 60000, movingTime: 60000 },
+    { meters: 50, timestamp: 70000, movingTime: 70000 },
+    { meters: 0, timestamp: 80000, movingTime: 80000 },
+  ];
+
+  const progress = fixes.map(fix => Racing.updateRace(race, {
+    currentPosition: { ...metersPoint(fix.meters), accuracy: 3 },
+    currentMovingTime: fix.movingTime,
+    currentTimestamp: fix.timestamp,
+    currentAccuracy: 3,
+    currentSpeedMps: 5,
+  }).currentRouteProgress);
+
+  assert.deepEqual(progress.map(value => Math.round(value)), [0, 100, 200, 250, 300, 350, 400]);
+});
+
+test('GPS map matching recognizes the return leg when the turnaround sample is skipped', () => {
+  const route = [metersPoint(0), metersPoint(200), metersPoint(0)];
+  const race = Racing.createRaceSession({ route, target: Racing.createTargetSpeedTarget(5), currentMovingTime: 0 });
+  const fixes = [
+    { meters: 0, timestamp: 0 },
+    { meters: 100, timestamp: 20000 },
+    { meters: 190, timestamp: 38000 },
+    { meters: 185, timestamp: 43000 },
+    { meters: 180, timestamp: 44000 },
+    { meters: 100, timestamp: 60000 },
+    { meters: 0, timestamp: 80000 },
+  ];
+
+  const progress = fixes.map(fix => Racing.updateRace(race, {
+    currentPosition: { ...metersPoint(fix.meters), accuracy: 3 },
+    currentMovingTime: fix.timestamp,
+    currentTimestamp: fix.timestamp,
+    currentAccuracy: 3,
+    currentSpeedMps: 5,
+  }).currentRouteProgress);
+
+  assert.deepEqual(progress.map(value => Math.round(value)), [0, 100, 190, 215, 220, 300, 400]);
+});
+
+test('a long GPS gap cannot infer progress from speed multiplied by the gap', () => {
+  const route = [metersPoint(0), metersPoint(200), metersPoint(0)];
+  const race = Racing.createRaceSession({ route, target: Racing.createTargetSpeedTarget(5), currentMovingTime: 0 });
+  const observe = (timestamp, meters = 0) => Racing.updateRace(race, {
+    currentPosition: { ...metersPoint(meters), accuracy: 3 },
+    currentMovingTime: timestamp,
+    currentTimestamp: timestamp,
+    currentAccuracy: 3,
+    currentSpeedMps: 5,
+  });
+
+  observe(0);
+  const afterGap = observe(80000);
+  const repeated = observe(81000);
+  const resumed = observe(82000, 5);
+
+  assert.equal(Math.round(afterGap.currentRouteProgress), 0);
+  assert.equal(Math.round(repeated.currentRouteProgress), 0);
+  assert.equal(Math.round(resumed.currentRouteProgress), 5);
+});
+
+test('same-position GPS resumes never credit a closed-route lap across gaps, speeds, or accuracy levels', () => {
+  const gaps = [5000, 15000, 29000, 30000, 31000, 80000];
+  const speeds = [0, 5, 15];
+  const accuracies = [3, 10, 30, 40, 50];
+
+  for (const gap of gaps) {
+    for (const speed of speeds) {
+      for (const accuracy of accuracies) {
+        const route = [metersPoint(0), metersPoint(200), metersPoint(0)];
+        const race = Racing.createRaceSession({ route, target: Racing.createTargetSpeedTarget(5), currentMovingTime: 0 });
+        const observe = (timestamp) => Racing.updateRace(race, {
+          currentPosition: { ...metersPoint(0), accuracy },
+          currentMovingTime: timestamp,
+          currentTimestamp: timestamp,
+          currentAccuracy: accuracy,
+          currentSpeedMps: speed,
+        });
+
+        observe(0);
+        const resumedAtSameLocation = observe(gap);
+        assert.equal(Math.round(resumedAtSameLocation.currentRouteProgress), 0, `gap=${gap}, speed=${speed}, accuracy=${accuracy}`);
+      }
+    }
+  }
+});
+
+test('a long GPS gap at a unique forward point stays uncredited until new movement is observed', () => {
+  const route = [metersPoint(0), metersPoint(200), metersPoint(400)];
+  const race = Racing.createRaceSession({ route, target: Racing.createTargetSpeedTarget(5), currentMovingTime: 0 });
+  const observe = (timestamp, meters) => Racing.updateRace(race, {
+    currentPosition: { ...metersPoint(meters), accuracy: 3 },
+    currentMovingTime: timestamp,
+    currentTimestamp: timestamp,
+    currentAccuracy: 3,
+    currentSpeedMps: 5,
+  });
+
+  observe(0, 0);
+  const afterGap = observe(80000, 200);
+  const repeated = observe(81000, 200);
+  const resumed = observe(82000, 205);
+
+  assert.equal(Math.round(afterGap.currentRouteProgress), 0);
+  assert.equal(Math.round(repeated.currentRouteProgress), 0);
+  assert.equal(Math.round(resumed.currentRouteProgress), 5);
+});
+
+test('wide GPS accuracy near a repeated turnaround coordinate does not jump to the finish', () => {
+  const route = [metersPoint(0), metersPoint(200), metersPoint(0)];
+  const race = Racing.createRaceSession({ route, target: Racing.createTargetSpeedTarget(5), currentMovingTime: 0 });
+  const fixes = [
+    { meters: 0, timestamp: 0 },
+    { meters: 150, timestamp: 30000 },
+    { meters: 190, timestamp: 38000 },
+    { meters: 185, timestamp: 43000 },
+  ];
+  const progress = fixes.map(fix => Racing.updateRace(race, {
+    currentPosition: { ...metersPoint(fix.meters), accuracy: 40 },
+    currentMovingTime: fix.timestamp,
+    currentTimestamp: fix.timestamp,
+    currentAccuracy: 40,
+    currentSpeedMps: 5,
+  }).currentRouteProgress);
+
+  assert.equal(Math.round(progress.at(-1)), 215);
+});
+
+test('GPS map matching does not enter the return leg when reversing before the turnaround', () => {
+  const route = [0, 100, 200, 100, 0].map(metersPoint);
+  const race = Racing.createRaceSession({ route, target: Racing.createTargetSpeedTarget(5), currentMovingTime: 0 });
+  const fixes = [
+    { meters: 0, timestamp: 0, movingTime: 0 },
+    { meters: 100, timestamp: 20000, movingTime: 20000 },
+    { meters: 180, timestamp: 36000, movingTime: 36000 },
+    { meters: 140, timestamp: 44000, movingTime: 44000 },
+  ];
+
+  const progress = fixes.map(fix => Racing.updateRace(race, {
+    currentPosition: { ...metersPoint(fix.meters), accuracy: 3 },
+    currentMovingTime: fix.movingTime,
+    currentTimestamp: fix.timestamp,
+    currentAccuracy: 3,
+    currentSpeedMps: 5,
+  }).currentRouteProgress);
+
+  assert.deepEqual(progress.map(value => Math.round(value)), [0, 100, 180, 180]);
+});
+
+test('GPS map matching keeps moving forward through a repeated crossing coordinate', () => {
+  const route = [metersPoint2D(-100, 0), metersPoint2D(0, 0), metersPoint2D(100, 0), metersPoint2D(0, 0), metersPoint2D(0, 100)];
+  const race = Racing.createRaceSession({ route, target: Racing.createTargetSpeedTarget(5), currentMovingTime: 0 });
+  const fixes = [
+    { position: metersPoint2D(-100, 0), timestamp: 0, movingTime: 0 },
+    { position: metersPoint2D(0, 0), timestamp: 20000, movingTime: 20000 },
+    { position: metersPoint2D(100, 0), timestamp: 40000, movingTime: 40000 },
+    { position: metersPoint2D(0, 0), timestamp: 60000, movingTime: 60000 },
+    { position: metersPoint2D(0, 100), timestamp: 80000, movingTime: 80000 },
+  ];
+
+  const progress = fixes.map(fix => Racing.updateRace(race, {
+    currentPosition: { ...fix.position, accuracy: 3 },
+    currentMovingTime: fix.movingTime,
+    currentTimestamp: fix.timestamp,
+    currentAccuracy: 3,
+    currentSpeedMps: 5,
+  }).currentRouteProgress);
+
+  assert.deepEqual(progress.map(value => Math.round(value)), [0, 100, 200, 300, 400]);
+});
+
+test('GPS map matching completes a closed loop at its repeated start coordinate only after traversing the loop', () => {
+  const route = [
+    metersPoint2D(0, 0),
+    metersPoint2D(100, 0),
+    metersPoint2D(100, 100),
+    metersPoint2D(0, 100),
+    metersPoint2D(0, 0),
+  ];
+  const race = Racing.createRaceSession({ route, target: Racing.createTargetSpeedTarget(5), currentMovingTime: 0 });
+  const fixes = [
+    { position: metersPoint2D(0, 0), timestamp: 0 },
+    { position: metersPoint2D(100, 0), timestamp: 20000 },
+    { position: metersPoint2D(100, 100), timestamp: 40000 },
+    { position: metersPoint2D(0, 100), timestamp: 60000 },
+    { position: metersPoint2D(0, 0), timestamp: 80000 },
+  ];
+
+  const progress = fixes.map(fix => Racing.updateRace(race, {
+    currentPosition: { ...fix.position, accuracy: 3 },
+    currentMovingTime: fix.timestamp,
+    currentTimestamp: fix.timestamp,
+    currentAccuracy: 3,
+    currentSpeedMps: 5,
+  }).currentRouteProgress);
+
+  assert.deepEqual(progress.map(value => Math.round(value)), [0, 100, 200, 300, 400]);
+});
+
+test('GPS noise near the turnaround does not pin progress to the outbound segment', () => {
+  const route = [0, 100, 200, 100, 0].map(metersPoint);
+  const race = Racing.createRaceSession({ route, target: Racing.createTargetSpeedTarget(5), currentMovingTime: 0 });
+  const fixes = [
+    { meters: 0, timestamp: 0, movingTime: 0 },
+    { meters: 100, timestamp: 20000, movingTime: 20000 },
+    { meters: 195, timestamp: 39000, movingTime: 39000 },
+    { meters: 198, timestamp: 40000, movingTime: 40000 },
+    { meters: 196, timestamp: 41000, movingTime: 41000 },
+    { meters: 190, timestamp: 43000, movingTime: 43000 },
+    { meters: 150, timestamp: 51000, movingTime: 51000 },
+    { meters: 100, timestamp: 61000, movingTime: 61000 },
+    { meters: 50, timestamp: 71000, movingTime: 71000 },
+    { meters: 0, timestamp: 81000, movingTime: 81000 },
+  ];
+
+  const progress = fixes.map(fix => Racing.updateRace(race, {
+    currentPosition: { ...metersPoint(fix.meters), accuracy: 3 },
+    currentMovingTime: fix.movingTime,
+    currentTimestamp: fix.timestamp,
+    currentAccuracy: 3,
+    currentSpeedMps: 5,
+  }).currentRouteProgress);
+
+  assert.deepEqual(progress.slice(-5).map(value => Math.round(value)), [210, 250, 300, 350, 400]);
+});
+
+test('GPS spike cannot teleport progress to a distant repeated route segment', () => {
+  const route = [0, 100, 200, 100, 0].map(metersPoint);
+  const race = Racing.createRaceSession({ route, target: Racing.createTargetSpeedTarget(5), currentMovingTime: 0 });
+  const fixes = [
+    { meters: 0, timestamp: 0, movingTime: 0 },
+    { meters: 100, timestamp: 20000, movingTime: 20000 },
+    { meters: 200, timestamp: 40000, movingTime: 40000 },
+    { meters: 0, timestamp: 41000, movingTime: 41000 },
+    { meters: 150, timestamp: 51000, movingTime: 51000 },
+  ];
+
+  const progress = fixes.map(fix => Racing.updateRace(race, {
+    currentPosition: { ...metersPoint(fix.meters), accuracy: 3 },
+    currentMovingTime: fix.movingTime,
+    currentTimestamp: fix.timestamp,
+    currentAccuracy: 3,
+    currentSpeedMps: 5,
+  }).currentRouteProgress);
+
+  assert.deepEqual(progress.map(value => Math.round(value)), [0, 100, 200, 200, 250]);
+});
+
+test('GPS map matching remains aligned to progressBase after rerouting from a return leg', () => {
+  const originalRoute = [0, 100, 200, 100, 0].map(metersPoint);
+  const race = Racing.createRaceSession({ route: originalRoute, target: Racing.createTargetSpeedTarget(5), currentMovingTime: 0 });
+  const beforeReroute = [
+    { meters: 0, timestamp: 0, movingTime: 0 },
+    { meters: 100, timestamp: 20000, movingTime: 20000 },
+    { meters: 200, timestamp: 40000, movingTime: 40000 },
+    { meters: 150, timestamp: 50000, movingTime: 50000 },
+  ].map(fix => Racing.updateRace(race, {
+    currentPosition: { ...metersPoint(fix.meters), accuracy: 3 },
+    currentMovingTime: fix.movingTime,
+    currentTimestamp: fix.timestamp,
+    currentAccuracy: 3,
+    currentSpeedMps: 5,
+  }));
+  const rerouted = [150, 250, 350].map(metersPoint);
+
+  assert.equal(Racing.rebaseRaceRoute(race, {
+    route: rerouted,
+    currentPosition: metersPoint(150),
+    snapshot: beforeReroute.at(-1),
+    oldBoundaries: [0, 100],
+    newBoundaries: [0, 100],
+    rerouteSequence: 1,
+  }), true);
+
+  const afterReroute = Racing.updateRace(race, {
+    currentPosition: { ...metersPoint(200), accuracy: 3 },
+    currentMovingTime: 60000,
+    currentTimestamp: 60000,
+    currentAccuracy: 3,
+    currentSpeedMps: 5,
+  });
+
+  assert.equal(Math.round(afterReroute.currentRouteProgress), 300);
+  assert.ok(Math.abs(race.progressBase - 250) < 0.01);
+  assert.equal(race.routeVersions.length, 1);
+});
+
+test('GPS map matching remains continuous through three reroutes on an out-and-back return leg', () => {
+  const race = Racing.createRaceSession({
+    route: [metersPoint(0), metersPoint(200), metersPoint(0)],
+    target: Racing.createTargetSpeedTarget(5),
+    currentMovingTime: 0,
+  });
+  const observe = (meters, timestamp) => Racing.updateRace(race, {
+    currentPosition: { ...metersPoint(meters), accuracy: 3 },
+    currentMovingTime: timestamp,
+    currentTimestamp: timestamp,
+    currentAccuracy: 3,
+    currentSpeedMps: 5,
+  });
+  observe(0, 0);
+  observe(200, 20000);
+  let snapshot = observe(150, 30000);
+
+  for (const [sequence, start, nextMeters, timestamp] of [
+    [1, 150, 120, 36000],
+    [2, 120, 100, 40000],
+    [3, 100, 50, 50000],
+  ]) {
+    assert.equal(Racing.rebaseRaceRoute(race, {
+      route: [metersPoint(start), metersPoint(0)],
+      currentPosition: metersPoint(start),
+      snapshot,
+      oldBoundaries: [0, 100],
+      newBoundaries: [0, 100],
+      rerouteSequence: sequence,
+    }), true);
+    snapshot = observe(nextMeters, timestamp);
+  }
+
+  const finish = observe(0, 60000);
+  assert.ok(Math.abs(snapshot.currentRouteProgress - 350) < 0.01);
+  assert.ok(Math.abs(finish.currentRouteProgress - 400) < 0.01);
+  assert.equal(race.routeVersions.length, 3);
 });
 
 test('rerouting scales a behind target once and keeps it on the preserved route until A', () => {

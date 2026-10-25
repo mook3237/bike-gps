@@ -8,6 +8,7 @@
   const FAST_FRESH_MAX_AGE_MS = 3000;
   const FAST_MAX_PLAUSIBLE_SPEED_MPS = 60;
   const FAST_MAX_ACCURACY_M = 50;
+  const MOTION_WINDOW_MS = 6000;
   let gpsDiagnosticsEnabled = false;
   let gpsDiagnosticsLogger = null;
 
@@ -157,7 +158,8 @@
       filteredSpeed: 0,
       distanceAnchor: null,
       distancePath: 0,
-      movingTimePath: 0,
+      movingTimeApprovedThrough: null,
+      timeInterrupted: false,
       stationaryCandidateSince: null,
       stationaryCandidatePosition: null,
       stationaryCandidateUncertainty: null,
@@ -171,7 +173,8 @@
     motion.filteredSpeed = 0;
     motion.distanceAnchor = null;
     motion.distancePath = 0;
-    motion.movingTimePath = 0;
+    motion.movingTimeApprovedThrough = null;
+    motion.timeInterrupted = false;
     motion.stationaryCandidateSince = null;
     motion.stationaryCandidatePosition = null;
     motion.stationaryCandidateUncertainty = null;
@@ -218,26 +221,40 @@
     return { moving, duration, netDistance, pathDistance, efficiency, directionConsistency, uncertainty };
   }
 
-  function processMotionFix(motion, fix) {
+  function processMotionFix(motion, fix, observation = null) {
     const position = { latitude: fix.latitude, longitude: fix.longitude };
     const timestamp = Number.isFinite(fix.timestamp) ? fix.timestamp : Date.now();
-    const distance = motion.lastPosition ? haversineDistance(motion.lastPosition, position) : 0;
-    const elapsedMs = motion.lastTimestamp == null ? 0 : Math.max(0, timestamp - motion.lastTimestamp);
+    let distance = motion.lastPosition ? haversineDistance(motion.lastPosition, position) : 0;
+    let elapsedMs = motion.lastTimestamp == null ? 0 : Math.max(0, timestamp - motion.lastTimestamp);
     const pointAccuracy = Number.isFinite(fix.accuracy) && fix.accuracy > 0 ? fix.accuracy : 5;
     const positionUncertainty = Math.max(10, pointAccuracy);
     const plausiblePosition = !motion.lastPosition || elapsedMs > 0 && distance <= FAST_MAX_PLAUSIBLE_SPEED_MPS * (elapsedMs / 1000) + positionUncertainty * 2;
-    if (motion.lastTimestamp != null && (timestamp <= motion.lastTimestamp || !plausiblePosition)) {
-      const rejectedReason = timestamp <= motion.lastTimestamp ? 'non-monotonic' : 'implausible-position';
+    const rejectedReason = motion.lastTimestamp != null && timestamp <= motion.lastTimestamp || observation?.quality?.monotonic === false
+      ? 'non-monotonic'
+      : !plausiblePosition || observation?.quality?.plausiblePosition === false ? 'implausible-position'
+        : observation?.quality?.fresh === false ? 'stale'
+          : pointAccuracy > FAST_MAX_ACCURACY_M ? 'inaccurate' : null;
+    if (rejectedReason) {
+      if (rejectedReason === 'stale' || rejectedReason === 'inaccurate') motion.timeInterrupted = true;
       const rejected = { position, timestamp, rawSpeed: 0, speed: motion.filteredSpeed, moving: motion.moving, acceptedDistance: 0, acceptedMovingTime: 0, evidence: movementWindowEvidence(motion.speedWindow), rejectedReason };
       gpsDiagnostic('motion', { timestamp, accuracy: pointAccuracy, rawSpeed: fix.speed, displaySpeed: motion.filteredSpeed, reason: rejectedReason, moving: motion.moving, acceptedDistance: 0 });
       return rejected;
+    }
+    // A gap outside the existing evidence window cannot establish continuous motion.
+    // Keep the raw fix in the recorder, but start new evidence without crediting the gap.
+    if (motion.timeInterrupted || elapsedMs > MOTION_WINDOW_MS) {
+      resetMotionState(motion, true);
+      distance = 0;
+      elapsedMs = 0;
     }
     const rawSpeed = resolveSpeed(fix, distance, elapsedMs);
     let acceptedDistance = 0;
     let acceptedMovingTime = 0;
 
-    motion.speedWindow.push({ position, timestamp, accuracy: Number.isFinite(fix.accuracy) && fix.accuracy > 0 ? fix.accuracy : null });
-    while (motion.speedWindow.length > 2 && timestamp - motion.speedWindow[0].timestamp > 6000) motion.speedWindow.shift();
+    // The direction-evidence threshold is not a minimum distance for elapsed time.
+    const intervalMoved = distance > 0 && (fix.speed !== 0 || distance >= Math.max(2, pointAccuracy * 0.75));
+    motion.speedWindow.push({ position, timestamp, movingIntervalMs: intervalMoved ? elapsedMs : 0, accuracy: Number.isFinite(fix.accuracy) && fix.accuracy > 0 ? fix.accuracy : null });
+    while (motion.speedWindow.length > 2 && timestamp - motion.speedWindow[0].timestamp > MOTION_WINDOW_MS) motion.speedWindow.shift();
     const evidence = movementWindowEvidence(motion.speedWindow);
     const uncertainty = Number.isFinite(evidence.uncertainty) ? evidence.uncertainty : Math.max(3, Number(fix.accuracy) || 5);
 
@@ -264,27 +281,34 @@
         motion.speedSamples = [];
         motion.distanceAnchor = position;
         acceptedDistance = evidence.pathDistance;
-        acceptedMovingTime = evidence.duration;
       }
     } else {
       motion.distancePath += Math.max(0, distance);
-      motion.movingTimePath += elapsedMs;
       if (!evidence.moving && evidence.duration >= 5000) {
         motion.moving = false;
         motion.speedSamples = [];
         motion.filteredSpeed = 0;
         motion.distanceAnchor = position;
         motion.distancePath = 0;
-        motion.movingTimePath = 0;
         motion.speedWindow = [{ position, timestamp, accuracy: Number.isFinite(fix.accuracy) && fix.accuracy > 0 ? fix.accuracy : null }];
       } else if (evidence.moving && motion.distanceAnchor && haversineDistance(motion.distanceAnchor, position) > evidence.uncertainty) {
         acceptedDistance = motion.distancePath;
-        acceptedMovingTime = motion.movingTimePath;
         motion.distanceAnchor = position;
         motion.distancePath = 0;
-        motion.movingTimePath = 0;
       }
     }
+
+    // Movement evidence approves intervals; distance batching must not batch time.
+    // On (re)start, stationary intervals in the evidence window contribute no time.
+    if (motion.moving) {
+      acceptedMovingTime = motion.speedWindow.reduce((total, sample) => {
+        const duration = sample.movingIntervalMs || 0;
+        const uncredited = motion.movingTimeApprovedThrough == null ? duration
+          : Math.min(duration, Math.max(0, sample.timestamp - motion.movingTimeApprovedThrough));
+        return total + uncredited;
+      }, 0);
+    }
+    if (motion.moving) motion.movingTimeApprovedThrough = timestamp;
 
     if (acceptedDistance >= GPS_JUMP_MAX_M) {
       acceptedDistance = 0;
@@ -423,7 +447,7 @@
     return sample;
   }
 
-  function ingestRideFix(ride, fix) {
+  function ingestRideFix(ride, fix, observation = null) {
     if (!ride || ride.recordingState === 'idle' || ride.recordingState === 'completed') return null;
     const timestamp = Math.max(ride.startedAt, Number.isFinite(fix.timestamp) ? fix.timestamp : Date.now());
     if (ride.recordingState === 'paused') {
@@ -431,18 +455,18 @@
       return null;
     }
     const wasMoving = ride.motion.moving;
-    const result = processMotionFix(ride.motion, { ...fix, timestamp });
+    const result = processMotionFix(ride.motion, { ...fix, timestamp }, observation);
     ride.currentSpeed = result.speed;
     if (result.moving) ride.maxSpeed = Math.max(ride.maxSpeed, result.speed);
-    if (result.acceptedDistance > 0) {
-      ride.distance += result.acceptedDistance;
-      ride.movingTime += result.acceptedMovingTime;
+    ride.movingTime += result.acceptedMovingTime;
+    if (result.acceptedDistance > 0) ride.distance += result.acceptedDistance;
+    if (result.acceptedDistance > 0 || result.acceptedMovingTime > 0) {
       ride.distanceHistory.push({ distance: ride.distance, movingTime: ride.movingTime });
       appendRideRouteSample(ride, result);
-    } else if (!ride.routePoints.length || wasMoving !== result.moving) {
+    } else if (!result.rejectedReason && (!ride.routePoints.length || wasMoving !== result.moving)) {
       appendRideRouteSample(ride, result);
     }
-    ride.detailedSamples.push({ ...fix, timestamp, filteredSpeed: result.speed, moving: result.moving, acceptedDistance: result.acceptedDistance, acceptedMovingTime: result.acceptedMovingTime });
+    ride.detailedSamples.push({ ...fix, timestamp, measurementTimestamp: fix.timestamp, receivedAt: observation?.receivedAt ?? null, filteredSpeed: result.speed, moving: result.moving, acceptedDistance: result.acceptedDistance, acceptedMovingTime: result.acceptedMovingTime, rejectedReason: result.rejectedReason });
     return result;
   }
 
@@ -498,6 +522,89 @@
       route: completedRide.route.map(point => ({ ...point })),
       ...(retainDetailed ? { detailedSamples: completedRide.detailedSamples.map(sample => ({ ...sample })) } : {}),
     };
+  }
+
+  function routePointAtDistance(route, distance) {
+    if (!Array.isArray(route) || route.length < 2) return null;
+    const bounded = Math.max(0, Math.min(routeDistance(route), Number(distance) || 0));
+    let walked = 0;
+    for (let index = 1; index < route.length; index += 1) {
+      const start = route[index - 1], end = route[index], segment = haversineDistance(start, end);
+      if (bounded <= walked + segment) {
+        const ratio = segment ? (bounded - walked) / segment : 1;
+        return { latitude: start.latitude + (end.latitude - start.latitude) * ratio, longitude: start.longitude + (end.longitude - start.longitude) * ratio };
+      }
+      walked += segment;
+    }
+    const last = route.at(-1);
+    return { latitude: last.latitude, longitude: last.longitude };
+  }
+
+  function routeDistance(route) {
+    if (!Array.isArray(route)) return 0;
+    return route.slice(1).reduce((sum, point, index) => sum + haversineDistance(route[index], point), 0);
+  }
+
+  function bearingDegrees(start, end) {
+    const radians = Math.PI / 180, latitude1 = start.latitude * radians, latitude2 = end.latitude * radians;
+    const longitude = (end.longitude - start.longitude) * radians;
+    const y = Math.sin(longitude) * Math.cos(latitude2);
+    const x = Math.cos(latitude1) * Math.sin(latitude2) - Math.sin(latitude1) * Math.cos(latitude2) * Math.cos(longitude);
+    return (Math.atan2(y, x) / radians + 360) % 360;
+  }
+
+  function offsetPosition(origin, eastMeters, northMeters) {
+    const latitudeScale = Math.max(0.01, Math.cos(origin.latitude * Math.PI / 180));
+    return { latitude: origin.latitude + northMeters / 111195, longitude: origin.longitude + eastMeters / (111195 * latitudeScale) };
+  }
+
+  function createRouteArrivalGate(route, alongDistance = null, { gateWidthM = 3, radiusM = 5, approachLengthM = 15 } = {}) {
+    if (!Array.isArray(route) || route.length < 2 || !route.every(point => Number.isFinite(point?.latitude) && Number.isFinite(point?.longitude))) return null;
+    const totalDistance = routeDistance(route), along = Number.isFinite(alongDistance) ? Math.max(0, Math.min(totalDistance, alongDistance)) : totalDistance;
+    if (totalDistance <= 0 || along <= 0) return null;
+    const center = routePointAtDistance(route, along), approachStart = routePointAtDistance(route, Math.max(0, along - Math.min(15, approachLengthM)));
+    if (!center || !approachStart || haversineDistance(center, approachStart) < 0.5) return null;
+    const bearing = bearingDegrees(approachStart, center), radians = bearing * Math.PI / 180;
+    const forward = { east: Math.sin(radians), north: Math.cos(radians) }, side = { east: Math.cos(radians), north: -Math.sin(radians) };
+    const halfWidth = gateWidthM / 2;
+    const lineStart = offsetPosition(center, -side.east * halfWidth, -side.north * halfWidth);
+    const lineEnd = offsetPosition(center, side.east * halfWidth, side.north * halfWidth);
+    const arcPoints = Array.from({ length: 19 }, (_, index) => {
+      const angle = -Math.PI / 2 + Math.PI * index / 18;
+      return offsetPosition(center, radiusM * (forward.east * Math.cos(angle) + side.east * Math.sin(angle)), radiusM * (forward.north * Math.cos(angle) + side.north * Math.sin(angle)));
+    });
+    return { center, lineStart, lineEnd, arcPoints, alongDistance: along, approachStartAlong: Math.max(0, along - Math.min(15, approachLengthM)), direction: forward, side, gateWidthM, radiusM, totalDistance };
+  }
+
+  function createRouteArrivalState() {
+    return { approached: false, arrived: false };
+  }
+
+  function evaluateRouteArrival(detectorState, gate, observation = {}) {
+    const state = { ...createRouteArrivalState(), ...(detectorState || {}) };
+    if (state.arrived) return { state, arrived: true, reason: 'already-arrived' };
+    const position = observation.position;
+    const routeProgress = Number(observation.routeProgress), offRouteDistance = Number(observation.offRouteDistance);
+    const usable = gate && Number.isFinite(position?.latitude) && Number.isFinite(position?.longitude)
+      && Number.isFinite(routeProgress) && Number.isFinite(offRouteDistance);
+    if (!usable) return { state, arrived: false, reason: 'uncertain-observation' };
+    const radians = Math.PI / 180, latitudeScale = Math.cos(gate.center.latitude * radians);
+    const local = point => ({ east: (point.longitude - gate.center.longitude) * 111195 * latitudeScale, north: (point.latitude - gate.center.latitude) * 111195 });
+    const coordinates = local(position), forwardDistance = coordinates.east * gate.direction.east + coordinates.north * gate.direction.north;
+    const lateralDistance = coordinates.east * gate.side.east + coordinates.north * gate.side.north;
+    const tolerance = 0.05;
+    const onSelectedRoute = offRouteDistance <= 5;
+    const inApproach = onSelectedRoute
+      && routeProgress >= gate.approachStartAlong - tolerance
+      && routeProgress <= gate.alongDistance + tolerance
+      && forwardDistance <= tolerance;
+    const hadApproach = state.approached;
+    if (inApproach) state.approached = true;
+    const insideForwardSemicircle = forwardDistance >= -tolerance
+      && Math.hypot(forwardDistance, lateralDistance) <= gate.radiusM + tolerance;
+    const progressAtGate = routeProgress >= gate.alongDistance - gate.gateWidthM;
+    state.arrived = hadApproach && onSelectedRoute && insideForwardSemicircle && progressAtGate;
+    return { state, arrived: state.arrived, reason: state.arrived ? 'entered-arrival-zone' : inApproach ? 'approaching' : 'outside' };
   }
 
   function createNavigationArrivalState() {
@@ -562,6 +669,7 @@
     return { state, arrived: state.arrived, candidate, reason: stable ? 'stable' : passed ? 'passed' : candidate ? 'candidate' : 'outside' };
   }
 
+
   function normalizePosition(position) {
     return {
       latitude: position.coords.latitude,
@@ -577,13 +685,23 @@
     const consumers = new Map();
     const fastState = createFastObservationState();
     const now = typeof runtime.now === 'function' ? runtime.now : Date.now;
+    const reportError = typeof runtime.reportError === 'function'
+      ? runtime.reportError
+      : (error, details) => console.error?.('[RideMate GPS consumer]', details, error);
     let watchId = null;
     let latest = null;
     let latestFast = null;
     let status = 'idle';
+    function notifyConsumer(consumerKey, consumer, callback, args) {
+      try {
+        consumer[callback]?.(...args);
+      } catch (error) {
+        try { reportError(error, { consumerKey, callback }); } catch {}
+      }
+    }
     function notifyStatus(next, error = null) {
       status = next;
-      consumers.forEach(consumer => consumer.onStatus?.(status, error));
+      consumers.forEach((consumer, key) => notifyConsumer(key, consumer, 'onStatus', [status, error]));
     }
     function ensureWatch() {
       if (watchId != null || !consumers.size) return;
@@ -594,7 +712,7 @@
         latest = fix;
         latestFast = processFastObservation(fastState, fix, now());
         notifyStatus('ready');
-        consumers.forEach(consumer => consumer.onFix(latest, latestFast));
+        consumers.forEach((consumer, key) => notifyConsumer(key, consumer, 'onFix', [latest, latestFast]));
       }, error => {
         notifyStatus(error?.code === 1 ? 'denied' : 'error', error);
       }, watchOptions);
@@ -602,7 +720,7 @@
     function subscribe(key, onFix, onStatus) {
       const consumer = typeof onFix === 'function' ? { onFix, onStatus } : onFix;
       consumers.set(key, consumer);
-      consumer.onStatus?.(status);
+      notifyConsumer(key, consumer, 'onStatus', [status]);
       if (latest) {
         const replayAge = Math.max(0, now() - latestFast.timestamp);
         const replayFast = {
@@ -610,7 +728,7 @@
           ageMs: replayAge,
           quality: { ...latestFast.quality, fresh: replayAge <= FAST_FRESH_MAX_AGE_MS },
         };
-        consumer.onFix(latest, replayFast);
+        notifyConsumer(key, consumer, 'onFix', [latest, replayFast]);
       }
       ensureWatch();
       return () => unsubscribe(key);
@@ -633,11 +751,14 @@
     createFastObservationState,
     createGpsSource,
     createNavigationArrivalState,
+    createRouteArrivalGate,
+    createRouteArrivalState,
     createMotionState,
     createRideSession,
     discardRide,
     ensureRideStarted,
     evaluateNavigationArrival,
+    evaluateRouteArrival,
     elapsedRideTime,
     finishRide,
     haversineDistance,

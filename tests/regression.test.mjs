@@ -75,6 +75,7 @@ test('history restoration rerenders results and place content in the existing SP
     renderResultsContent: (...args) => calls.push(['results', ...args]),
     renderPlaceContent: place => calls.push(['place', place]),
   };
+  appFunction('isRacingDestinationDiscovery', context);
   const restoreScreen = appFunction('restoreScreen', context);
   restoreScreen('results');
   restoreScreen('place');
