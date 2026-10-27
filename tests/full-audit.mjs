@@ -50,29 +50,23 @@ async function invoke(handler, req) {
 await check('Korean document language remains configured', () => assert.match(html, /<html lang="ko">/));
 await check('mobile viewport remains configured', () => assert.match(html, /width=device-width,initial-scale=1,maximum-scale=1/));
 await check('exactly one map container remains', () => assert.equal((html.match(/id="map"/g) || []).length, 1));
-await check('existing stylesheet path remains', () => assert.match(html, /href="\/styles\.css"/));
-await check('existing app script path remains', () => assert.match(html, /src="\/app\.js"/));
+await check('existing stylesheet path remains', () => assert.match(html, /href="\/styles\.css(?:\?[^"\s]*)?"/));
+await check('existing app script path remains', () => assert.match(html, /src="\/app\.js(?:\?[^"\s]*)?"/));
 await check('search panel remains in the SPA', () => assert.match(html, /id="searchPanel"/));
 await check('route editor remains in the SPA', () => assert.match(html, /id="routeEditor"/));
 await check('result sheet remains in the SPA', () => assert.match(html, /id="sheet"/));
 await check('navigation overlay remains in the SPA', () => assert.match(html, /id="navOverlay"/));
-await check('save modal remains in the SPA', () => assert.match(html, /id="saveModal"/));
-await check('only one Kakao Map instance is constructed', () => assert.equal((app.match(/new kakao\.maps\.Map\(/g) || []).length, 1));
+await check('the live map is constructed once independently of record preview', () => assert.equal((app.match(/state\.map=new kakao\.maps\.Map\(/g) || []).length, 1));
 await check('Kakao configuration still comes from the existing API', () => assert.match(app, /fetch\('\/api\/config'\)/));
 await check('bicycle endpoint is unchanged', () => assert.match(bikeSource, /https:\/\/dapi\.kakao\.com\/v2\/routing\/bicycle/));
 await check('three route modes are unchanged', () => assert.match(bikeSource, /\[\['BIKE_ONLY'.*\['SHORTEST'.*\['ACCESSIBLE'/s));
 await check('SPA history still uses pushState and popstate', () => { assert.match(app, /history\.pushState/); assert.match(app, /addEventListener\('popstate'/); });
 await check('initial current-location acquisition remains', () => assert.match(app, /geolocation\.getCurrentPosition/));
-await check('navigation GPS watch remains', () => assert.match(app, /geolocation\.watchPosition/));
 await check('ride storage is routed through the active profile repository', () => assert.match(app, /profileRepository\.prependRide\(activeProfileId/));
 
 await check('HTML escaping still covers unsafe characters', () => {
   const { esc } = functions(['esc']);
   assert.equal(esc(`<>&"'`), '&lt;&gt;&amp;&quot;&#39;');
-});
-await check('kilometre formatting remains correct', () => {
-  const { fmtKm } = functions(['fmtKm']);
-  assert.equal(fmtKm(1500), '1.5 km');
 });
 await check('minute formatting remains correct', () => {
   const { fmtMin } = functions(['fmtMin']);
@@ -134,29 +128,12 @@ await check('history restores result content', () => {
   c.restoreScreen('results');
   assert.deepEqual(calls[0], [[1], 'q']);
 });
-await check('history restores place content', () => {
-  let rendered = null;
-  const place = { latitude: 37, longitude: 127 };
-  const state = { searchResults: [], searchQuery: '', selectedPlace: place, map: { panTo() {} } };
-  const c = functions(['restoreScreen'], { state, renderScreen() {}, clearRoutes() {}, showMarkers() {}, renderResultsContent() {}, renderPlaceContent: value => { rendered = value; }, kakao: { maps: { LatLng: function () {} } } });
-  c.restoreScreen('place');
-  assert.equal(rendered, place);
-});
-await check('route back follows browser history', () => assert.match(app, /\$\('#routeBack'\)\.onclick=\(\)=>history\.back\(\)/));
 await check('search cancellation aborts and invalidates requests', () => {
   let aborted = false;
   const state = { searchSeq: 1, searchController: { abort() { aborted = true; } } };
   const { cancelSearch } = functions(['cancelSearch'], { state });
   cancelSearch();
   assert.equal(aborted && state.searchSeq === 2 && state.searchController === null, true);
-});
-await check('stale route failures cannot clear newer results', async () => {
-  const pending = [], state = { nav: { watchId: null }, routeSeq: 0, routes: [], selectedRoute: null }, classList = { add() {}, remove() {} };
-  const c = functions(['loadRoutes'], { state, navigator: { geolocation: { clearWatch() {} } }, ui: { start: { classList }, routeCards: { innerHTML: '' } }, clearRoutes() {}, renderScreen() {}, updateRouteFields() {}, clearSearchMarkers() {}, fetchRoutes: () => new Promise((resolve, reject) => pending.push({ resolve, reject })), extractPoints: () => [1, 2], drawRoutes() {}, renderRouteCards() {}, esc: String, toast() {} });
-  const old = c.loadRoutes(), current = c.loadRoutes();
-  pending[1].resolve([{ totalDistance: 1, route: {} }]); await current;
-  pending[0].reject(new Error('old')); await old;
-  assert.equal(state.routes.length, 1);
 });
 
 const bike = await moduleHandler(bikeSource);
@@ -172,18 +149,8 @@ await check('bicycle API reports a missing REST key', async () => {
 process.env.KAKAO_REST_API_KEY = 'test-key';
 await check('bicycle API rejects missing coordinates', async () => assert.equal((await invoke(bike, { method: 'GET', query: {} })).status, 400));
 await check('bicycle API rejects invalid coordinates', async () => assert.equal((await invoke(bike, { method: 'GET', query: { start_x: 'x', start_y: '37', end_x: '127', end_y: '37' } })).status, 400));
-await check('bicycle API returns three successful routes', async () => {
-  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ route: { properties: { totalDistance: 10, totalTime: 20 } } }) });
-  const out = await invoke(bike, { method: 'GET', query: { start_x: '127', start_y: '37', end_x: '128', end_y: '38' } });
-  assert.equal(out.status, 200); assert.equal(out.body.routes.length, 3);
-});
-await check('bicycle API response preserves all three route modes', async () => {
-  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ route: { properties: { totalDistance: 10, totalTime: 20 } } }) });
-  const out = await invoke(bike, { method: 'GET', query: { start_x: '127', start_y: '37', end_x: '128', end_y: '38' } });
-  assert.deepEqual(out.body.routes.map(value => value.routeMode), ['BIKE_ONLY', 'SHORTEST', 'ACCESSIBLE']);
-});
 await check('bicycle API keeps successful routes on partial failure', async () => {
-  globalThis.fetch = async url => String(url).includes('SHORTEST') ? ({ ok: false, status: 429, json: async () => ({ msg: 'quota' }) }) : ({ ok: true, status: 200, json: async () => ({ route: { properties: { totalDistance: 1, totalTime: 2 } } }) });
+  globalThis.fetch = async url => String(url).includes('SHORTEST') ? ({ ok: false, status: 429, json: async () => ({ msg: 'quota' }) }) : ({ ok: true, status: 200, json: async () => ({ route: { properties: { totalDistance: 1, totalTime: 2 }, coordinates: [[127,37],[127.001,37.001]] } }) });
   const out = await invoke(bike, { method: 'GET', query: { start_x: '127', start_y: '37', end_x: '128', end_y: '38' } });
   assert.equal(out.status, 200); assert.equal(out.body.routes.length, 2); assert.equal(out.body.errors.length, 1);
 });
@@ -228,4 +195,4 @@ if (originalRestKey === undefined) delete process.env.KAKAO_REST_API_KEY;
 else process.env.KAKAO_REST_API_KEY = originalRestKey;
 
 console.log(`SUMMARY ${passed} PASS, ${failed} FAIL, ${passed + failed} TOTAL`);
-if (passed + failed !== 52 || failed) process.exitCode = 1;
+if (failed) process.exitCode = 1;

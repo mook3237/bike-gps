@@ -272,12 +272,16 @@
       return Array.isArray(data.rides) ? data.rides.slice() : [];
     }
 
-    function prependRacing(profileId, record) {
+    function prependRacing(profileId, record, { sameCourse } = {}) {
       const store = ensureStore();
       if (!store.dataByProfileId[profileId]) throw new Error('프로필을 찾을 수 없습니다.');
       const next = clone(store);
       const racing = Array.isArray(next.dataByProfileId[profileId].racing) ? next.dataByProfileId[profileId].racing : [];
-      next.dataByProfileId[profileId].racing = [clone(record), ...racing];
+      const comparable = typeof sameCourse === 'function' ? racing.filter(saved => sameCourse(saved, record)) : [];
+      if (comparable.some(saved => saved.completed !== false && Number(saved.movingTime) > 0 && Number(saved.movingTime) <= Number(record.movingTime))) {
+        throw new Error('기존 최고 기록을 이긴 기록만 저장할 수 있습니다.');
+      }
+      next.dataByProfileId[profileId].racing = [clone(record), ...racing.filter(saved => !comparable.includes(saved))];
       persist(next);
       return clone(next.dataByProfileId[profileId].racing);
     }

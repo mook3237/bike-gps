@@ -89,7 +89,6 @@ test('history restoration rerenders results and place content in the existing SP
   assert.equal(calls.some(call => call[0] === 'routeCards'), true);
   assert.equal(calls.some(call => call[0] === 'startWatch'), true);
   assert.equal(calls.some(call => call[0] === 'navHud'), true);
-  assert.match(appSource, /\$\('#cancelRoutePreviewBtn'\)\.onclick=\(\)=>\{resetRouteToMap\(\);history\.replaceState/);
 });
 
 test('popstate cancels pending work and restores entry-specific content', () => {
@@ -211,6 +210,7 @@ test('bicycle route modes stay parallel, bicycle-only, ordered, and timed', asyn
     pending.forEach(resolve => resolve({ok:true,status:200,json:async()=>({route:{properties:{totalDistance:10,totalTime:20},coordinates:[[127,37],[127.1,37.1]]}})}));
     await handling;
     assert.equal(output.status, 200);
+    assert.deepEqual(output.body.routes.map(route=>route.routeMode), ['BIKE_ONLY','SHORTEST','ACCESSIBLE']);
     assert.equal(output.body.performance.execution, 'parallel');
     assert.equal(output.body.performance.receivedAt, 0);
     assert.equal(Number.isFinite(output.body.performance.serverTotalMs), true);

@@ -117,6 +117,12 @@ test('display formatters convert values without mutating meter or meter-per-seco
   assert.equal(metersPerSecond, 10);
 });
 
+test('metric distance switches from meters to kilometers with one decimal place', () => {
+  for (const [meters, expected] of [[0,'0 m'],[999,'999 m'],[1000,'1.0 km'],[1250,'1.3 km'],[10000,'10.0 km'],[12345,'12.3 km']]) {
+    assert.equal(foundation.formatDistance(meters,'km'),expected);
+  }
+});
+
 test('clock formatter supports device, 12-hour and 24-hour preferences', () => {
   assert.ok(foundation, 'settings-foundation.js must exist');
   const date = new Date('2026-10-04T13:05:00Z');

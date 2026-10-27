@@ -202,6 +202,7 @@
         <main class="app-settings-content">
           <div id="recordsList"></div>
           <section id="recordDetail" class="record-detail hidden" aria-live="polite"></section>
+          <div id="recordRouteMap" class="record-route-map hidden" role="region" aria-label="저장한 주행 경로 지도"></div>
         </main>
       </section>
 
@@ -215,10 +216,10 @@
         <div class="riding-board-body">
           <div class="riding-summary" aria-label="주행 요약">
             <article>
-              <div><small>주행 시간</small><strong id="ridingTimeValue">00:00:00</strong></div>
+              <div><small>주행 시간</small><strong id="ridingTimeValue">0초</strong></div>
             </article>
             <article>
-              <div><small>거리</small><strong id="ridingDistanceValue"><span class="riding-number">0.0</span><span class="riding-unit">km</span></strong></div>
+              <div><small>거리</small><strong id="ridingDistanceValue"><span class="riding-number">0</span><span class="riding-unit">m</span></strong></div>
             </article>
           </div>
 
@@ -496,7 +497,7 @@
           <p id="rideResultPrompt" class="ride-result-prompt">현재 기록을 저장하시겠습니까?</p>
           <div class="ride-result-actions">
             <button id="saveResultRacingBtn" class="ride-result-action primary-btn" type="button"><b>레이싱 기록 저장</b><small>유효한 최초 기록 또는 최고 기록을 GPS 경로와 함께 저장합니다.</small></button>
-            <button id="saveResultRideBtn" class="ride-result-action secondary-btn" type="button"><b>일반 기록 저장</b><small>주행 요약만 저장하며 GPS 경로는 저장하지 않습니다.</small></button>
+            <button id="saveResultRideBtn" class="ride-result-action secondary-btn" type="button"><b>일반 기록 저장</b><small>이동 경로를 지도에서 다시 볼 수 있도록 저장합니다.</small></button>
             <button id="discardResultBtn" class="ride-result-action secondary-btn" type="button"><b>저장 안 함</b><small>이번 주행을 저장하지 않고 종료합니다.</small></button>
           </div>
         </div>
@@ -507,7 +508,8 @@
           <h2 id="racingSaveDecisionTitle">레이싱을 완료했습니다!</h2>
           <p id="racingSaveDecisionMessage">목적지에 도착했습니다.<br>기록을 저장하시겠습니까?</p>
           <div class="racing-decision-actions">
-            <button id="saveFrozenRacingBtn" class="primary-btn" type="button">저장</button>
+            <button id="saveFrozenRacingBtn" class="primary-btn" type="button">레이싱 기록 저장</button>
+            <button id="saveFrozenRideBtn" class="secondary-btn" type="button">일반 기록 저장</button>
             <button id="discardFrozenRacingBtn" class="secondary-btn" type="button">저장 안 함</button>
           </div>
         </div>

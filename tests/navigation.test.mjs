@@ -97,14 +97,14 @@ test('Navigation marker is a heading arrow and saved summary includes speed metr
   assert.match(css, /\.gps-arrow/);
   assert.match(app, /averageSpeed/);
   assert.match(app, /maxSpeed/);
-  assert.match(html, /id="summaryAverageSpeed"/);
-  assert.match(html, /id="summaryMaxSpeed"/);
+  assert.match(html, /id="resultAverageSpeed"/);
+  assert.match(html, /id="resultMaxSpeed"/);
 });
 
-test('Kakao bicycle contract and the single-map architecture stay unchanged', () => {
+test('Kakao bicycle contract and the shared live map stay unchanged', () => {
   assert.match(api, /https:\/\/dapi\.kakao\.com\/v2\/routing\/bicycle/);
   assert.match(api, /\[\['BIKE_ONLY'.*\['SHORTEST'.*\['ACCESSIBLE'/s);
-  assert.equal((app.match(/new kakao\.maps\.Map\(/g) || []).length, 1);
+  assert.equal((app.match(/state\.map=new kakao\.maps\.Map\(/g) || []).length, 1);
 });
 
 test('Navigation JavaScript references existing Navigation DOM elements', () => {

@@ -276,8 +276,8 @@ test('structured maneuver conflict is retained and geometry controls left or rig
 test('voice announces genuine turns only when route progress crosses 300m and 50m once', () => {
   const { context } = loadApp();
   const spoken = vm.runInContext(`(()=>{
-    testSpoken=[];SpeechSynthesisUtterance=function(text){this.text=text};window.SpeechSynthesisUtterance=SpeechSynthesisUtterance;
-    window.speechSynthesis={cancel(){},speak(utterance){testSpoken.push(utterance.text)}};
+    testSpoken=[];SpeechSynthesisUtterance=function(text){this.text=text;this.rate=1;this.pitch=1;this.volume=1};window.SpeechSynthesisUtterance=SpeechSynthesisUtterance;
+    window.speechSynthesis={cancel(){},speak(utterance){testSpoken.push({text:utterance.text,lang:utterance.lang,rate:utterance.rate,pitch:utterance.pitch,volume:utterance.volume,voiceAssigned:Object.hasOwn(utterance,'voice')})}};
     state.nav.steps=[
       {_endAlong:500,_resolvedManeuver:'직진'},
       {_endAlong:1000,_resolvedManeuver:'좌회전'},
@@ -291,8 +291,8 @@ test('voice announces genuine turns only when route progress crosses 300m and 50
     return testSpoken;
   })()`, context);
   assert.deepEqual(JSON.parse(JSON.stringify(spoken)),[
-    '300미터 앞에서 좌회전입니다.',
-    '잠시 후 좌회전입니다.',
+    {text:'300미터 앞에서 좌회전입니다.',lang:'ko-KR',rate:1,pitch:1,volume:1,voiceAssigned:false},
+    {text:'잠시 후 좌회전입니다.',lang:'ko-KR',rate:1,pitch:1,volume:1,voiceAssigned:false},
   ]);
 });
 
@@ -568,7 +568,7 @@ test('route selection keeps every returned polyline and emphasizes only the sele
   assert.equal(vm.runInContext('state.routeLines.length', context), 2);
   vm.runInContext('selectRoute(1)', context);
   assert.equal(vm.runInContext("state.routeLines[0].options.strokeColor", context), '#98a7b8');
-  assert.equal(vm.runInContext("state.routeLines[1].options.strokeColor", context), '#0878f9');
+  assert.equal(vm.runInContext("state.routeLines[1].options.strokeColor", context), '#0a84ff');
 });
 
 test('stationary plausible GPS speed remains live but does not pollute authoritative max speed', () => {
@@ -787,7 +787,7 @@ test('six: viewport metrics include the visual viewport bottom obstruction', () 
   context.testViewport = { height: 700, offsetTop: 20 };
   assert.deepEqual(
     JSON.parse(vm.runInContext('JSON.stringify(viewportMetrics(testViewport, 800))', context)),
-    { width:390, height: 700, bottom: 80 },
+    { width:390, height: 700, offsetTop: 20, bottom: 80 },
   );
   context.window.innerHeight = 800;
   context.window.visualViewport = context.testViewport;
@@ -846,7 +846,7 @@ test('route overview refits when route card selection changes', () => {
   `,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
     afterFit:{bounds:1,levels:0,centers:0,pans:0},afterCards:{bounds:4,levels:0,centers:0,pans:0},
-    colors:['#0878f9','#98a7b8','#98a7b8'],weights:[8,5,5]
+    colors:['#0a84ff','#98a7b8','#98a7b8'],weights:[8,5,5]
   });
 });
 
@@ -904,7 +904,8 @@ test('six: route request preserves ordered waypoints up to five', async () => {
 });
 
 test('route performance reports every requested browser and Kakao timing in console only', async () => {
-  const { context, routeLogs } = loadApp();
+  const { context, routeLogs, localStorage } = loadApp();
+  localStorage.setItem('ridemate_diagnostics', '1');
   context.testResponse = {
     routes: [{routeMode:'BIKE_ONLY'}],
     performance: {
@@ -965,7 +966,7 @@ test('route performance identifies the largest non-overlapping share of TOTAL', 
   assert.equal(record.summary.largest.label, 'Network/API total');
   assert.equal(record.summary.largest.durationMs, 100);
   assert.ok(Math.abs(record.summary.largest.percent - (100 / 135 * 100)) < 0.01);
-  assert.match(routeLogs.join('\n'), /Largest share: Network\/API total: 100\.0 ms \(74\.1%\)/);
+  assert.deepEqual(routeLogs, [], 'diagnostics stay silent by default while measurements remain available');
 });
 
 test('six: destination marker uses the selected route geometry endpoint', () => {

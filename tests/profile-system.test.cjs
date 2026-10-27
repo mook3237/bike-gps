@@ -380,3 +380,25 @@ test('profile controller enters the map only after explicit selection and keeps 
   assert.equal(mapStarts, 1);
   assert.equal(mapShows, 1);
 });
+
+
+test('best racing replacement is atomic, retains full GPS, and isolates courses and profiles', () => {
+  const backing=memoryStorage();let fail=false;
+  const storage={...backing,setItem(key,value){if(fail)throw new Error('quota');backing.setItem(key,value)}};
+  const repo=repository(storage);repo.initialize();repo.addProfile('second');
+  const sameCourse=(a,b)=>a.courseId===b.courseId;
+  const old={courseId:'A',completed:true,movingTime:10000,route:[{latitude:37,longitude:127}],detailedSamples:[{timestamp:1000,accuracy:3}]};
+  repo.prependRacing('profile-dad',old);repo.prependRacing('profile-dad',{...old,courseId:'B'});repo.prependRacing('profile-new',old);
+  const better={...old,movingTime:9000,detailedSamples:[{timestamp:1000,accuracy:3},{timestamp:2000,accuracy:80}]};
+  const before=repo.readRacing('profile-dad');fail=true;
+  assert.throws(()=>repo.prependRacing('profile-dad',better,{sameCourse}),/quota/);
+  assert.deepEqual(repo.readRacing('profile-dad'),before);
+  fail=false;repo.prependRacing('profile-dad',better,{sameCourse});
+  const saved=repo.readRacing('profile-dad');
+  assert.deepEqual(saved.map(record=>record.courseId),['A','B']);
+  assert.deepEqual(saved[0].detailedSamples,better.detailedSamples);
+  assert.equal(repo.readRacing('profile-new')[0].movingTime,10000);
+  assert.throws(()=>repo.prependRacing('profile-dad',old,{sameCourse}));
+  assert.throws(()=>repo.prependRacing('profile-dad',better,{sameCourse}));
+  assert.deepEqual(repo.readRacing('profile-dad'),saved);
+});

@@ -53,6 +53,85 @@ test('constant-speed target progresses along the route in canonical units', () =
   assert.equal(snapshot.status, 'ahead');
 });
 
+test('round trip start matches the outbound leg when the return leg is closer', () => {
+  const route = [metersPoint2D(0, 0), metersPoint2D(900, 0), metersPoint2D(0, 10)];
+  const race = Racing.createRaceSession({ route, target: Racing.createTargetSpeedTarget(5) });
+  const start = Racing.updateRace(race, {
+    currentPosition: metersPoint2D(0, 10),
+    currentMovingTime: 0,
+    currentProgressLimit: 900,
+  });
+  assert.ok(start.currentRouteProgress < 20);
+  assert.ok(start.distanceDifference < 20);
+});
+
+test('race preparation starts both riders at the real GPS and rebases only the outbound prefix', () => {
+  const route=[metersPoint2D(0,0),metersPoint2D(1000,0),metersPoint2D(0,10)];
+  const before=JSON.stringify(route),position=metersPoint2D(100,9);
+  const prepared=Racing.prepareRaceStart(route,Racing.createTargetSpeedTarget(5),position,1000);
+  assert.deepEqual(prepared.route[0],position);
+  assert.ok(prepared.progressShift>80&&prepared.progressShift<110);
+  assert.deepEqual(prepared.route.at(-1),route.at(-1));
+  const session=Racing.createRaceSession(prepared);
+  const snapshot=Racing.updateRace(session,{currentPosition:position,currentMovingTime:0,currentProgressLimit:0});
+  assert.deepEqual(snapshot.targetPosition,position);
+  assert.equal(snapshot.currentRouteProgress,0);
+  assert.equal(snapshot.targetRouteProgress,0);
+  assert.equal(snapshot.distanceDifference,0);
+  assert.equal(JSON.stringify(route),before);
+});
+
+test('saved target start rebases historical time and distance without editing the saved record', () => {
+  const record=savedRideTargetRecord(),before=JSON.stringify(record);
+  const target=Racing.createSavedRideTarget(record);
+  const prepared=Racing.prepareRaceStart(record.route,target,metersPoint(50));
+  const session=Racing.createRaceSession(prepared);
+  const start=Racing.updateRace(session,{currentProgressDistance:0,currentMovingTime:0});
+  const later=Racing.updateRace(session,{currentProgressDistance:0,currentMovingTime:10000});
+  assert.equal(start.targetRouteProgress,0);
+  assert.deepEqual(start.targetPosition,metersPoint(50));
+  assert.ok(Math.abs(later.targetRouteProgress-75)<0.2);
+  assert.ok(Math.abs(prepared.target.movingTime-25000)<1);
+  assert.equal(JSON.stringify(record),before);
+});
+
+test('round trip phase bounds clip matching inside a segment and keep both riders on the full 2000m course', () => {
+  const route = [0, 1000, 0].map(metersPoint);
+  const race = Racing.createRaceSession({ route, target: Racing.createTargetSpeedTarget(5) });
+  const observe = (meters, time, options) => Racing.updateRace(race, {
+    currentPosition: metersPoint(meters), currentMovingTime: time,
+    currentTimestamp: time, currentAccuracy: 3, ...options,
+  });
+  assert.equal(observe(10, 0, { currentProgressLimit: 0 }).currentRouteProgress, 0);
+  let outbound;
+  for (let meters = 100; meters <= 500; meters += 100) outbound = observe(meters, meters * 200, { currentProgressLimit: 1000 });
+  assert.ok(Math.abs(outbound.currentRouteProgress - 500) < 0.01);
+  assert.ok(Math.abs(outbound.targetRouteProgress - 500) < 0.01);
+  for (let meters = 600; meters <= 1000; meters += 100) observe(meters, meters * 200, { currentProgressLimit: 1000 });
+  let returning;
+  for (let meters = 900; meters >= 500; meters -= 100) returning = observe(meters, (2000 - meters) * 200, { minimumCurrentProgress: 1000 });
+  assert.ok(Math.abs(returning.currentRouteProgress - 1500) < 0.01);
+  assert.ok(Math.abs(returning.targetRouteProgress - 1500) < 0.01);
+  let finish;
+  for (let meters = 400; meters >= 0; meters -= 100) finish = observe(meters, (2000 - meters) * 200, { minimumCurrentProgress: 1000 });
+  assert.ok(Math.abs(finish.currentRouteProgress - 2000) < 0.01);
+  assert.ok(Math.abs(finish.targetRouteProgress - 2000) < 0.01);
+  for (const [time, sign] of [[350000, 1], [450000, -1]]) {
+    const contender = Racing.createRaceSession({ route, target: Racing.createTargetSpeedTarget(5) });
+    const result = Racing.updateRace(contender, { currentProgressDistance: contender.routeDistance, currentMovingTime: time });
+    assert.equal(Math.sign(result.timeDifference), sign);
+  }
+});
+
+test('virtual rider heading follows north outbound and south return including the finish', () => {
+  const route = [metersPoint2D(0, 0), metersPoint2D(0, 1000), metersPoint2D(0, 0)];
+  const race = Racing.createRaceSession({ route, target: Racing.createTargetSpeedTarget(5) });
+  for (const [time, heading] of [[0, 0], [100000, 0], [300000, 180], [400001, 180]]) {
+    const snapshot = Racing.updateRace(race, { currentProgressDistance: 0, currentMovingTime: time });
+    assert.ok(Math.abs(snapshot.targetHeading - heading) < 0.01);
+  }
+});
+
 test('GPS map matching advances through the return leg of an out-and-back route', () => {
   const route = [0, 100, 200, 100, 0].map(metersPoint);
   const race = Racing.createRaceSession({ route, target: Racing.createTargetSpeedTarget(5), currentMovingTime: 0 });

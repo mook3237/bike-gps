@@ -10,7 +10,8 @@
   function formatDistance(meters, unit = 'km') {
     const value = Math.max(0, Number(meters) || 0);
     if (unit === 'mi') return `${(value / METER_PER_MILE).toFixed(value >= METER_PER_MILE * 10 ? 0 : 1)} mi`;
-    return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)} km`;
+    const rounded = Math.round(value);
+    return rounded < 1000 ? `${rounded} m` : `${(value / 1000).toFixed(1)} km`;
   }
 
   function formatSpeed(metersPerSecond, unit = 'km') {

@@ -71,19 +71,29 @@
     if (!Array.isArray(route) || route.length < 2 || !validPoint(position)) {
       return { alongDistance: 0, totalDistance: 0, offRouteDistance: Infinity, projectedPoint: null, progressAccepted: false };
     }
+    // Restrict the route to the active leg before comparing GPS proximity.
+    const totalDistance = routeDistance(route);
+    const minimumAlong = finite(options.minimumAlong) ? Math.max(0, Math.min(totalDistance, options.minimumAlong)) : 0;
+    const maximumAlong = finite(options.maximumAlong) ? Math.max(minimumAlong, Math.min(totalDistance, options.maximumAlong)) : totalDistance;
     let walked = 0;
     const candidates = [];
     for (let index = 1; index < route.length; index += 1) {
       const start = route[index - 1];
       const end = route[index];
       const segment = distanceBetween(start, end);
+      if (walked + segment < minimumAlong || walked > maximumAlong) {
+        walked += segment;
+        continue;
+      }
       const latitudeScale = Math.cos(((start.latitude + end.latitude + position.latitude) / 3) * Math.PI / 180);
       const vectorX = (end.longitude - start.longitude) * latitudeScale;
       const vectorY = end.latitude - start.latitude;
       const pointX = (position.longitude - start.longitude) * latitudeScale;
       const pointY = position.latitude - start.latitude;
       const denominator = vectorX * vectorX + vectorY * vectorY;
-      const ratio = denominator ? Math.max(0, Math.min(1, (pointX * vectorX + pointY * vectorY) / denominator)) : 0;
+      const minimumRatio = segment > 0 ? Math.max(0, (minimumAlong - walked) / segment) : 0;
+      const maximumRatio = segment > 0 ? Math.min(1, (maximumAlong - walked) / segment) : 0;
+      const ratio = denominator ? Math.max(minimumRatio, Math.min(maximumRatio, (pointX * vectorX + pointY * vectorY) / denominator)) : 0;
       const projected = {
         latitude: start.latitude + (end.latitude - start.latitude) * ratio,
         longitude: start.longitude + (end.longitude - start.longitude) * ratio,
@@ -104,9 +114,7 @@
     const spatialAllowance = Math.max(3, accuracy * 0.75);
     let spatialCandidates = candidates.filter(candidate => candidate.offRouteDistance <= nearestDistance + spatialAllowance);
     const previousAlong = finite(options.previousAlong) ? options.previousAlong : null;
-    const minimumAlong = finite(options.minimumAlong) ? Math.max(0, options.minimumAlong) : null;
     const previousPosition = validPoint(options.previousPosition) ? options.previousPosition : null;
-    if (minimumAlong != null) spatialCandidates = spatialCandidates.filter(candidate => candidate.alongDistance >= minimumAlong - 1);
     let expectedMovement = 0;
     let movementBearing = null;
     let movementLimit = Infinity;
@@ -271,6 +279,42 @@
     return samples.at(-1).movingTime;
   }
 
+  function prepareRaceStart(route, target, position, maximumProgress) {
+    if (!validPoint(position)) throw new TypeError('valid start GPS required');
+    const total = routeDistance(route);
+    const projection = projectOnRoute(route, position, { maximumAlong: maximumProgress });
+    const tail = raceRoutePath({ route, routeDistance: total, progressBase: 0 }, projection.alongDistance);
+    tail[tail.length - 1] = { latitude: route.at(-1).latitude, longitude: route.at(-1).longitude };
+    const connector = distanceBetween(position, tail[0]);
+    const startedRoute = [{ latitude: position.latitude, longitude: position.longitude }, ...tail.slice(connector < 0.01 ? 1 : 0)];
+    const distance = routeDistance(startedRoute);
+    if (startedRoute.length < 2 || distance < 1) throw new TypeError('race requires a remaining course');
+    let startedTarget = target;
+    if (target.type === SAVED_RIDE) {
+      let walked = 0;
+      let startDistance = 0;
+      for (let index = 1; index < route.length; index += 1) {
+        const segment = distanceBetween(route[index - 1], route[index]);
+        if (projection.alongDistance <= walked + segment) {
+          const ratio = segment > 0 ? (projection.alongDistance - walked) / segment : 0;
+          startDistance = target.samples[index - 1].distance + (target.samples[index].distance - target.samples[index - 1].distance) * ratio;
+          break;
+        }
+        walked += segment;
+      }
+      const startTime = targetTimeAtProgress(target, startDistance);
+      const remaining = target.distance - startDistance;
+      if (remaining <= 0) throw new TypeError('saved target has no remaining course');
+      const samples = [{ ...target.samples[0], ...position, distance: 0, movingTime: 0 },
+        ...target.samples.filter(sample => sample.distance > startDistance).map(sample => ({
+          ...sample, distance: (sample.distance - startDistance) * distance / remaining,
+          movingTime: Math.max(0, sample.movingTime - startTime),
+        }))];
+      startedTarget = { ...target, samples, distance, movingTime: samples.at(-1).movingTime };
+    }
+    return { route: startedRoute, target: startedTarget, distance, progressShift: projection.alongDistance - connector };
+  }
+
   function createRaceSession({ route, target, currentMovingTime = 0 } = {}) {
     if (!Array.isArray(route) || route.length < 2 || !route.every(validPoint)) throw new TypeError('race route requires at least two valid points');
     if (!target || ![SAVED_RIDE, TARGET_SPEED].includes(target.type)) throw new TypeError('valid Racing target required');
@@ -314,6 +358,41 @@
       : pointAtRouteDistance(session.route, targetProgress - (session.progressBase || 0));
   }
 
+  function targetStateAtProgress(session, progress) {
+    const targetRouteProgress = Math.max(0, Math.min((session.progressBase || 0) + session.routeDistance, progress));
+    const targetPosition = targetPositionAtProgress(session, targetRouteProgress);
+    const next = targetPositionAtProgress(session, targetRouteProgress + 1);
+    const targetHeading = distanceBetween(targetPosition, next) > 0.01
+      ? routeBearing(targetPosition, next)
+      : routeBearing(targetPositionAtProgress(session, Math.max(0, targetRouteProgress - 1)), targetPosition);
+    return { targetRouteProgress, targetPosition, targetHeading };
+  }
+
+  // A trailing target can still occupy a preserved segment after a reroute.
+  function raceRoutePath(session, fromProgress = 0) {
+    const activeStart = finite(session.activeRouteStartProgress) ? session.activeRouteStartProgress : session.progressBase || 0;
+    const points = [];
+    const sections = [...(session.routeVersions || []), {
+      route: session.route, progressBase: session.progressBase || 0,
+      activeStartProgress: activeStart, endProgress: (session.progressBase || 0) + session.routeDistance,
+    }];
+    for (const section of sections) {
+      const start = Math.max(fromProgress, section.activeStartProgress);
+      const end = section.endProgress;
+      if (!finite(start) || !finite(end) || end <= start) continue;
+      const localStart = start - section.progressBase;
+      const localEnd = end - section.progressBase;
+      points.push(pointAtRouteDistance(section.route, localStart));
+      let walked = 0;
+      for (let index = 1; index < section.route.length; index += 1) {
+        walked += distanceBetween(section.route[index - 1], section.route[index]);
+        if (walked > localStart && walked < localEnd) points.push(section.route[index]);
+      }
+      points.push(pointAtRouteDistance(section.route, localEnd));
+    }
+    return points.length ? points : [session.route.at(-1)];
+  }
+
   function validRerouteBoundaries(boundaries) {
     if (!Array.isArray(boundaries) || boundaries.length < 2 || boundaries[0] !== 0) return false;
     return boundaries.every((value, index) => finite(value) && value >= 0 && (index === 0 || value > boundaries[index - 1]));
@@ -353,6 +432,9 @@
         minimumAlong: finite(observation.minimumCurrentProgress)
           ? Math.max(0, observation.minimumCurrentProgress - (finite(session.progressBase) ? session.progressBase : 0))
           : null,
+        maximumAlong: finite(observation.currentProgressLimit)
+          ? Math.max(0, observation.currentProgressLimit - (finite(session.progressBase) ? session.progressBase : 0))
+          : null,
         timestamp: observation.currentTimestamp,
         accuracy: observation.currentAccuracy ?? observation.currentPosition?.accuracy,
         speedMps: observation.currentSpeedMps,
@@ -387,6 +469,7 @@
     const historicalTimeAtCurrentProgress = targetTimeAtProgress(session.target, Math.max(0, currentRouteProgress - (session.targetProgressOffset || 0)));
     const timeDifference = historicalTimeAtCurrentProgress - session.raceElapsedTime;
     const activeRouteStartProgress = finite(session.activeRouteStartProgress) ? session.activeRouteStartProgress : routeStartProgress;
+    const { targetPosition, targetHeading } = targetStateAtProgress(session, targetRouteProgress);
     return {
       currentRouteProgress,
       targetRouteProgress,
@@ -394,7 +477,8 @@
       timeDifference,
       historicalTimeAtCurrentProgress,
       status: distanceDifference > 0 ? 'ahead' : distanceDifference < 0 ? 'behind' : 'even',
-      targetPosition: targetPositionAtProgress(session, targetRouteProgress),
+      targetPosition,
+      targetHeading,
       targetBeforeRouteStart: Math.max(0, activeRouteStartProgress - targetRouteProgress),
       offRouteDistance: projected?.offRouteDistance ?? 0,
       projectedPosition: projected?.projectedPoint || null,
@@ -472,10 +556,13 @@
     createSavedRideTarget,
     createTargetSpeedTarget,
     pointAtRouteDistance,
+    prepareRaceStart,
     projectOnRoute,
+    raceRoutePath,
     rebaseRaceRoute,
     targetProgressAtTime,
     targetTimeAtProgress,
+    targetStateAtProgress,
     updateRace,
   };
 });

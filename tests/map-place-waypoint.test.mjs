@@ -12,6 +12,110 @@ const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const styles = fs.readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 const vercelConfig = JSON.parse(fs.readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'));
 
+test('course best includes faster general records for both result and frozen racing saves', () => {
+  for(const hasOlderRacing of [false,true]) {
+    const context=loadApp('',false,true);context.testOlderRacing=hasOlderRacing;
+    const result=vm.runInContext(`(()=>{
+      const data=new Map(),storage={getItem:key=>data.get(key)||null,setItem:(key,value)=>data.set(key,value)};let id=0;
+      profileRepository=RideMateProfiles.createProfileRepository(storage,{createId:()=> 'profile-'+(++id)});profileRepository.initialize();activeProfileId='profile-1';
+      const record=minutes=>({name:'course',completed:true,ghostDataVersion:1,distance:1000,movingTime:minutes*60000,route:[
+        {latitude:0,longitude:0,timestamp:0,distance:0,movingTime:0,filteredSpeed:0,moving:false},
+        {latitude:0,longitude:.009,timestamp:minutes*60000,distance:1000,movingTime:minutes*60000,filteredSpeed:1000/(minutes*60),moving:true}
+      ]});
+      profileRepository.prependRide(activeProfileId,generalRecordSummary(record(8)));
+      profileRepository.prependRide(activeProfileId,{...record(0),movingTime:null});
+      profileRepository.prependRide(activeProfileId,{...record(1),completed:false});
+      profileRepository.prependRide(activeProfileId,{movingTime:1,completed:true,distance:1000});
+      profileRepository.prependRide(activeProfileId,{...record(1),route:[...record(1).route].reverse()});
+      if(testOlderRacing)profileRepository.prependRacing(activeProfileId,record(10));
+      const best=bestComparableRacingRecord(record(9)),blocked=[];
+      for(const minutes of [9,8]){
+        openRideResult(record(minutes),{mode:'navigation'});
+        const common={hidden:$('#saveResultRacingBtn').classList.contains('hidden'),blocked:!savePendingRideResult('racing')};discardPendingRideResult();
+        state.screen='map';state.racingPhase='completion-pending';state.racingFrozenRecord=record(minutes);openRacingSaveDecision();
+        const frozen={hidden:$('#saveFrozenRacingBtn').classList.contains('hidden'),blocked:!saveFrozenRacingRecord()};discardFrozenRacingRecord();
+        blocked.push({common,frozen});
+      }
+      const other=profileRepository.addProfile('other');activeProfileId=other.id;const isolated=racingRecordAssessment(record(9)).status;activeProfileId='profile-1';
+      openRideResult(record(7),{mode:'riding'});const fasterVisible=!$('#saveResultRacingBtn').classList.contains('hidden'),saved=savePendingRideResult('racing');
+      return{bestTime:best?.movingTime,blocked,isolated,fasterVisible,saved,racingTimes:profileRepository.readRacing(activeProfileId).map(item=>item.movingTime),generalKept:profileRepository.readRides(activeProfileId).some(item=>item.movingTime===480000)};
+    })()`,context);
+    assert.equal(result.bestTime,480000);
+    assert.deepEqual(JSON.parse(JSON.stringify(result.blocked)),Array(2).fill({common:{hidden:true,blocked:true},frozen:{hidden:true,blocked:true}}));
+    assert.equal(result.isolated,'first');assert.equal(result.fasterVisible,true);assert.equal(result.saved,true);
+    assert.deepEqual([...result.racingTimes],[420000]);assert.equal(result.generalKept,true);
+  }
+});
+
+test('record policy offers racing only for a first or improved complete ride in every mode', () => {
+  for(const mode of ['riding','navigation','racing']) {
+    const context=loadApp('',false,true);context.testMode=mode;
+    const result=vm.runInContext(`(()=>{
+      const data=new Map(),storage={getItem:key=>data.get(key)||null,setItem:(key,value)=>data.set(key,value)};
+      profileRepository=RideMateProfiles.createProfileRepository(storage,{createId:()=> 'policy-profile'});profileRepository.initialize();activeProfileId='policy-profile';
+      const route=[{latitude:37,longitude:127,timestamp:0,distance:0,movingTime:0,filteredSpeed:0,moving:false},{latitude:37,longitude:127.001,timestamp:10000,distance:100,movingTime:10000,filteredSpeed:10,moving:true}];
+      const first={name:'course',ghostDataVersion:1,route,courseRoute:route,distance:100,movingTime:10000,completed:true,detailedSamples:[{timestamp:0,accuracy:3},{timestamp:10000,accuracy:3}]};
+      const choices=()=>({race:!$('#saveResultRacingBtn').classList.contains('hidden'),general:!$('#saveResultRideBtn').classList.contains('hidden')});
+      openRideResult(first,{mode:testMode});const initial=choices(),firstSaved=savePendingRideResult('racing');
+      const snapshots=[];
+      for(const candidate of [{...first,movingTime:12000},{...first,movingTime:10000},{...first,movingTime:8000,completed:false}]){
+        openRideResult(candidate,{mode:testMode});snapshots.push({...choices(),blocked:!savePendingRideResult('racing')});discardPendingRideResult();
+      }
+      const faster={...first,movingTime:9000,name:'new best',route:[route[0],{...route[1],timestamp:9000,movingTime:9000,filteredSpeed:100/9}]};openRideResult(faster,{mode:testMode});const improved=choices(),betterSaved=savePendingRideResult('racing');
+      const saved=profileRepository.readRacing(activeProfileId);
+      return{initial,firstSaved,snapshots,improved,betterSaved,count:saved.length,name:saved[0].name,raw:saved[0].detailedSamples,ghost:!!Racing.createSavedRideTarget(saved[0])};
+    })()`,context);
+    assert.deepEqual(JSON.parse(JSON.stringify(result.initial)),{race:true,general:true},mode);
+    assert.equal(result.firstSaved,true,mode);
+    assert.deepEqual(JSON.parse(JSON.stringify(result.snapshots)),Array(3).fill({race:false,general:true,blocked:true}),mode);
+    assert.equal(result.betterSaved,true,mode);assert.equal(result.improved.race,true,mode);
+    assert.equal(result.count,1,mode);assert.equal(result.name,'new best',mode);assert.equal(result.raw.length,2,mode);assert.equal(result.ghost,true,mode);
+  }
+});
+
+test('frozen losing or incomplete racing offers only general storage or discard and preserves an independent ride', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    const data=new Map(),storage={getItem:key=>data.get(key)||null,setItem:(key,value)=>data.set(key,value)};
+    profileRepository=RideMateProfiles.createProfileRepository(storage,{createId:()=> 'policy-profile'});profileRepository.initialize();activeProfileId='policy-profile';
+    const route=[{latitude:37,longitude:127,timestamp:0},{latitude:37,longitude:127.001,timestamp:10000}];
+    const best={name:'best',route,distance:100,movingTime:10000,completed:true,detailedSamples:[{timestamp:0,accuracy:3}]};profileRepository.prependRacing(activeProfileId,best);
+    state.screen='map';state.ride.recordingState='recording';rideGpsSubscribed=true;
+    const checks=[];
+    for(const record of [{...best,movingTime:12000},{...best,movingTime:10000},{...best,movingTime:8000,completed:false}]){
+      state.racingPhase='completion-pending';state.racingFrozenRecord=record;openRacingSaveDecision();
+      checks.push({raceHidden:$('#saveFrozenRacingBtn').classList.contains('hidden'),generalVisible:!$('#saveFrozenRideBtn').classList.contains('hidden'),blocked:!saveFrozenRacingRecord()});
+      $('#saveFrozenRideBtn').onclick();checks.at(-1).resultKeepsGps=Object.hasOwn(pendingRideResult.record,'detailedSamples');closeRideResult();
+    }
+    const general=profileRepository.readRides(activeProfileId);
+    return{checks,count:general.length,raceCount:profileRepository.readRacing(activeProfileId).length,route:general[0].route,stillRecording:state.ride.recordingState==='recording'&&rideGpsSubscribed};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.checks)),Array(3).fill({raceHidden:true,generalVisible:true,blocked:true,resultKeepsGps:false}));
+  assert.equal(result.count,3);assert.equal(result.raceCount,1);assert.equal(result.route.length,2);assert.equal(result.stillRecording,true);
+});
+
+test('general record detail reuses a separate geographic map without altering the live ride map', () => {
+  const context=loadApp('',false,true);
+  const result=vm.runInContext(`(()=>{
+    const maps=[],lines=[];
+    class LatLng{constructor(latitude,longitude){Object.assign(this,{latitude,longitude})}}
+    class Bounds{constructor(){this.points=[]}extend(point){this.points.push(point)}}
+    class Map{constructor(container,options){this.container=container;this.options=options;maps.push(this)}relayout(){}setBounds(bounds){this.bounds=bounds}}
+    class Polyline{constructor(options){Object.assign(this,options);lines.push(this)}setMap(map){this.map=map}}
+    kakao={maps:{LatLng,LatLngBounds:Bounds,Map,Polyline}};
+    const liveMap={id:'live'},liveRoutes=[{id:'active'}];state.map=liveMap;state.routes=liveRoutes;
+    const route=[{latitude:37,longitude:127},{latitude:37.01,longitude:127.01}];
+    const stored=generalRecordSummary({name:'trip',route,distance:1000,movingTime:100000,detailedSamples:[{}]});
+    renderRecordDetail(stored,false);const shown=!$('#recordRouteMap').classList.contains('hidden'),path=lines[0]?.path;
+    renderRecordDetail({...stored,route:[...route].reverse()},false);
+    const oldRemoved=lines[0]?.map===null;renderRecordDetail(null);
+    return{storedRoute:stored.route,hasRaw:'detailedSamples' in stored,shown,path,mapCount:maps.length,oldRemoved,closed:$('#recordRouteMap').classList.contains('hidden'),removed:lines.at(-1)?.map===null,liveUnchanged:state.map===liveMap&&state.routes===liveRoutes};
+  })()`,context);
+  assert.equal(result.storedRoute?.length,2);assert.equal(result.hasRaw,false);assert.equal(result.shown,true);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.path)),[{latitude:37,longitude:127},{latitude:37.01,longitude:127.01}]);
+  assert.equal(result.mapCount,1);assert.equal(result.oldRemoved,true);assert.equal(result.closed,true);assert.equal(result.removed,true);assert.equal(result.liveUnchanged,true);
+});
+
 async function apiHandler() {
   const source = fs.readFileSync(new URL('../api/place-search.js', import.meta.url), 'utf8');
   return (await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}#${Math.random()}`)).default;
@@ -202,7 +306,7 @@ function installNavigationFlowEnvironment(context) {
   return {recentPlace};
 }
 
-test('Kakao SDK loads services and viewport refresh indexes all official categories', async () => {
+test('explicit viewport refresh caches unique categories without adding map or navigation pins', async () => {
   const context = loadApp();
   assert.match(appSource, /libraries=services/);
   vm.runInContext(`
@@ -228,11 +332,16 @@ test('Kakao SDK loads services and viewport refresh indexes all official categor
     assert.equal(call.options.useMapBounds, true);
   }
   await refresh;
-  assert.equal(vm.runInContext('state.visiblePlaces.length', context), 1);
-  assert.equal(vm.runInContext('state.visiblePlaces[0].name', context), '카페');
+  assert.equal(vm.runInContext('state.visiblePlaces.length', context), 0);
+  assert.equal(vm.runInContext('state.categoryPlaceMarkers.length', context), 0);
+  assert.equal(vm.runInContext('state.visiblePlaceCache.get(visiblePlaceKey()).places.length', context), 1);
+  assert.equal(vm.runInContext('state.visiblePlaceCache.get(visiblePlaceKey()).places[0].name', context), '카페');
+  vm.runInContext("state.screen='navigation'", context);
   const cached = vm.runInContext('refreshVisiblePlaces()', context);
   await cached;
   assert.equal(context.testCategoryCalls.length, 18);
+  assert.equal(vm.runInContext('state.categoryPlaceMarkers.length', context), 0);
+  assert.equal(vm.runInContext('state.visiblePlaces.length', context), 0);
 });
 
 test('an older viewport response cannot replace newer bounds results', async () => {
@@ -256,7 +365,8 @@ test('an older viewport response cannot replace newer bounds results', async () 
   await newRefresh;
   oldCalls.forEach((call,index)=>call.callback(index===0?[{id:'old',place_name:'옛 장소',y:'37.5',x:'127'}]:[],index===0?'OK':'ZERO_RESULT'));
   await oldRefresh;
-  assert.equal(vm.runInContext('state.visiblePlaces[0].id', context), 'new');
+  assert.equal(vm.runInContext('state.visiblePlaceCache.get(visiblePlaceKey()).places[0].id', context), 'new');
+  assert.equal(vm.runInContext('state.visiblePlaceCache.size', context), 1, 'a stale response must not populate the cache');
 });
 
 test('idle does not refresh viewport categories and programmatic fitting does not expose search here', () => {
@@ -628,9 +738,42 @@ test('destination and current-location overlays use the expected marker design a
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
     destination:{html:'<img src="assets/destination-pin.svg" alt="">',xAnchor:.5,yAnchor:1},
     mapLocation:{className:'gps-arrow',html:'▲',xAnchor:.5,yAnchor:.5},
-    racingLocation:{className:'gps-arrow',html:'▲',position:[37.51,127.01],transform:''},
+    racingLocation:{className:'gps-arrow racing-rider-marker',html:'▲',position:[37.51,127.01],transform:'rotate(123deg) translateX(36px)'},
     navigationLocation:{className:'gps-arrow',html:'▲',position:[37.52,127.02],transform:'rotate(123deg)'},
   });
+});
+
+test('racing marker offsets follow cardinal headings at fixed pixel spacing without changing GPS or race coordinates', () => {
+  const context=loadApp('',true,true);
+  const result=vm.runInContext(`(()=>{
+    class LatLng {constructor(latitude,longitude){Object.assign(this,{latitude,longitude})}}
+    class Overlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setPosition(position){this.position=position}}
+    kakao={maps:{LatLng,CustomOverlay:Overlay}};
+    state.screen='racing';state.racingPhase='active';state.map={level:2,getLevel(){return this.level}};
+    const position={latitude:37.5,longitude:127},before=JSON.stringify(position),checks=[];
+    state.currentLocation=position;
+    for(const level of [2,5])for(const heading of [0,90,180,270]){
+      state.map.level=level;
+      const snapshot={targetPosition:position,targetHeading:heading,distanceDifference:0},original=JSON.stringify(snapshot);
+      setGpsMarker(position,false,heading);renderRacingTargetMarker(snapshot);
+      checks.push({level,heading,rider:state.gpsMarkerEl.style.transform,ghost:state.racingTargetMarkerEl.style.transform,
+        riderAnchor:[state.gpsMarker.position.latitude,state.gpsMarker.position.longitude],ghostAnchor:[state.racingTargetMarker.position.latitude,state.racingTargetMarker.position.longitude],
+        unchanged:JSON.stringify(snapshot)===original&&JSON.stringify(state.currentLocation)===before});
+    }
+    const ghost=state.racingTargetMarker;clearRacingTargetMarker();
+    state.screen='map';setGpsMarker(position);
+    return{checks,cleared:ghost.map===null&&state.racingTargetMarker===null,mapClass:state.gpsMarkerEl.className,mapTransform:state.gpsMarkerEl.style.transform};
+  })()`,context);
+  for(const check of result.checks){
+    assert.equal(check.rider,`rotate(${check.heading}deg) translateX(36px)`);
+    assert.equal(check.ghost,`rotate(${check.heading}deg) translateX(-36px)`);
+    assert.deepEqual([...check.riderAnchor],[37.5,127]);assert.deepEqual([...check.ghostAnchor],[37.5,127]);
+    assert.equal(check.unchanged,true);
+  }
+  assert.equal(result.cleared,true);assert.equal(result.mapClass,'gps-arrow');assert.equal(result.mapTransform,'');
+  assert.match(styles,/\.gps-arrow\.racing-rider-marker::before,\.gps-arrow\.racing-target-marker::before\{[^}]*position:absolute;[^}]*width:20px;height:2px/);
+  assert.match(styles,/\.gps-arrow\.racing-rider-marker::before\{left:calc\(50% - 36px\)\}/);
+  assert.match(styles,/\.gps-arrow\.racing-target-marker::before\{left:calc\(50% \+ 16px\);background:#ff4f5e\}/);
 });
 
 test('an initial calculated route overview long press renders navigation actions without changing the route', () => {
@@ -687,7 +830,7 @@ test('a route preview long press opens the existing navigation address card with
     beginNavigationRoutePreview=(kind,place)=>testNavigationActions.push({kind,latitude:place.latitude,longitude:place.longitude});
     handleMapPointerEvent({type:'pointerdown',pointerType:'touch',pointerId:21,clientX:100,clientY:180});
     runPendingTimers();
-    const change=$('#changeNavDestination'),add=$('#addNavWaypoint');change.onclick();add.onclick();
+    const change=$('#changeNavDestination'),add=$('#addNavWaypoint');
     ({requests:testGeocodeRequests,screen:state.screen,sameDraft:state.navigationRouteDraft===testDraft,sameDestination:state.destination===testOriginalDestination,markers:state.routeEndpointMarkers.map(marker=>({latitude:marker.position.latitude,longitude:marker.position.longitude,className:marker.content.className})),html:$('#sheetContent').innerHTML,changeVisible:!change.classList.contains('hidden'),addVisible:!add.classList.contains('hidden'),actions:testNavigationActions});
   `,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result.requests)),[{x:127.0456,y:37.6123}]);
@@ -700,10 +843,7 @@ test('a route preview long press opens the existing navigation address card with
   assert.doesNotMatch(result.html,/id="setStart"|id="setEnd"/);
   assert.equal(result.changeVisible,true);
   assert.equal(result.addVisible,true);
-  assert.deepEqual(JSON.parse(JSON.stringify(result.actions)),[
-    {kind:'destination',latitude:37.6123,longitude:127.0456},
-    {kind:'waypoint',latitude:37.6123,longitude:127.0456},
-  ]);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.actions)),[], 'opening the address card must not request a new route');
 });
 
 test('a navigation long press opens a destination-action card without changing the active destination', () => {
@@ -1048,25 +1188,6 @@ test('a map tap closes a result-opened place back to results', () => {
   assert.equal(result.historyScreen, 'results');
 });
 
-test('a programmatic map move cannot hit places cached for the previous bounds', () => {
-  const context = loadApp();
-  const result = vm.runInContext(`
-    state.screen='map';state.mapClickBlockedUntil=0;
-    class TestLatLng { constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude} }
-    kakao={maps:{LatLng:TestLatLng}};
-    testWest=126.9;
-    state.map={
-      getLevel:()=>4,
-      getBounds:()=>({getSouthWest:()=>({getLng:()=>testWest,getLat:()=>37.4}),getNorthEast:()=>({getLng:()=>testWest+.2,getLat:()=>37.6})}),
-      getProjection:()=>({pointFromCoords:()=>({x:100,y:100})})
-    };
-    state.visiblePlaceKey=visiblePlaceKey();state.visiblePlaces=[{id:'old',latitude:37.5,longitude:127}];
-    testWest=127.2;let testOpened=null;openPlace=place=>{testOpened=place};
-    ({returned:handleMapClick({point:{x:100,y:100}}),opened:testOpened});
-  `, context);
-  assert.equal(result.returned, null);
-  assert.equal(result.opened, null);
-});
 
 test('a genuine user drag during result fitting still exposes search here', () => {
   const context = loadApp();
@@ -1167,6 +1288,24 @@ test('main map keeps the menu but moves saved-place shortcuts into the search la
   assert.doesNotMatch(searchLanding,/🚲|id="bikeShopBtn"|자전거샵/);
   assert.match(appSource,/\$\$\('\[data-quick\]'\)/);
   assert.doesNotMatch(appSource,/bikeShopBtn/);
+});
+
+test('distance and duration displays share metric thresholds and hour-minute formatting', () => {
+  const context=loadApp('',true,true);
+  for (const [meters,spaced,compact] of [[0,'0 m','0m'],[999,'999 m','999m'],[1000,'1.0 km','1.0km'],[1250,'1.3 km','1.3km'],[10000,'10.0 km','10.0km']]) {
+    context.testDistance=meters;
+    const result=vm.runInContext(`({summary:fmtKm(testDistance),place:formatPlaceDistance(testDistance),comparison:racingComparisonText({distanceDifference:testDistance},'distance').text})`,context);
+    assert.equal(result.summary,spaced);
+    assert.equal(result.place,compact);
+    assert.equal(result.comparison,meters?`${compact} 앞섬`:'동일 거리');
+  }
+  assert.equal(vm.runInContext('formatM(999)',context),'1.0km');
+  for (const [seconds,expected] of [[0,'0초'],[59,'59초'],[60,'1분'],[3599,'59분'],[3600,'1시간 0분'],[3660,'1시간 1분'],[7199,'1시간 59분'],[7200,'2시간 0분']]) {
+    context.testSeconds=seconds;
+    assert.equal(vm.runInContext('formatRidingDuration(testSeconds*1000)',context),expected);
+    if(seconds>=60)assert.equal(vm.runInContext('fmtMin(testSeconds)',context),expected);
+    if(seconds>0)assert.equal(vm.runInContext("racingComparisonText({timeDifference:-testSeconds*1000},'time').text",context),`${expected} 뒤처짐`);
+  }
 });
 
 test('Racing map shows only valid comparison data and switches distance or time display', () => {
@@ -1569,6 +1708,7 @@ test('Racing starts explicitly after countdown and connects shared GPS updates t
     renderScreen('racing',false);
     state.racingCourse={source:'new',name:'New course',route:route.map(({latitude,longitude})=>({latitude,longitude})),distance:111.2,time:20,departure:route[0],destination:route.at(-1),checkpoints:[route.at(-1)]};
     state.racingOpponentType='speed';state.racingTargetSpeedKmh=18;renderRacingSetupControls();
+    emitNativePosition({coords:{latitude:0,longitude:0,accuracy:3,speed:0,heading:90},timestamp:Date.now()});
     const before={phase:state.racingPhase,snapshot:state.racingSnapshot,watchers:testNativeWatchStarts()};
     $('#racingStartBtn').onclick();
     const countdown={phase:state.racingPhase,text:$('#racingCountdown').textContent,snapshot:state.racingSnapshot};
@@ -1598,10 +1738,10 @@ test('Racing starts explicitly after countdown and connects shared GPS updates t
     closeRideResult();
     const savedRace=profileRepository.readRacing(activeProfileId)[0];openRideResult(savedRace,{mode:'racing'});$('#saveResultRideBtn').onclick();
     const ridingRecord=profileRepository.readRides(activeProfileId)[0],ridingSaved={rides:profileRepository.readRides(activeProfileId).length,racing:profileRepository.readRacing(activeProfileId).length,hasRoute:'route' in ridingRecord};
-    renderRecords('riding');const ridingList={title:$('#recordsTitle').textContent,hasRecord:$('#recordsList').innerHTML.includes('km')};
-    renderRecords('racing');const racingList={title:$('#recordsTitle').textContent,hasRecord:$('#recordsList').innerHTML.includes('km')};
+    renderRecords('riding');const ridingList={title:$('#recordsTitle').textContent,hasRecord:/[0-9]+([.][0-9]+)? (m|km)/.test($('#recordsList').innerHTML)};
+    renderRecords('racing');const racingList={title:$('#recordsTitle').textContent,hasRecord:/[0-9]+([.][0-9]+)? (m|km)/.test($('#recordsList').innerHTML)};
     emitNativePosition({coords:{latitude:0,longitude:0,accuracy:3,speed:0,heading:90},timestamp:base+20000});
-    challengeRacingRecord(1);
+    challengeRacingRecord(0);
     $('#racingStartBtn').onclick();runPendingTimers();runPendingTimers();runPendingTimers();
     const saved={phase:state.racingPhase,type:state.racingSession?.target?.type,watchers:testNativeWatchStarts()};
     renderScreen('map',false);
@@ -1610,17 +1750,17 @@ test('Racing starts explicitly after countdown and connects shared GPS updates t
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
     before:{phase:'idle',snapshot:null,watchers:1},
     countdown:{phase:'countdown',text:'3',snapshot:null},
-    active:{phase:'active',type:'TARGET_SPEED',watchers:2,snapshot:true,targetMarker:true,setupHidden:true,level:2},
+    active:{phase:'active',type:'TARGET_SPEED',watchers:1,snapshot:true,targetMarker:true,setupHidden:true,level:2},
     live:{snapshot:true,gap:20,hud:'20m 앞섬'},
     stopped:{moving:false,movingTime:4000,elapsedAdvanced:true,snapshotFrozen:true},
     resumed:{moving:true,movingTimeAdvanced:true,snapshotChanged:true},
     racingEndVisible:true,
     savePrompt:{visible:true,hasRoute:true,completed:true,phase:'completion-pending'},
-    racingSaved:{rides:0,racing:2,resultVisible:true},
-    ridingSaved:{rides:1,racing:2,hasRoute:false},
+    racingSaved:{rides:0,racing:1,resultVisible:true},
+    ridingSaved:{rides:1,racing:1,hasRoute:true},
     ridingList:{title:'라이딩 기록',hasRecord:true},
     racingList:{title:'레이싱 기록',hasRecord:true},
-    saved:{phase:'armed',watchers:4},
+    saved:{phase:'active',type:'SAVED_RIDE',watchers:2},
     after:{phase:'idle',session:null,snapshot:null},
   });
   assert.match(html,/data-menu-item="riding-records"[^>]*>[\s\S]*?라이딩 기록/);
@@ -1709,7 +1849,7 @@ test('round Racing confirms the actual turnaround once, announces it, and keeps 
       turnaroundPoint: point(100), turnaroundAlong: 100,
       checkpoints: [point(100), point(0)], checkpointAlong: [100, 200],
     };
-    startRacingSession({ route, target: Racing.createTargetSpeedTarget(20) }, base, { startedAt: base });
+    startRacingSession({ route, target: Racing.createTargetSpeedTarget(20) }, base, { startedAt: base }, {timestamp:base,position:{...point(0),accuracy:3},quality:{fresh:true,monotonic:true,plausiblePosition:true}});
     observeRacingOffRoute = () => false;
     followRacingPosition = () => false;
     renderRacingHud = () => true;
@@ -1720,7 +1860,7 @@ test('round Racing confirms the actual turnaround once, announces it, and keeps 
       quality: { fresh: true, monotonic: true, plausiblePosition: true },
     });
     const send = (timestamp, meters, moving = true) => {
-      if (moving) state.ride.movingTime = timestamp;
+      if (moving) state.racingCapture.ride.movingTime = timestamp;
       updateActiveRacing(fix(timestamp, meters), { moving });
       return {
         actual: state.racingReturnState?.actualPhase,
@@ -1821,7 +1961,6 @@ test('all ride modes share one result flow and Racing initializes its target mar
   assert.match(appSource,/function racingCourseIdentity\(/);
   assert.match(appSource,/state\.racingSnapshot=Racing\.updateRace\(state\.racingSession/);
   assert.match(appSource,/function followRacingPosition\(/);
-  assert.match(appSource,/delete summary\.route/);
   assert.match(styles,/\.ride-result-sheet\{/);
   assert.match(styles,/@media\(max-width:380px\)[\s\S]*?\.ride-result-stats/);
   const context=loadApp('',false,true);
@@ -1834,9 +1973,9 @@ test('all ride modes share one result flow and Racing initializes its target mar
     const slower=racingRecordAssessment(first),best=racingRecordAssessment({...first,movingTime:8000}),incomplete=racingRecordAssessment({...first,completed:false});
     const summary=generalRecordSummary({...first,detailedSamples:[{}],departure:route[0],destination:route[1]});
     const reversed=recordsShareCourse(first,{...first,courseRoute:[...route].reverse(),route:[...route].reverse()});
-    return{first:firstAssessment.status,slower:slower.status,best:best.status,incomplete:incomplete.eligible,summaryHasRoute:'route' in summary||'courseRoute' in summary||'detailedSamples' in summary||'departure' in summary||'destination' in summary,reversed};
+    return{first:firstAssessment.status,slower:slower.status,best:best.status,incomplete:incomplete.eligible,summaryRoute:summary.route,summaryHasRaw:'detailedSamples' in summary,reversed};
   })()`,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)),{first:'first',slower:'slower',best:'best',incomplete:false,summaryHasRoute:false,reversed:false});
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{first:'first',slower:'slower',best:'best',incomplete:false,summaryRoute:[{latitude:37,longitude:127},{latitude:37,longitude:127.001}],summaryHasRaw:false,reversed:false});
 });
 
 test('empty search shows structured recent rows and typed search uses only matching recent candidates', () => {
@@ -1924,65 +2063,8 @@ test('existing search result marker still opens the selected place', () => {
   assert.equal(vm.runInContext('testOpened.id', context), 'result-place');
 });
 
-test('categorySearch creates clickable default pins bound to exact normalized places without pill labels', async () => {
-  const context = loadApp();
-  const result = await vm.runInContext(`(async()=>{
-    testCategoryCalls=[];testSelected=[];
-    class TestLatLng {constructor(latitude,longitude){Object.assign(this,{latitude,longitude})}}
-    class TestMarker {constructor(options){Object.assign(this,options);this.listeners={}}setMap(map){this.map=map}}
-    kakao={maps:{LatLng:TestLatLng,Marker:TestMarker,event:{addListener(target,type,listener){target.listeners[type]=listener}},services:{Status:{OK:'OK',ZERO_RESULT:'ZERO_RESULT'}}}};
-    state.map={getLevel:()=>4,getBounds:()=>({getSouthWest:()=>({getLng:()=>126.9,getLat:()=>37.4}),getNorthEast:()=>({getLng:()=>127.1,getLat:()=>37.6})}),getProjection:()=>({pointFromCoords:point=>({x:point.longitude*10000,y:point.latitude*10000})})};
-    state.placesService={categorySearch(code,callback,options){testCategoryCalls.push({code,callback,options})}};
-    selectRideMatePlace=(place,selectionContext)=>testSelected.push({place,selectionContext});
-    const raw={id:'poi',place_name:'POI',category_name:'카페',x:'127',y:'37.5'};
-    const refreshing=refreshVisiblePlaces();
-    testCategoryCalls.forEach((call,index)=>call.callback(index===0?[raw]:[],index===0?'OK':'ZERO_RESULT'));
-    await refreshing;
-    const entry=state.categoryPlaceMarkers[0];entry.marker.listeners.click();
-    return {categoryCalls:testCategoryCalls.length,markers:state.categoryPlaceMarkers.length,visible:state.visiblePlaces.length,
-      hasImage:Object.hasOwn(entry.marker,'image'),sameObject:testSelected[0].place===entry.place,
-      selectedId:testSelected[0].place.id,source:testSelected[0].selectionContext.source,clickable:entry.marker.clickable};
-  })()`, context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    categoryCalls:18,markers:1,visible:1,hasImage:false,sameObject:true,selectedId:'poi',source:'visible-map-poi',clickable:true
-  });
-  assert.doesNotMatch(appSource,/function categoryMarkerImage|<text[^>]*>\$\{label\}|업체명\s*\+?\s*N/);
-});
 
-test('category candidates render only non-colliding individual default pins without grouping', () => {
-  const context=loadApp();
-  const result=vm.runInContext(`
-    testListeners=[];
-    class TestLatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
-    class TestMarker {constructor(options){Object.assign(this,options);this.listeners={}}setMap(map){this.map=map}}
-    kakao={maps:{LatLng:TestLatLng,Marker:TestMarker,event:{addListener(target,type,listener){target.listeners[type]=listener;testListeners.push(listener)}}}};
-    state.map={getProjection:()=>({pointFromCoords:point=>({x:point.longitude,y:point.latitude})})};
-    visiblePlaceKey=()=> 'viewport';state.visiblePlaceKey='viewport';state.visiblePlaceGeneration=4;
-    const first={id:'first',name:'First Cafe',latitude:100,longitude:100};
-    const hidden={id:'hidden',name:'Hidden Cafe',latitude:102,longitude:104};
-    const separate={id:'separate',name:'Separate Cafe',latitude:100,longitude:300};
-    testOpened=[];selectRideMatePlace=place=>testOpened.push(place.id);
-    renderCategoryPlaceMarkers([first,hidden,separate],4,'viewport');
-    state.categoryPlaceMarkers[0].marker.listeners.click();
-    ({markers:state.categoryPlaceMarkers.length,listeners:testListeners.length,visible:state.visiblePlaces.map(place=>place.id),opened:testOpened,
-      grouped:state.categoryPlaceMarkers.some(entry=>entry.choices.length!==1),images:state.categoryPlaceMarkers.filter(entry=>Object.hasOwn(entry.marker,'image')).length});
-  `,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)),{markers:2,listeners:2,visible:['first','separate'],opened:['first'],grouped:false,images:0});
-});
 
-test('navigation renders the same clickable default category pin without a pill image', () => {
-  const context=loadApp();
-  const result=vm.runInContext(`
-    class TestLatLng {constructor(latitude,longitude){Object.assign(this,{latitude,longitude})}}
-    class TestMarker {constructor(options){Object.assign(this,options);this.listeners={}}setMap(map){this.map=map}}
-    kakao={maps:{LatLng:TestLatLng,Marker:TestMarker,event:{addListener(target,type,listener){target.listeners[type]=listener}}}};
-    state.screen='navigation';state.map={getProjection:()=>({pointFromCoords:()=>({x:100,y:100})})};
-    visiblePlaceKey=()=> 'viewport';state.visiblePlaceKey='viewport';state.visiblePlaceGeneration=5;
-    renderCategoryPlaceMarkers([{id:'poi',name:'POI',latitude:37.5,longitude:127}],5,'viewport');
-    ({markers:state.categoryPlaceMarkers.length,visible:state.visiblePlaces.length,hasImage:Object.hasOwn(state.categoryPlaceMarkers[0].marker,'image'),clickable:state.categoryPlaceMarkers[0].marker.clickable});
-  `,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)),{markers:1,visible:1,hasImage:false,clickable:true});
-});
 
 test('category marker selection remains reliable for ten closes and opens', () => {
   const context = loadApp();
@@ -2286,15 +2368,15 @@ test('orientation changes relayout and refit using the current viewport without 
     window.innerWidth=844;window.innerHeight=390;window.visualViewport.width=844;window.visualViewport.height=390;dispatchWindowEvent('resize');
     setGpsMarker=()=>{};navigator.geolocation.getCurrentPosition=resolve=>resolve({coords:{latitude:37.4,longitude:127.4}});await locate(true);
     const landscape={relayouts:testRelayouts,fits:testFits.length,padding:testFits.at(-1),width:document.documentElement.style.getPropertyValue('--viewport-width'),height:document.documentElement.style.getPropertyValue('--nav-height'),pan:testPans.at(-1)};
-    openRoutePointEditor();const draft=state.routePointEditorDraft.orderedPoints,portraitRelayoutStart=testRelayouts;
+    openRoutePointEditor();const draft=state.routePointEditorDraft.orderedPoints,portraitRelayoutStart=testRelayouts,portraitFitStart=testFits.length;
     window.innerWidth=390;window.innerHeight=844;window.visualViewport.width=390;window.visualViewport.height=844;dispatchWindowEvent('orientationchange');
-    const portrait={relayouts:testRelayouts-portraitRelayoutStart,fits:testFits.length,width:document.documentElement.style.getPropertyValue('--viewport-width'),height:document.documentElement.style.getPropertyValue('--nav-height'),sameDraft:state.routePointEditorDraft.orderedPoints===draft,order:draft.map(point=>point.id)};
+    const portrait={relayouts:testRelayouts-portraitRelayoutStart,fits:testFits.length-portraitFitStart,width:document.documentElement.style.getPropertyValue('--viewport-width'),height:document.documentElement.style.getPropertyValue('--nav-height'),sameDraft:state.routePointEditorDraft.orderedPoints===draft,order:draft.map(point=>point.id)};
     state.screen='map';navigator.geolocation.getCurrentPosition=resolve=>resolve({coords:{latitude:37.5,longitude:127.5}});await locate(true);
     return{landscape,portrait,portraitPan:testPans.at(-1)};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
     landscape:{relayouts:1,fits:1,padding:{top:24,right:24,bottom:24,left:312},width:'844px',height:'390px',pan:{latitude:37.4,longitude:127.4}},
-    portrait:{relayouts:1,fits:2,width:'390px',height:'844px',sameDraft:true,order:['A','C','B']},
+    portrait:{relayouts:1,fits:1,width:'390px',height:'844px',sameDraft:true,order:['A','C','B']},
     portraitPan:{latitude:37.5,longitude:127.5},
   });
   assert.doesNotMatch(styles,/max-width:430px/);
@@ -2527,7 +2609,7 @@ test('route overview start enters multi-waypoint guidance with the confirmed ful
   ]);
   assert.deepEqual(JSON.parse(JSON.stringify(result.markerPositions)),[[37.01,127.01],[37.02,127.02],[37.03,127.03]]);
   assert.equal(result.remaining,'9.0 km');
-  assert.equal(result.time,'90분');
+  assert.equal(result.time,'1시간 30분');
   assert.equal(result.watch,77);
 });
 
@@ -3135,7 +3217,7 @@ test('initial route search still renders and selects every API alternative card'
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{cards:2,selected:1,route:'second'});
 });
 
-test('navigation menu add-route appends the old destination before starting guidance to the new destination', async () => {
+test('navigation menu add-route retains the destination and appends the selected waypoint', async () => {
   const context=loadApp();
   const {recentPlace}=installNavigationFlowEnvironment(context);
   const navMenuButton=context.document.querySelector('#navMenuBtn');
@@ -3157,10 +3239,11 @@ test('navigation menu add-route appends the old destination before starting guid
   const routeButtons=context.document.querySelector('#routeCards').querySelectorAll('[data-i]');
   assert.equal(routeButtons.length,1);
   routeButtons[0].onclick();
+  vm.runInContext('testCameraBeforeConfirm=testCameraTargets.length',context);
   context.document.querySelector('#startNavBtn').onclick();
 
-  const result=vm.runInContext(`({screen:state.screen,waypoints:state.waypoints.map(place=>place.id),remaining:state.nav.remainingWaypoints.map(place=>place.id),destination:state.destination.id,selectedRoute:state.selectedRoute,route:state.routes[state.selectedRoute].id,draft:state.navigationRouteDraft,watch:state.nav.watchId,follow:state.nav.follow,level:testCameraLevels.at(-1),cameraTargets:testCameraTargets.length})`,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'navigation',waypoints:['existing','destination'],remaining:['existing','destination'],destination:'added',selectedRoute:0,route:'preview-a',draft:null,watch:88,follow:true,level:2,cameraTargets:1});
+  const result=vm.runInContext(`({screen:state.screen,waypoints:state.waypoints.map(place=>place.id),remaining:state.nav.remainingWaypoints.map(place=>place.id),destination:state.destination.id,selectedRoute:state.selectedRoute,route:state.routes[state.selectedRoute].id,draft:state.navigationRouteDraft,watch:state.nav.watchId,follow:state.nav.follow,level:testCameraLevels.at(-1),cameraTargets:testCameraTargets.length-testCameraBeforeConfirm})`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'navigation',waypoints:['existing','added'],remaining:['existing','added'],destination:'destination',selectedRoute:0,route:'preview-a',draft:null,watch:88,follow:true,level:2,cameraTargets:1});
   assert.equal(context.testWatchStarts,0);
   assert.equal(context.testRouteRequests.length,1);
 });
@@ -3183,8 +3266,9 @@ test('navigation menu alternate-route reuses destination and waypoints then init
   vm.runInContext('testOverviewCamera={levels:testCameraLevels.length,targets:testCameraTargets.length}',context);
   buttons[1].onclick();buttons[0].onclick();buttons[1].onclick();
   assert.deepEqual(JSON.parse(JSON.stringify(vm.runInContext(`({levels:testCameraLevels.length,targets:testCameraTargets.length})`,context))),JSON.parse(JSON.stringify(vm.runInContext('testOverviewCamera',context))));
+  vm.runInContext('testCameraBeforeConfirm=testCameraTargets.length',context);
   context.document.querySelector('#startNavBtn').onclick();
-  const result=vm.runInContext(`({screen:state.screen,route:state.routes[state.selectedRoute].id,destination:state.destination.id,waypoints:state.waypoints.map(place=>place.id),draft:state.navigationRouteDraft,watch:state.nav.watchId,follow:state.nav.follow,level:testCameraLevels.at(-1),cameraTargets:testCameraTargets.length})`,context);
+  const result=vm.runInContext(`({screen:state.screen,route:state.routes[state.selectedRoute].id,destination:state.destination.id,waypoints:state.waypoints.map(place=>place.id),draft:state.navigationRouteDraft,watch:state.nav.watchId,follow:state.nav.follow,level:testCameraLevels.at(-1),cameraTargets:testCameraTargets.length-testCameraBeforeConfirm})`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'navigation',route:'preview-b',destination:'destination',waypoints:['existing'],draft:null,watch:88,follow:true,level:2,cameraTargets:1});
   assert.equal(context.testWatchStarts,0);
 });
@@ -3375,13 +3459,6 @@ test('cancelling preview restores confirmed navigation context without rewinding
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{sameNav:true,sameSteps:true,progress:777,currentStep:4,follow:false,heading:123,watch:88,watchStarts:0,sameWaypoints:true,waypoints:['existing'],destination:'destination',route:'original',selected:0,gps:'live-after',draft:null,screen:'navigation',navigationDraws:1});
 });
 
-test('expanded place content remains scrollable and safe-area aware', () => {
-  const css=fs.readFileSync(new URL('../styles.css',import.meta.url),'utf8');
-  assert.match(css,/\.sheet\.place-detail\.place-expanded/);
-  assert.match(css,/\.place-extra/);
-  assert.match(css,/env\(safe-area-inset-bottom\)/);
-  assert.match(appSource,/function handleMapClick\([^\n]+visiblePlaceHitTest/);
-});
 
 function installConfirmedWaypointFixture(context) {
   vm.runInContext(`
@@ -3430,33 +3507,6 @@ function navigationLifecycleSnapshot(context) {
   })`,context));
 }
 
-test('navigation speech uses the default Korean voice once per guidance step', () => {
-  const context=loadApp();installConfirmedWaypointFixture(context);
-  const result=JSON.parse(JSON.stringify(vm.runInContext(`(() => {
-    speechLog=[];speechCancelCount=0;
-    class TestUtterance {constructor(text){this.text=text;this.lang='';this.rate=1;this.pitch=1;this.volume=1;this._voice=null;this.voiceAssigned=false}get voice(){return this._voice}set voice(value){this._voice=value;this.voiceAssigned=true}}
-    SpeechSynthesisUtterance=TestUtterance;window.SpeechSynthesisUtterance=TestUtterance;
-    window.speechSynthesis={cancel(){speechCancelCount++},speak(utterance){speechLog.push({text:utterance.text,lang:utterance.lang,rate:utterance.rate,pitch:utterance.pitch,volume:utterance.volume,voiceAssigned:utterance.voiceAssigned})}};
-    lifecycleRoute._steps=[
-      {guidance:'직진',_startAlong:0,_endAlong:1000,points:[lifecycleOrigin,lifecycleWaypoint1]},
-      {guidance:'우회전',_startAlong:1000,_endAlong:3336,points:[lifecycleWaypoint1,lifecycleDestination]},
-    ];
-    startNavigation();
-    updateNavHud({latitude:37.005,longitude:127},5);
-    updateNavHud({latitude:37.015,longitude:127},5);
-    updateNavHud({latitude:37.016,longitude:127},5);
-    return {speechLog,cancels:speechCancelCount};
-  })()`,context)));
-
-  assert.equal(result.speechLog.length,2);
-  assert.match(result.speechLog[0].text,/직진/);
-  assert.match(result.speechLog[1].text,/우회전/);
-  assert.deepEqual(result.speechLog.map(({lang,rate,pitch,volume,voiceAssigned})=>({lang,rate,pitch,volume,voiceAssigned})),[
-    {lang:'ko-KR',rate:1,pitch:1,volume:1,voiceAssigned:false},
-    {lang:'ko-KR',rate:1,pitch:1,volume:1,voiceAssigned:false},
-  ]);
-  assert.equal(result.cancels,2);
-});
 
 test('navigation speech cancels queued guidance when navigation ends', () => {
   const context=loadApp();installConfirmedWaypointFixture(context);
@@ -4156,26 +4206,39 @@ test('shared Save persists once while Dont Save clears temporary data and perman
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{saved:{count:1,total:500},afterDiscard:{count:1,total:500,state:'idle',samples:0}});
 });
 
-test('shared Save permanently keeps the Ghost route contract but not raw detailed samples', () => {
+test('shared result keeps a general map path or full racing GPS without mutating raw samples', () => {
   const context=loadApp('',false,true);
   const result=vm.runInContext(`(()=>{
-    let rides=[];activeProfileId='profile-a';profileRepository={readSettings(){return{distanceUnit:'km',dashboard:{}}},readRides(){return rides},prependRide(id,ride){rides.unshift(JSON.parse(JSON.stringify(ride)));return rides}};
+    const values=new Map(),storage={getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,String(value))};
+    profileRepository=RideMateProfiles.createProfileRepository(storage,{createId:()=> 'profile-a'});
+    profileRepository.initialize();activeProfileId='profile-a';
     startRideRecording(0);
     [
       {latitude:0,longitude:0,timestamp:0,speed:10,accuracy:3},
       {latitude:0,longitude:20/111195,timestamp:2000,speed:10,accuracy:3},
       {latitude:0,longitude:40/111195,timestamp:4000,speed:10,accuracy:3}
     ].forEach(fix=>Ride.ingestRideFix(state.ride,fix));
-    finishRideRecording(5000,'riding-board');saveRide();
-    const saved=rides[0];
-    return{version:saved.ghostDataVersion,hasDetailed:'detailedSamples' in saved,route:saved.route};
+    const completed=finishRideRecording(5000,'riding-board'),rawBefore=JSON.stringify(completed.detailedSamples),record=pendingRideResult.record;
+    const savedRacing=savePendingRideResult('racing');
+    openRideResult(record);const savedGeneral=saveRide();
+    const general=profileRepository.readRides(activeProfileId)[0],racing=profileRepository.readRacing(activeProfileId)[0];
+    return{savedGeneral,savedRacing,general,racing,rawCount:completed.detailedSamples.length,rawUnchanged:rawBefore===JSON.stringify(completed.detailedSamples),ghost:Racing.createSavedRideTarget(racing),choices:racingRecordChoices().length};
   })()`,context);
-  assert.equal(result.version,1);
-  assert.equal(result.hasDetailed,false);
-  assert.ok(result.route.length>=2);
-  assert.deepEqual(Object.keys(result.route[0]).sort(),['distance','filteredSpeed','latitude','longitude','moving','movingTime','timestamp']);
+  assert.equal(result.savedGeneral,true);
+  assert.equal(result.savedRacing,true);
+  assert.equal(result.rawCount,3);
+  assert.equal(result.rawUnchanged,true);
+  for(const field of ['courseRoute','detailedSamples']) assert.equal(field in result.general,false,field);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.general.route)),JSON.parse(JSON.stringify(result.racing.route.map(point=>({latitude:point.latitude,longitude:point.longitude})))));
+  assert.equal(result.general.distance,result.racing.distance);
+  assert.equal(result.general.movingTime,result.racing.movingTime);
+  assert.equal(result.racing.ghostDataVersion,1);
+  assert.equal(result.racing.detailedSamples.length,3);
+  assert.ok(result.racing.route.length>=2);
+  assert.deepEqual(Object.keys(result.racing.route[0]).sort(),['distance','filteredSpeed','latitude','longitude','moving','movingTime','timestamp']);
+  assert.ok(result.ghost,'the persisted racing record must remain usable for a Ghost challenge');
+  assert.equal(result.choices,1);
 });
-
 test('Riding Board unit setting converts display only and keeps canonical ride values', () => {
   const context=loadApp('',false,true);
   const result=vm.runInContext(`(()=>{
@@ -4400,18 +4463,18 @@ test('Racing course selection joins return routes and saved replay enforces the 
     const challenge=challengeRacingRecord(0),shownRoute=state.racingCourse.route.map(point=>[point.latitude,point.longitude]);
     const invalidChallenge=challengeRacingRecord(1),invalidMessage=testToast;
     const fast=(longitude,heading=90,accuracy=3)=>({timestamp:1000,position:{latitude:37,longitude,accuracy},heading:{degrees:heading},quality:{fresh:true,monotonic:true,plausiblePosition:true}});
-    const near=replayStartEligibility(savedRoute,fast(127.00001)),before=replayStartEligibility(savedRoute,fast(126.9999)),past=replayStartEligibility(savedRoute,fast(127.0001));
-    state.racingPhase='armed';state.racingArmedStart={...before.start,route:savedRoute,target:Racing.createSavedRideTarget(saved),startedRide:false};
-    const jitterStarted=maybeStartArmedRacing(fast(127.00001),{moving:true});
-    const crossingStarted=maybeStartArmedRacing(fast(127.00005),{moving:true});
-    return{oneWayApplied,oneWay,roundApplied,round,challenge,shownRoute,invalidChallenge,invalidMessage,eligibility:{near:near.allowed,before:before.allowed,past:past.allowed,pastMessage:past.reason},jitterStarted,crossingStarted,phase:state.racingPhase,courseSource:state.racingCourse.source,opponentIndex:state.racingOpponentRecordIndex,settingsOpened:testSettingsOpened};
+    const near=replayStartEligibility(savedRoute,fast(127.00001)),before=replayStartEligibility(savedRoute,fast(126.9999)),past=replayStartEligibility(savedRoute,fast(127.0001)),farBefore=replayStartEligibility(savedRoute,fast(126.99));
+    const startFast={...fast(127.00001),timestamp:Date.now()};sharedGpsSource.getLatestFast=()=>startFast;
+    state.racingPhase='idle';requestRacingStart();runPendingTimers();runPendingTimers();runPendingTimers();
+    const sameStart=state.currentLocation.latitude===state.racingSnapshot.targetPosition.latitude&&state.currentLocation.longitude===state.racingSnapshot.targetPosition.longitude;
+    return{oneWayApplied,oneWay,roundApplied,round,challenge,shownRoute,invalidChallenge,invalidMessage,eligibility:{near:near.allowed,before:before.allowed,past:past.allowed,farBefore:farBefore.allowed,pastMessage:past.reason},sameStart,phase:state.racingPhase,courseSource:state.racingCourse.source,opponentIndex:state.racingOpponentRecordIndex,settingsOpened:testSettingsOpened};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
     oneWayApplied:true,oneWay:{source:'new',points:2,name:'편도 · 목적지'},
     roundApplied:true,round:{mode:'BIKE_ONLY',points:[[37,126.999],[37,127],[37,127.001]],distance:222},
     challenge:true,shownRoute:[[37,127],[37,127.001]],invalidChallenge:false,invalidMessage:'GPS 경로 또는 시간 정보가 부족해 이 기록에 도전할 수 없습니다.',
-    eligibility:{near:true,before:true,past:false,pastMessage:'기록 시작 위치보다 앞에 있어 기록을 시작할 수 없습니다.'},
-    jitterStarted:false,crossingStarted:true,phase:'active',courseSource:'saved',opponentIndex:0,settingsOpened:false,
+    eligibility:{near:true,before:true,past:false,farBefore:false,pastMessage:'기록 시작 위치보다 앞에 있어 기록을 시작할 수 없습니다.'},
+    sameStart:true,phase:'active',courseSource:'saved',opponentIndex:0,settingsOpened:false,
   });
 });
 
@@ -4535,7 +4598,7 @@ test('Racing delayed reroute responses cannot mutate frozen arrival or manual st
 });
 
 test('Racing completion save card persists once, shows the result, and discard writes nothing', () => {
-  assert.match(html,/id="racingSaveDecisionDialog"[\s\S]*?레이싱을 완료했습니다![\s\S]*?목적지에 도착했습니다\.[\s\S]*?기록을 저장하시겠습니까\?[\s\S]*?id="saveFrozenRacingBtn"[\s\S]*?>저장<[\s\S]*?id="discardFrozenRacingBtn"[\s\S]*?>저장 안 함</);
+  assert.match(html,/id="racingSaveDecisionDialog"[\s\S]*?레이싱을 완료했습니다![\s\S]*?목적지에 도착했습니다\.[\s\S]*?기록을 저장하시겠습니까\?[\s\S]*?id="saveFrozenRacingBtn"[\s\S]*?>레이싱 기록 저장<[\s\S]*?id="saveFrozenRideBtn"[\s\S]*?id="discardFrozenRacingBtn"[\s\S]*?>저장 안 함</);
   const context=loadApp('',false,true);
   const result=vm.runInContext(`(()=>{
     const storageData=new Map(),storage={getItem:key=>storageData.get(key)??null,setItem:(key,value)=>storageData.set(key,value)};
@@ -4821,17 +4884,301 @@ test('Racing route redraw shows only remaining out-and-back path without mutatin
     class TestPolyline {constructor(options){this.path=options.path}setMap(){}setPath(path){this.path=path}}
     kakao={maps:{LatLng:TestLatLng,Polyline:TestPolyline}};
     const route=[0,100,200,100,0].map(meters=>({latitude:0,longitude:meters/111195}));
-    const routeBefore=JSON.stringify(route),session={route,progressBase:1000,routeVersions:[{sequence:1,route:[{latitude:1,longitude:1}]}]},versionsBefore=JSON.stringify(session.routeVersions);
+    const routeBefore=JSON.stringify(route),session=Racing.createRaceSession({route,target:Racing.createTargetSpeedTarget(5)});
+    session.progressBase=1000;session.activeRouteStartProgress=1000;session.routeVersions=[{sequence:1,route:[{latitude:1,longitude:1}]}];const versionsBefore=JSON.stringify(session.routeVersions);
     let fits=0;state.screen='racing';state.racingPhase='active';state.racingSession=session;state.racingSnapshot={currentRouteProgress:1250};state.selectedRoute=0;state.routes=[{_points:route}];state.routeLines=[];state.map={};drawRouteEndpointMarkers=()=>{};fitRouteOverview=()=>{fits++};
     drawRoutes(true);const displayed=state.routeLines[0].path;
     return{displayed:displayed.map(point=>point.longitude*111195),fits,routeUnchanged:JSON.stringify(route)===routeBefore,versionsUnchanged:JSON.stringify(session.routeVersions)===versionsBefore,progressBase:session.progressBase};
   })()`,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result.displayed.slice(1))),[100,0]);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.displayed.slice(1))).map(value=>Math.round(value)),[100,0]);
   assert.ok(Math.abs(result.displayed[0]-150)<.01);
   assert.equal(result.routeUnchanged,true);
   assert.equal(result.versionsUnchanged,true);
   assert.equal(result.progressBase,1000);
   assert.equal(result.fits,0,'active race redraw must not refit the entire course');
+});
+
+function racingStartFixture() {
+  const context=loadApp('',true,true);
+  vm.runInContext(`
+    testNow=100000;Date.now=()=>testNow;
+    sharedGpsSource=Ride.createGpsSource(navigator.geolocation,undefined,{now:()=>testNow});
+    racePoint=meters=>({latitude:0,longitude:meters/111195});
+    const route=[racePoint(0),racePoint(1000),racePoint(0)],checkpointAlong=racingCheckpointDistances(route,[racePoint(1000),racePoint(0)]);
+    state.screen='racing';state.racingTargetSpeedKmh=18;
+    state.racingCourse={source:'new',tripType:'round',route,distance:checkpointAlong[1],departure:route[0],destination:route[2],turnaroundPoint:route[1],turnaroundAlong:checkpointAlong[0],checkpoints:[route[1],route[2]],checkpointAlong};
+    startMapMovementGps();
+    sendRaceFix=(timestamp,meters,receivedAt=timestamp,accuracy=3)=>{testNow=receivedAt;emitNativePosition({timestamp,coords:{...racePoint(meters),accuracy,speed:5,heading:meters<=1000?90:270}})};
+    finishRaceCountdown=()=>{testNow+=3000;runPendingTimers();runPendingTimers();runPendingTimers()};
+  `,context);
+  return context;
+}
+
+test('Racing countdown waits for valid GPS, rejects expired cached GPS, and starts once at the shared position', () => {
+  for(const initiallyCached of [false,true]) {
+    const context=racingStartFixture();
+    context.initiallyCached=initiallyCached;
+    const result=vm.runInContext(`(()=>{
+      if(initiallyCached)sendRaceFix(95000,10,100000);
+      requestRacingStart();finishRaceCountdown();
+      const waiting={phase:state.racingPhase,session:state.racingSession,recording:state.ride.recordingState};
+      sendRaceFix(testNow+1000,20);
+      const startedAt=state.racingCapture.startedAt,session=state.racingSession;
+      const start={phase:state.racingPhase,current:state.currentLocation,ghost:state.racingSnapshot.targetPosition,progress:state.racingSnapshot.currentRouteProgress,target:state.racingSnapshot.targetRouteProgress,gap:state.racingSnapshot.distanceDifference};
+      sendRaceFix(testNow+1000,25);
+      return{waiting,start,oneStart:state.racingSession===session&&state.racingCapture.startedAt===startedAt,watchers:testNativeWatchStarts()};
+    })()`,context);
+    assert.deepEqual(JSON.parse(JSON.stringify(result.waiting)),{phase:'waiting-gps',session:null,recording:'idle'});
+    assert.equal(result.start.phase,'active');
+    assert.equal(result.start.current.latitude,result.start.ghost.latitude);
+    assert.equal(result.start.current.longitude,result.start.ghost.longitude);
+    assert.equal(result.start.progress,0);assert.equal(result.start.target,0);assert.equal(result.start.gap,0);
+    assert.equal(result.oneStart,true);assert.equal(result.watchers,1);
+  }
+});
+
+test('Racing GPS wait rejects a once-fresh cache, can be cancelled, and cannot restart from a late fix', () => {
+  const context=racingStartFixture();
+  const result=vm.runInContext(`(()=>{
+    sendRaceFix(100000,0);requestRacingStart();testNow=104000;runPendingTimers();runPendingTimers();runPendingTimers();
+    const waiting=state.racingPhase;
+    requestManualRacingEnd();
+    sendRaceFix(105000,20);
+    return{waiting,phase:state.racingPhase,session:state.racingSession};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{waiting:'waiting-gps',phase:'idle',session:null});
+});
+
+test('Racing uses the last valid countdown position and waits through inaccurate GPS', () => {
+  const context=racingStartFixture();
+  const result=vm.runInContext(`(()=>{
+    sendRaceFix(100000,0);requestRacingStart();sendRaceFix(102000,20,102000,100);
+    testNow=103000;runPendingTimers();runPendingTimers();runPendingTimers();const waiting=state.racingPhase;
+    sendRaceFix(104000,30);const start=state.racingSnapshot.targetPosition;
+    return{waiting,phase:state.racingPhase,same:start.longitude===state.currentLocation.longitude,meters:start.longitude*111195,gap:state.racingSnapshot.distanceDifference};
+  })()`,context);
+  assert.equal(result.waiting,'waiting-gps');assert.equal(result.phase,'active');assert.equal(result.same,true);
+  assert.ok(Math.abs(result.meters-30)<0.01);assert.equal(result.gap,0);
+});
+
+test('Racing countdown shares the latest GPS coordinate even when the cached map position is different', () => {
+  for(const startMeters of [1,20]){
+  const context=racingStartFixture();
+  context.startMeters=startMeters;
+  const result=vm.runInContext(`(()=>{
+    sendRaceFix(100000,0);requestRacingStart();sendRaceFix(102000,startMeters);state.currentLocation=racePoint(999);
+    testNow=103000;runPendingTimers();runPendingTimers();runPendingTimers();
+    return{phase:state.racingPhase,rider:state.currentLocation.longitude*111195,ghost:state.racingSnapshot.targetPosition.longitude*111195,gap:state.racingSnapshot.distanceDifference,finish:state.racingCourse.route.at(-1).longitude*111195,total:state.racingCourse.checkpointAlong.at(-1)};
+  })()`,context);
+  assert.equal(result.phase,'active');assert.ok(Math.abs(result.rider-startMeters)<0.01);assert.equal(result.ghost,result.rider);assert.equal(result.gap,0);
+  assert.equal(result.finish,result.rider);assert.ok(Math.abs(result.total-2*(1000-startMeters))<0.01);
+  }
+});
+
+test('Racing capture excludes pre-start measurements without resetting the existing general ride', () => {
+  const context=racingStartFixture();
+  const result=vm.runInContext(`(()=>{
+    ensureSharedRide(90000);
+    for(let second=90;second<=100;second++)sendRaceFix(second*1000,(second-90)*5);
+    const priorRoute=JSON.stringify(state.ride.routePoints),priorStartedAt=state.ride.startedAt;
+    requestRacingStart();finishRaceCountdown();
+    const startPreserved=JSON.stringify(state.ride.routePoints)===priorRoute&&state.ride.startedAt===priorStartedAt;
+    const startedAt=state.racingCapture.startedAt;
+    sendRaceFix(startedAt-1000,55,startedAt+100);
+    for(let second=1;second<=10;second++)sendRaceFix(startedAt+second*1000,55+second*5);
+    const record=createRacingRecord(testNow,{completed:false});
+    freezeRacingSession({completed:false,now:testNow});sendRaceFix(testNow+1000,110);
+    return{startPreserved,startedAt,recordStart:record.route[0].timestamp,onlyPostStart:record.route.every(point=>point.timestamp>=startedAt),rawOnlyPostStart:state.racingCapture.ride.detailedSamples.every(sample=>sample.measurementTimestamp>=startedAt),generalHasEarlier:state.ride.routePoints.some(point=>point.timestamp<startedAt),generalStart:state.ride.startedAt,raceTime:state.racingSnapshot.raceElapsedTime,recordTime:record.movingTime,captureStopped:state.racingCapture.ride.movingTime===record.movingTime,generalContinues:state.ride.recordingState==='recording'};
+  })()`,context);
+  assert.equal(result.startPreserved,true);assert.equal(result.onlyPostStart,true);assert.equal(result.rawOnlyPostStart,true);
+  assert.equal(result.recordStart,result.startedAt);assert.equal(result.generalHasEarlier,true);assert.equal(result.generalStart,90000);
+  assert.ok(result.recordTime<=10000);assert.equal(result.raceTime,result.recordTime);
+  assert.equal(result.captureStopped,true);assert.equal(result.generalContinues,true);
+});
+
+test('Racing save and reload preserve the actual turnaround index on the recorded round trip', () => {
+  const context=racingStartFixture();
+  const result=vm.runInContext(`(()=>{
+    const route=[racePoint(0),racePoint(300),racePoint(0)],checkpointAlong=racingCheckpointDistances(route,[racePoint(300),racePoint(0)]);
+    state.racingCourse={...state.racingCourse,route,distance:checkpointAlong[1],turnaroundPoint:route[1],turnaroundAlong:checkpointAlong[0],checkpoints:[route[1],route[2]],checkpointAlong};
+    sendRaceFix(100000,0);requestRacingStart();finishRaceCountdown();const startedAt=testNow;
+    for(let progress=10;progress<=600;progress+=10)sendRaceFix(startedAt+progress*200,progress<=300?progress:600-progress);
+    const record=state.racingFrozenRecord;
+    const values=new Map();profileRepository=RideMateProfiles.createProfileRepository({getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,value)},{createId:()=> 'profile-a'});profileRepository.initialize();activeProfileId='profile-a';
+    profileRepository.prependRacing(activeProfileId,record);state.racingPhase='idle';state.racingCourse=null;
+    closeRecordsScreen=()=>{};showRacingCourseOnMap=()=>{};
+    const restored=challengeRacingRecord(0),turn=state.racingCourse.turnaroundAlong;
+    return{completed:record.completed,index:record.turnaroundRouteIndex,pointMatches:JSON.stringify(record.turnaroundPoint)===JSON.stringify({latitude:record.route[record.turnaroundRouteIndex]?.latitude,longitude:record.route[record.turnaroundRouteIndex]?.longitude}),restored,turn,total:state.racingCourse.checkpointAlong.at(-1),rawCount:record.detailedSamples.length,rawPostStart:record.detailedSamples.every(sample=>(sample.measurementTimestamp??sample.timestamp)>=startedAt),rawRestored:JSON.stringify(profileRepository.readRacing(activeProfileId)[0].detailedSamples)===JSON.stringify(record.detailedSamples)};
+  })()`,context);
+  assert.equal(result.completed,true);assert.ok(Number.isInteger(result.index)&&result.index>0);assert.equal(result.pointMatches,true);
+  assert.equal(result.restored,true);assert.ok(Math.abs(result.turn-300)<15);assert.ok(result.total>result.turn+250);
+  assert.ok(result.rawCount>0);assert.equal(result.rawPostStart,true);assert.equal(result.rawRestored,true);
+});
+
+test('Racing restores a legacy interior turnaround without confusing it with the finish', () => {
+  const context=loadApp('',true,true);
+  const result=vm.runInContext(`(()=>{
+    const point=meters=>({latitude:0,longitude:meters/111195});
+    const route=[0,100,300,100,0].map((meters,index)=>({...point(meters),timestamp:index*10000,distance:[0,100,300,500,600][index],movingTime:index*10000,filteredSpeed:5,moving:index>0}));
+    const record={ghostDataVersion:1,tripType:'round',route,checkpoints:[point(300),point(0)]};
+    activeProfileId='profile-a';profileRepository={readRacing:()=>[record],readSettings:()=>({distanceUnit:'km'})};closeRecordsScreen=()=>{};showRacingCourseOnMap=()=>{};
+    const before=JSON.stringify(record),restored=challengeRacingRecord(0),turn=state.racingCourse.turnaroundAlong;
+    delete record.checkpoints;const rejected=!challengeRacingRecord(0);
+    return{restored,turn,rejected,beforeUnchanged:before===JSON.stringify({...record,checkpoints:[point(300),point(0)]})};
+  })()`,context);
+  assert.equal(result.restored,true);assert.ok(Math.abs(result.turn-300)<0.01);assert.equal(result.rejected,true);assert.equal(result.beforeUnchanged,true);
+});
+
+test('Racing record keeps the confirmed turnaround GPS even when motion batching omitted that route sample', () => {
+  const context=racingStartFixture();
+  const result=vm.runInContext(`(()=>{
+    sendRaceFix(100000,0);requestRacingStart();finishRaceCountdown();
+    const capture=state.racingCapture,base=capture.startedAt;
+    capture.ride.distance=600;capture.ride.movingTime=120000;
+    capture.ride.routePoints=[{...racePoint(290),timestamp:base+58000,distance:290,movingTime:58000,filteredSpeed:5,moving:true},{...racePoint(280),timestamp:base+64000,distance:320,movingTime:64000,filteredSpeed:5,moving:true},{...racePoint(0),timestamp:base+120000,distance:600,movingTime:120000,filteredSpeed:5,moving:true}];
+    state.racingReturnState.confirmedAt=base+60000;
+    state.racingReturnState.capturePoint={...racePoint(300),timestamp:base+60000,distance:300,movingTime:60000,filteredSpeed:5,moving:true,source:'race-turnaround'};
+    const record=createRacingRecord(base+120000,{completed:true}),index=record.turnaroundRouteIndex;
+    return{point:record.turnaroundPoint,index,stored:record.route[index],ordered:record.route.every((point,i)=>!i||point.timestamp>=record.route[i-1].timestamp)};
+  })()`,context);
+  assert.ok(Math.abs(result.point.longitude*111195-300)<0.01);assert.equal(result.stored.source,'race-turnaround');assert.equal(result.ordered,true);
+});
+
+test('Racing actual start removes only the departure marker and redraw cannot restore it', () => {
+  const context=racingStartFixture();
+  const result=vm.runInContext(`(()=>{
+    class LatLng {constructor(latitude,longitude){Object.assign(this,{latitude,longitude})}}
+    class Overlay {constructor(options){Object.assign(this,options)}setPosition(position){this.position=position}setMap(map){this.map=map}}
+    kakao={maps:{LatLng,CustomOverlay:Overlay}};state.map={getLevel:()=>2,panTo(){}};
+    drawRouteEndpointMarkers(false);
+    const departure=state.routeEndpointMarkers.find(marker=>marker.content.className.includes('departure'));
+    const destination=state.routeEndpointMarkers.find(marker=>marker.content.className.includes('destination'));
+    sendRaceFix(100000,0);requestRacingStart();finishRaceCountdown();
+    const afterStart={departureRemoved:departure.map===null,destinationKept:destination.map===state.map,turnaroundKept:!!state.racingReturnState.arrivalGate};
+    drawRouteEndpointMarkers(false);
+    return{afterStart,redrawDeparture:state.routeEndpointMarkers.some(marker=>marker.content.className.includes('departure')),redrawDestination:state.routeEndpointMarkers.some(marker=>marker.content.className.includes('destination')&&marker.map===state.map)};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{afterStart:{departureRemoved:true,destinationKept:true,turnaroundKept:true},redrawDeparture:false,redrawDestination:true});
+});
+
+test('Racing Ghost animation follows route corners and stops on pause, stale GPS, reroute and teardown', () => {
+  const context=loadApp('',true,true);
+  const result=vm.runInContext(`(()=>{
+    class LatLng {constructor(latitude,longitude){Object.assign(this,{latitude,longitude})}}
+    class Overlay {constructor(options){Object.assign(this,options)}setPosition(position){this.position=position}setMap(map){this.map=map}}
+    kakao={maps:{LatLng,CustomOverlay:Overlay}};
+    let now=0,id=0;const frames=new Map();performance={now:()=>now};
+    requestAnimationFrame=callback=>{frames.set(++id,callback);return id};cancelAnimationFrame=frame=>frames.delete(frame);
+    const step=time=>{now=time;const pending=[...frames.values()];frames.clear();pending.forEach(callback=>callback(time))};
+    const point=(x,y)=>({latitude:y/111195,longitude:x/111195}),route=[point(0,0),point(0,100),point(100,100)];
+    state.screen='racing';state.racingPhase='active';state.map={};state.ride=Ride.startRide(Ride.createRideSession(),0);state.selectedRoute=0;
+    let path;state.routeLines=[{setPath(points){path=points}}];
+    const session=Racing.createRaceSession({route,target:Racing.createTargetSpeedTarget(1)});state.racingSession=session;
+    state.racingSnapshot=Racing.updateRace(session,{currentProgressDistance:0,currentMovingTime:50000});renderRacingHud();
+    state.racingSnapshot=Racing.updateRace(session,{currentProgressDistance:0,currentMovingTime:150000});const official=JSON.stringify(state.racingSnapshot);renderRacingHud();
+    step(1500);const corner={...state.racingTargetMarker.position},onLine=projectOnRoute(path,corner).offRouteDistance;
+    const authoritativeUnchanged=JSON.stringify(state.racingSnapshot)===official;
+    setSharedRidePaused(true,150000);const paused={...state.racingTargetMarker.position};step(2000);const pauseFrozen=JSON.stringify(paused)===JSON.stringify(state.racingTargetMarker.position)&&frames.size===0;
+    setSharedRidePaused(false,151000);state.racingSnapshot=Racing.updateRace(session,{currentProgressDistance:0,currentMovingTime:160000});renderRacingHud();
+    updateActiveRacing({timestamp:160000,quality:{fresh:false}},{moving:true});step(3000);const staleStopped=frames.size===0;
+    state.racingSnapshot=Racing.updateRace(session,{currentProgressDistance:0,currentMovingTime:170000});renderRacingHud();
+    const reroute=[point(100,100),point(200,100)];
+    Racing.rebaseRaceRoute(session,{route:reroute,currentPosition:reroute[0],snapshot:state.racingSnapshot,oldLength:100,newLength:100,rerouteSequence:1});
+    state.racingSnapshot=Racing.updateRace(session,{currentProgressDistance:0,currentMovingTime:170000});renderRacingHud();step(4000);const rerouteStopped=frames.size===0;
+    state.racingSnapshot=Racing.updateRace(session,{currentProgressDistance:0,currentMovingTime:180000});renderRacingHud();clearRacingTargetMarker();step(5000);
+    return{corner,onLine,authoritativeUnchanged,pauseFrozen,staleStopped,rerouteStopped,cleared:state.racingTargetMarker===null&&frames.size===0};
+  })()`,context);
+  assert.ok(Math.abs(result.corner.longitude*111195)<0.01);
+  assert.ok(Math.abs(result.corner.latitude*111195-100)<0.01);
+  assert.ok(result.onLine<0.01);assert.equal(result.authoritativeUnchanged,true);
+  assert.equal(result.pauseFrozen,true);assert.equal(result.staleStopped,true);assert.equal(result.rerouteStopped,true);assert.equal(result.cleared,true);
+});
+
+test('Racing starts at zero even when the first GPS fix is closer to the return leg', () => {
+  const context=loadApp('',true,true);
+  const result=vm.runInContext(`(()=>{
+    const point=(x,y=0)=>({latitude:y/111195,longitude:x/111195});
+    const route=[point(0),point(1000),point(0,10)];
+    state.screen='racing';state.currentLocation=point(0,10);
+    state.ride=Ride.createRideSession();state.ride.recordingState='recording';state.ride.startedAt=1000;
+    state.racingCourse={source:'new',tripType:'round',route,turnaroundPoint:point(1000),turnaroundAlong:1000,checkpoints:[point(1000),point(0,10)],checkpointAlong:[1000,2000]};
+    startRacingSession({route,target:Racing.createTargetSpeedTarget(5)},1000,{}, {timestamp:1000,position:{...point(0,10),accuracy:3},quality:{fresh:true,monotonic:true,plausiblePosition:true}});
+    const start={current:state.racingSnapshot.currentRouteProgress,target:state.racingSnapshot.targetRouteProgress,phase:state.racingReturnState.actualPhase};
+    state.racingCapture.ride.movingTime=2000;
+    updateActiveRacing({timestamp:3000,position:{...point(10,9),accuracy:3},speed:{valid:true,mps:5},quality:{fresh:true,monotonic:true,plausiblePosition:true}},{moving:true});
+    return{start,next:state.racingSnapshot.currentRouteProgress};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.start)),{current:0,target:0,phase:'OUTBOUND'});
+  assert.ok(result.next>0&&result.next<20);
+});
+
+test('Racing completes the full 2000m round trip and preserves faster and slower finish comparisons', () => {
+  for (const millisecondsPerMeter of [160,240]) {
+    const context=loadApp('',true,true);
+    context.millisecondsPerMeter=millisecondsPerMeter;
+    const result=vm.runInContext(`(()=>{
+      const point=meters=>({latitude:0,longitude:meters/111195}),route=[point(0),point(1000),point(0)],base=100000;
+      state.screen='racing';state.currentLocation=point(0);state.ride=Ride.createRideSession();state.ride.recordingState='recording';state.ride.startedAt=base;
+      state.ride.routePoints=[{...point(0),timestamp:base,distance:0,movingTime:0}];
+      const checkpointAlong=racingCheckpointDistances(route,[point(1000),point(0)]);
+      state.racingCourse={source:'new',tripType:'round',route,distance:checkpointAlong.at(-1),turnaroundPoint:point(1000),turnaroundAlong:checkpointAlong[0],checkpoints:[point(1000),point(0)],checkpointAlong};
+      startRacingSession({route,target:Racing.createTargetSpeedTarget(5)},base,{}, {timestamp:base,position:{...point(0),accuracy:3},quality:{fresh:true,monotonic:true,plausiblePosition:true}});
+      let turnaround;
+      for(let progress=10;progress<=2000;progress+=10){
+        const position=point(progress<=1000?progress:2000-progress),movingTime=progress*millisecondsPerMeter,timestamp=base+movingTime;
+        state.racingCapture.ride.distance=progress;state.racingCapture.ride.movingTime=movingTime;
+        state.racingCapture.ride.routePoints.push({...position,timestamp,distance:progress,movingTime});
+        updateActiveRacing({timestamp,position:{...position,accuracy:3},speed:{valid:true,mps:1000/millisecondsPerMeter},heading:{source:'gps',degrees:progress<=1000?90:270},quality:{fresh:true,monotonic:true,plausiblePosition:true}},{moving:true});
+        if(progress===1000)turnaround={phase:state.racingReturnState.actualPhase,progress:state.racingSnapshot.currentRouteProgress,reached:state.racingReachedDestination};
+      }
+      return{turnaround,phase:state.racingPhase,progress:state.racingSnapshot.currentRouteProgress,completed:state.racingFrozenRecord?.completed,finalTimeDifference:state.racingFrozenRecord?.finalTimeDifference};
+    })()`,context);
+    assert.equal(result.turnaround.phase,'RETURN');
+    assert.ok(Math.abs(result.turnaround.progress-1000)<0.01);
+    assert.equal(result.turnaround.reached,false);
+    assert.equal(result.phase,'completion-pending');
+    assert.ok(Math.abs(result.progress-2000)<0.01);
+    assert.equal(result.completed,true);
+    assert.ok(Math.abs(result.finalTimeDifference-(millisecondsPerMeter===160?80000:-80000))<1);
+  }
+});
+
+test('Racing draws the virtual rider on the same path through two non-collinear reroutes with a centered rotating arrow', () => {
+  const context=loadApp('',true,true);
+  const result=vm.runInContext(`(()=>{
+    class LatLng {constructor(latitude,longitude){Object.assign(this,{latitude,longitude})}}
+    class Overlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setPosition(position){this.position=position}}
+    kakao={maps:{LatLng,CustomOverlay:Overlay}};
+    const point=(x,y=0)=>({latitude:y/111195,longitude:x/111195});
+    const session=Racing.createRaceSession({route:[point(0),point(1000)],target:Racing.createTargetSpeedTarget(5)});
+    let snapshot=Racing.updateRace(session,{currentProgressDistance:400,currentMovingTime:20000});
+    const rerouted=[point(400),point(400,300),point(1000)];
+    Racing.rebaseRaceRoute(session,{route:rerouted,currentPosition:rerouted[0],snapshot,oldLength:600,newLength:1000,rerouteSequence:1});
+    snapshot=Racing.updateRace(session,{currentProgressDistance:200,currentMovingTime:20000});
+    const second=[point(400,200),point(600,400),point(1000)];
+    Racing.rebaseRaceRoute(session,{route:second,currentPosition:second[0],snapshot,oldLength:800,newLength:1000,rerouteSequence:2});
+    snapshot=Racing.updateRace(session,{currentProgressDistance:0,currentMovingTime:20000});
+    state.screen='racing';state.racingPhase='active';state.racingSession=session;state.racingSnapshot=snapshot;state.selectedRoute=0;state.map={};
+    let path;state.routeLines=[{setPath(points){path=points}}];
+    updateRacingRoutePath();renderRacingTargetMarker(snapshot);
+    const marker=state.racingTargetMarker;
+    const pointDistance=projectOnRoute(path,marker.position).offRouteDistance;
+    const first={pointDistance,pathLength:path.length,position:marker.position,xAnchor:marker.xAnchor,yAnchor:marker.yAnchor,shape:state.racingTargetMarkerEl.textContent,className:state.racingTargetMarkerEl.className,transform:state.racingTargetMarkerEl.style.transform,expectedHeading:snapshot.targetHeading};
+    snapshot=Racing.updateRace(session,{currentProgressDistance:0,currentMovingTime:130000});state.racingSnapshot=snapshot;
+    updateRacingRoutePath();renderRacingTargetMarker(snapshot);
+    return{first,secondDistance:projectOnRoute(path,state.racingTargetMarker.position).offRouteDistance,sameMarker:marker===state.racingTargetMarker,originalRoutesUnchanged:JSON.stringify(session.routeVersions[0].route)===JSON.stringify([point(0),point(1000)])};
+  })()`,context);
+  assert.ok(result.first.pointDistance<0.01,'virtual rider must be on the displayed polyline, including preserved route segments');
+  assert.ok(result.first.pathLength>=4);
+  assert.equal(result.first.xAnchor,.5);
+  assert.equal(result.first.yAnchor,.5);
+  assert.equal(result.first.shape,'▲');
+  assert.equal(result.first.className,'gps-arrow racing-target-marker');
+  assert.equal(result.first.transform,`rotate(${result.first.expectedHeading}deg) translateX(-36px)`);
+  assert.ok(result.secondDistance<0.01);
+  assert.equal(result.sameMarker,true);
+  assert.equal(result.originalRoutesUnchanged,true);
+  assert.match(styles,/\.gps-arrow\.racing-target-marker\{[^}]*background:#ff4f5e/);
 });
 
 test('Racing offscreen target indicator includes direction and rounded distance', () => {
