@@ -101,3 +101,11 @@ node --test --test-isolation=none --test-name-pattern='course best includes|reco
 - `updateRacingRoutePath`: 같은 Polyline에 같은 좌표를 반복 전달하지 않도록 실제 표시 좌표를 비교. 진행 지점이나 경로 좌표가 바뀌거나 Polyline이 교체되면 갱신. GPS 처리, 경로 원본, 카메라 추적은 변경하지 않음.
 - 검증: 키보드 offsetTop 0/80/200/380, 입력 해제 및 카운트다운, 키보드 사용 후 두 모드의 결과 화면 높이, 지도 경로 재그리기 회귀 검사 추가. 동일 경로 60회 갱신 시 `setPath` 1회, 진행·경로·Polyline 변경 시 갱신 확인. 전체 테스트 418개 통과.
 - 제한: 사진에서 본 경로선 흔들림의 원인이 불필요한 재그리기라고 확정하지는 않았음. iPhone Safari에서 입력창·결과 카드·지도 선의 실제 표시는 배포 후 확인 필요.
+
+## 2026-10-29 첫 입력·시작 카메라·상단 격차 표시 보완
+
+- 입력창 `pointerdown` 직후 준비 클래스가 카드를 화면 중간으로 이동시키던 CSS 제거. 누른 입력창 위치를 유지하고 실제 키보드가 열린 뒤에만 높이를 보정. `prepareRacingKeyboard`의 강제 레이아웃 읽기도 제거.
+- `followRacingPosition`: 시작 및 명시적 화면 복귀(`force`) 시 확대 단계가 달라져도 중간 반환하지 않고 중심까지 맞춤. 실제 지도에서는 `setCenter`로 즉시 반영하며, 일반 GPS 갱신 시 기존 확대/추적 정책은 유지.
+- `hideRacingDepartureMarkers` 및 왕복 목적지 재배치: SDK에서 보장하지 않는 `content` 필드 대신 공식 `getContent()` 사용. 테스트도 공개 `content` 필드가 없는 오버레이로 변경하고 출발 제거·목적지 유지 및 좌표 갱신 확인. 참고: https://apis.map.kakao.com/web/documentation/#CustomOverlay_getContent
+- 상단 검색창이 숨겨진 동안 격차 표시는 위쪽 16px, 화면 밖 Ghost 안내는 58px로 이동. 검색창이 다시 나타나면 기존 70px/112px 위치를 사용.
+- 전체 자동 테스트 421개 통과. 실제 시작 흐름에서 다음 GPS 수신 없이 확대·중심 이동·출발 마커 제거 완료 확인. iPhone Safari의 실제 한 번 탭·키보드·지도 렌더링은 자동 테스트로 대체하지 않음.

@@ -1418,6 +1418,8 @@ test('Map and Racing keep current location top-right and menu bottom-right', () 
 test('Racing HUD clears the search header and portrait route editing clears locate', () => {
   assert.match(styles,/\.racing-active \.racing-comparison\{top:calc\(env\(safe-area-inset-top\) \+ 70px\)\}/);
   assert.match(styles,/\.racing-active \.racing-target-indicator\{top:calc\(env\(safe-area-inset-top\) \+ 112px\)\}/);
+  assert.match(styles,/\.racing-active\.racing-controls-hidden \.racing-comparison\{top:calc\(env\(safe-area-inset-top\) \+ 16px\)\}/);
+  assert.match(styles,/\.racing-active\.racing-controls-hidden \.racing-target-indicator\{top:calc\(env\(safe-area-inset-top\) \+ 58px\)\}/);
   assert.match(styles,/@media\(orientation:portrait\)\{\.route-editor\{right:calc\(68px \+ env\(safe-area-inset-right\)\)\}\}/);
   assert.match(styles,/@media\(orientation:landscape\) and \(max-height:600px\)\{[\s\S]*?\.route-editor\{[^}]*position:static[^}]*width:100%/);
   const context=loadApp('',false,true);
@@ -1651,9 +1653,37 @@ test('Racing speed keyboard keeps the map camera and visual layout fixed while m
     closed:{height:'800px',inset:'0px',offset:'0px',className:false,prepared:false},
     repeated:{inset:'0px',offset:'0px',className:false,prepared:false},
   });
-  assert.match(styles,/\.racing-keyboard-preparing \.racing-setup-panel\{[^}]*bottom:max\([^}]*50%/);
+  assert.doesNotMatch(styles,/\.racing-keyboard-preparing[^{}]*\{/);
   assert.match(styles,/\.racing-keyboard-open #map,\.racing-keyboard-open #overlayRoot\{[^}]*translateY\(var\(--racing-keyboard-offset-top,0px\)\)/);
   assert.doesNotMatch(appSource,/scrollTo\(/);
+});
+
+test('Racing speed first pointerdown keeps the input in place until native focus and keyboard resize', () => {
+  const context=loadApp('',true,true);
+  const result=vm.runInContext(`(()=>{
+    state.screen='racing';window.visualViewport.height=800;window.visualViewport.offsetTop=0;syncViewportMetrics();
+    const input=$('#racingTargetSpeed'),setup=$('#racingSetupPanel');let forcedLayouts=0;
+    setup.getBoundingClientRect=()=>{forcedLayouts++;return{top:520,bottom:700,height:180}};
+    input.dispatch('pointerdown',{pointerType:'touch'});
+    const pressed={forcedLayouts,inset:document.documentElement.style.getPropertyValue('--keyboard-inset'),height:document.documentElement.style.getPropertyValue('--viewport-height'),opened:document.body.classList.contains('racing-keyboard-open')};
+    document.activeElement=input;dispatchDocumentEvent('focusin',input);
+    window.visualViewport.height=420;window.visualViewport.offsetTop=80;syncViewportMetrics();
+    return{pressed,focused:document.activeElement===input,inset:document.documentElement.style.getPropertyValue('--keyboard-inset'),opened:document.body.classList.contains('racing-keyboard-open')};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{pressed:{forcedLayouts:0,inset:'0px',height:'800px',opened:false},focused:true,inset:'380px',opened:true});
+  assert.doesNotMatch(styles,/\.racing-keyboard-preparing[^{}]*\{/);
+});
+
+test('Racing comparison moves up with hidden controls and down again when the map is touched', () => {
+  const context=loadApp('',true,true);
+  const result=vm.runInContext(`(()=>{
+    state.screen='racing';state.racingPhase='active';document.body.classList.add('racing-active');
+    showRacingControlsTemporarily();const shown=!document.body.classList.contains('racing-controls-hidden');
+    runPendingTimers();const hidden=document.body.classList.contains('racing-controls-hidden');
+    handleMapPointerEvent({type:'pointerdown',isPrimary:false});
+    return{shown,hidden,shownAgain:!document.body.classList.contains('racing-controls-hidden')};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{shown:true,hidden:true,shownAgain:true});
 });
 
 test('Racing keyboard inset does not double count viewport panning and releases before countdown', () => {
@@ -4962,6 +4992,7 @@ test('Racing zoom changes wait for the minimum interval before changing again', 
   const context=loadApp('',false,true);
   const result=vm.runInContext(`(()=>{
     let level=3;const commands=[];
+    kakao={maps:{LatLng:class{constructor(latitude,longitude){Object.assign(this,{latitude,longitude})}}}};
     state.screen='racing';state.racingPhase='active';state.racingCameraFollow=true;
     state.map={getLevel:()=>level,setLevel(value){level=value;commands.push(value)},panTo(){commands.push('pan')}};
     const fast=(kmh,timestamp)=>({timestamp,position:{latitude:37,longitude:127,accuracy:3},speed:{valid:true,mps:kmh/3.6},heading:{degrees:0},quality:{fresh:true,monotonic:true,plausiblePosition:true}});
@@ -4971,7 +5002,7 @@ test('Racing zoom changes wait for the minimum interval before changing again', 
     followRacingPosition({latitude:37,longitude:127},true,2600);
     return{first,withinInterval,afterInterval,level,commands};
   })()`,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)),{first:3,withinInterval:3,afterInterval:4,level:4,commands:[4]});
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{first:3,withinInterval:3,afterInterval:4,level:4,commands:[4,'pan']});
 });
 
 test('Racing camera includes a nearby target only up to level 4 and keeps rider priority when farther away', () => {
@@ -4991,9 +5022,9 @@ test('Racing camera includes a nearby target only up to level 4 and keeps rider 
     level=2;commands.length=0;points.length=0;const farTarget={latitude:37,longitude:127+4000/(111195*Math.cos(37*Math.PI/180))};state.racingSnapshot={targetPosition:farTarget};followRacingPosition(rider,true,3000);
     return{near,settled,far:{level,commands:commands.slice(),lastCenter:points.at(-1)}};
   })()`,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result.near)),{level:4,commands:['level:4']});
+  assert.deepEqual(JSON.parse(JSON.stringify(result.near)),{level:4,commands:['level:4','pan']});
   assert.equal(result.settled.level,4);
-  assert.deepEqual(JSON.parse(JSON.stringify(result.settled.commands)),['level:4','pan']);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.settled.commands)),['level:4','pan','pan']);
   assert.equal(result.far.level,2,'when level 4 cannot include the target, keep the speed-based rider view');
   assert.equal(result.far.commands.at(-1),'pan','far target should leave a rider-centered camera');
   assert.ok(result.far.lastCenter.latitude>37,'far target fallback must keep the rider forward-view offset');
@@ -5166,21 +5197,22 @@ test('Racing record keeps the confirmed turnaround GPS even when motion batching
   assert.ok(Math.abs(result.point.longitude*111195-300)<0.01);assert.equal(result.stored.source,'race-turnaround');assert.equal(result.ordered,true);
 });
 
-test('Racing actual start removes only the departure marker and redraw cannot restore it', () => {
+test('Racing actual start centers immediately after zoom and removes SDK departure markers without another GPS fix', () => {
   const context=racingStartFixture();
   const result=vm.runInContext(`(()=>{
     class LatLng {constructor(latitude,longitude){Object.assign(this,{latitude,longitude})}}
-    class Overlay {constructor(options){Object.assign(this,options)}setPosition(position){this.position=position}setMap(map){this.map=map}}
-    kakao={maps:{LatLng,CustomOverlay:Overlay}};state.map={getLevel:()=>2,panTo(){}};
+    class Overlay {constructor({content,...options}){Object.assign(this,options);this.getContent=()=>content}setPosition(position){this.position=position}setMap(map){this.map=map}}
+    let level=5,center=null;const camera=[];
+    kakao={maps:{LatLng,CustomOverlay:Overlay}};state.map={getLevel:()=>level,setLevel(value){level=value;camera.push('zoom')},setCenter(value){center=value;camera.push('center')},panTo(){camera.push('pan')}};
     drawRouteEndpointMarkers(false);
-    const departure=state.routeEndpointMarkers.find(marker=>marker.content.className.includes('departure'));
-    const destination=state.routeEndpointMarkers.find(marker=>marker.content.className.includes('destination'));
-    sendRaceFix(100000,0);requestRacingStart();finishRaceCountdown();
-    const afterStart={departureRemoved:departure.map===null,destinationKept:destination.map===state.map,turnaroundKept:!!state.racingReturnState.arrivalGate};
+    const departure=state.routeEndpointMarkers.find(marker=>marker.getContent().className.includes('departure'));
+    const destination=state.routeEndpointMarkers.find(marker=>marker.getContent().className.includes('destination'));
+    sendRaceFix(100000,50);requestRacingStart();finishRaceCountdown();
+    const afterStart={departureRemoved:departure.map===null,destinationKept:destination.map===state.map,turnaroundKept:!!state.racingReturnState.arrivalGate,centered:center?.latitude===state.currentLocation.latitude&&center?.longitude===state.currentLocation.longitude,destinationMoved:destination.position.longitude===state.currentLocation.longitude,level,camera};
     drawRouteEndpointMarkers(false);
-    return{afterStart,redrawDeparture:state.routeEndpointMarkers.some(marker=>marker.content.className.includes('departure')),redrawDestination:state.routeEndpointMarkers.some(marker=>marker.content.className.includes('destination')&&marker.map===state.map)};
+    return{afterStart,redrawDeparture:state.routeEndpointMarkers.some(marker=>marker.getContent().className.includes('departure')),redrawDestination:state.routeEndpointMarkers.some(marker=>marker.getContent().className.includes('destination')&&marker.map===state.map)};
   })()`,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)),{afterStart:{departureRemoved:true,destinationKept:true,turnaroundKept:true},redrawDeparture:false,redrawDestination:true});
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{afterStart:{departureRemoved:true,destinationKept:true,turnaroundKept:true,centered:true,destinationMoved:true,level:2,camera:['zoom','center']},redrawDeparture:false,redrawDestination:true});
 });
 
 test('Racing Ghost animation follows route corners and stops on pause, stale GPS, reroute and teardown', () => {
@@ -5328,6 +5360,7 @@ test('Racing speed display only updates the preferred zoom and defers map change
   const context=loadApp('',false,true);
   const result=vm.runInContext(`(()=>{
     let level=2;const calls=[];
+    kakao={maps:{LatLng:class{constructor(latitude,longitude){Object.assign(this,{latitude,longitude})}}}};
     state.map={getLevel:()=>level,setLevel(value){level=value;calls.push('level:'+value)},panTo(){calls.push('pan')}};
     state.screen='racing';state.racingPhase='active';state.racingCameraFollow=true;
     const fast=(kmh,valid=true)=>({timestamp:1000,position:{latitude:37,longitude:127,accuracy:3},speed:{valid,mps:kmh/3.6},heading:{degrees:90},quality:{fresh:true,monotonic:true,plausiblePosition:true}});
@@ -5343,9 +5376,9 @@ test('Racing speed display only updates the preferred zoom and defers map change
     return{calls,beforeInvalid,afterInvalid,duringManual,afterManual,afterEnd:{level,calls:calls.length}};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    calls:['level:4'],
+    calls:['level:4','pan'],
     beforeInvalid:{level:2,calls:0,preferred:4},afterInvalid:{level:2,calls:0},
-    duringManual:{level:2,calls:0},afterManual:{level:4,calls:1,command:'level:4'},afterEnd:{level:4,calls:1},
+    duringManual:{level:2,calls:0},afterManual:{level:4,calls:2,command:'pan'},afterEnd:{level:4,calls:2},
   });
 });
 
