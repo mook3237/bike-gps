@@ -1609,7 +1609,7 @@ test('Racing speed keyboard keeps the map camera and visual layout fixed while m
     map.boundingRect={top:80,right:390,bottom:880,left:0,width:390,height:800};
     bottom.boundingRect={top:828,right:390,bottom:880,left:0,width:390,height:52};
     dispatchViewportEvent('resize');dispatchViewportEvent('scroll');
-    const open={height:document.documentElement.style.getPropertyValue('--viewport-height'),inset:document.documentElement.style.getPropertyValue('--keyboard-inset'),offset:document.documentElement.style.getPropertyValue('--racing-keyboard-offset-top'),viewportBottom:document.documentElement.style.getPropertyValue('--viewport-bottom'),className:document.body.classList.contains('racing-keyboard-open'),prepared:document.body.classList.contains('racing-keyboard-preparing')};
+    const open={relayouts,height:document.documentElement.style.getPropertyValue('--viewport-height'),inset:document.documentElement.style.getPropertyValue('--keyboard-inset'),offset:document.documentElement.style.getPropertyValue('--racing-keyboard-offset-top'),viewportBottom:document.documentElement.style.getPropertyValue('--viewport-bottom'),className:document.body.classList.contains('racing-keyboard-open'),prepared:document.body.classList.contains('racing-keyboard-preparing')};
     dispatchDocumentEvent('focusout',input);window.scrollY=0;window.visualViewport.height=800;window.visualViewport.offsetTop=0;map.boundingRect={top:0,right:390,bottom:800,left:0,width:390,height:800};bottom.boundingRect={top:748,right:390,bottom:800,left:0,width:390,height:52};dispatchViewportEvent('resize');
     const closed={height:document.documentElement.style.getPropertyValue('--viewport-height'),inset:document.documentElement.style.getPropertyValue('--keyboard-inset'),offset:document.documentElement.style.getPropertyValue('--racing-keyboard-offset-top'),className:document.body.classList.contains('racing-keyboard-open'),prepared:document.body.classList.contains('racing-keyboard-preparing')};
     input.dispatch('pointerdown',{pointerType:'touch'});dispatchDocumentEvent('focusin',input);window.visualViewport.height=420;window.visualViewport.offsetTop=80;dispatchViewportEvent('resize');dispatchDocumentEvent('focusout',input);window.visualViewport.height=800;window.visualViewport.offsetTop=0;dispatchViewportEvent('resize');
@@ -1618,12 +1618,12 @@ test('Racing speed keyboard keeps the map camera and visual layout fixed while m
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
     disabledLogCount:0,prepared:true,
-    open:{height:'800px',inset:'300px',offset:'80px',viewportBottom:'0px',className:true,prepared:false},
-    camera:{relayouts:0,pans:0,zooms:0,center:{latitude:37,longitude:127},level:3},
+    open:{relayouts:0,height:'800px',inset:'380px',offset:'80px',viewportBottom:'0px',className:true,prepared:false},
+    camera:{relayouts:2,pans:0,zooms:0,center:{latitude:37,longitude:127},level:3},
     logs:[
       {stage:'before-focus',scrollY:0,offsetTop:0,mapVisualTop:0,bottomVisualTop:748},
       {stage:'keyboard-open',scrollY:12,offsetTop:80,mapVisualTop:0,bottomVisualTop:748},
-      {stage:'keyboard-closed',scrollY:0,offsetTop:0,mapVisualTop:0,bottomVisualTop:748},
+      {stage:'keyboard-closed',scrollY:12,offsetTop:80,mapVisualTop:0,bottomVisualTop:748},
     ],
     closed:{height:'800px',inset:'0px',offset:'0px',className:false,prepared:false},
     repeated:{inset:'0px',offset:'0px',className:false,prepared:false},
@@ -1631,6 +1631,63 @@ test('Racing speed keyboard keeps the map camera and visual layout fixed while m
   assert.match(styles,/\.racing-keyboard-preparing \.racing-setup-panel\{[^}]*bottom:max\([^}]*50%/);
   assert.match(styles,/\.racing-keyboard-open #map,\.racing-keyboard-open #overlayRoot\{[^}]*translateY\(var\(--racing-keyboard-offset-top,0px\)\)/);
   assert.doesNotMatch(appSource,/scrollTo\(/);
+});
+
+test('Racing keyboard inset does not double count viewport panning and releases before countdown', () => {
+  const context=loadApp('',true,true);
+  const result=vm.runInContext(`(()=>{
+    state.screen='racing';state.racingPhase='idle';window.visualViewport.height=800;window.visualViewport.offsetTop=0;syncViewportMetrics();
+    prepareRacingKeyboard();racingKeyboardFocused=true;
+    const opened=[];
+    for(const offset of [0,80,200,380]){
+      window.visualViewport.height=420;window.visualViewport.offsetTop=offset;
+      const metrics=syncViewportMetrics();opened.push({height:metrics.height,inset:metrics.keyboardInset,panelBottom:metrics.height-metrics.keyboardInset-82});
+    }
+    dispatchDocumentEvent('focusout',$('#racingTargetSpeed'));document.activeElement=null;
+    window.visualViewport.height=600;window.visualViewport.offsetTop=40;syncViewportMetrics();
+    const closed={height:document.documentElement.style.getPropertyValue('--viewport-height'),base:racingKeyboardBaseHeight,open:document.body.classList.contains('racing-keyboard-open')};
+    const input=$('#racingTargetSpeed');let blurs=0;input.blur=()=>{blurs++;document.activeElement=null};document.activeElement=input;
+    prepareRacingKeyboard();racingKeyboardFocused=true;window.visualViewport.height=420;syncViewportMetrics();
+    beginRacingCountdown([{latitude:37,longitude:127},{latitude:37.001,longitude:127}],Racing.createTargetSpeedTarget(5));
+    return{opened,closed,blurs,phase:state.racingPhase,base:racingKeyboardBaseHeight,focused:racingKeyboardFocused,open:document.body.classList.contains('racing-keyboard-open'),offset:document.documentElement.style.getPropertyValue('--racing-keyboard-offset-top')};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{opened:Array(4).fill({height:800,inset:380,panelBottom:338}),closed:{height:'600px',base:0,open:false},blurs:1,phase:'countdown',base:0,focused:false,open:false,offset:'0px'});
+});
+
+test('navigation and racing results share visible viewport sizing after Racing keyboard use', () => {
+  for(const mode of ['navigation','racing']){
+    const context=loadApp('',false,true);context.resultMode=mode;
+    const result=vm.runInContext(`(()=>{
+      window.visualViewport.height=800;window.visualViewport.offsetTop=0;syncViewportMetrics();
+      state.screen='racing';prepareRacingKeyboard();racingKeyboardFocused=true;window.visualViewport.height=420;window.visualViewport.offsetTop=80;syncViewportMetrics();
+      window.visualViewport.height=600;window.visualViewport.offsetTop=40;state.currentLocation=null;
+      const input=$('#racingTargetSpeed');let blurs=0;input.blur=()=>{blurs++;document.activeElement=null};document.activeElement=input;
+      const record={name:'course',distance:100,movingTime:10000,completed:true,route:[{latitude:37,longitude:127},{latitude:37.001,longitude:127}]},before=JSON.stringify(record);
+      if(resultMode==='racing'){state.racingPhase='completion-pending';state.racingFrozenRecord=record;cleanupFrozenRacingSession({showResult:true,record,savedKind:'riding'})}
+      else{state.screen='navigation';finishNavigation(false);openRideResult(record,{mode:'navigation'})}
+      const visible={height:document.documentElement.style.getPropertyValue('--visual-viewport-height'),top:document.documentElement.style.getPropertyValue('--visual-viewport-top')};
+      window.visualViewport.height=650;window.visualViewport.offsetTop=0;dispatchViewportEvent('resize');
+      return{visible,resized:document.documentElement.style.getPropertyValue('--visual-viewport-height'),screen:state.screen,base:racingKeyboardBaseHeight,open:document.body.classList.contains('racing-keyboard-open'),offset:document.documentElement.style.getPropertyValue('--racing-keyboard-offset-top'),blurs,modalHidden:$('#rideResultModal').classList.contains('hidden'),unchanged:before===JSON.stringify(record)};
+    })()`,context);
+    assert.deepEqual(JSON.parse(JSON.stringify(result)),{visible:{height:'600px',top:'40px'},resized:'650px',screen:'map',base:0,open:false,offset:'0px',blurs:1,modalHidden:false,unchanged:true});
+  }
+  assert.match(styles,/\.ride-result-backdrop\{[^}]*top:var\(--visual-viewport-top,0px\);bottom:auto;height:var\(--visual-viewport-height,100dvh\)/);
+  assert.match(styles,/\.ride-result-sheet\{[^}]*min-height:0;max-height:100%;overflow-y:auto/);
+});
+
+test('Racing route drawing skips identical geometry but updates progress, replacement lines and rerouted coordinates', () => {
+  const context=loadApp('',true,true);
+  const result=vm.runInContext(`(()=>{
+    kakao={maps:{LatLng:class{constructor(latitude,longitude){Object.assign(this,{latitude,longitude})}}}};
+    const route=[{latitude:37,longitude:127},{latitude:37.001,longitude:127},{latitude:37.001,longitude:127.001}],original=JSON.stringify(route);
+    state.screen='racing';state.racingPhase='active';state.racingSession=Racing.createRaceSession({route,target:Racing.createTargetSpeedTarget(5)});state.racingSnapshot={currentRouteProgress:20,targetRouteProgress:40};state.selectedRoute=0;
+    const paths=[];state.routeLines=[{setPath:p=>paths.push(p)}];for(let i=0;i<60;i++)updateRacingRoutePath();const stableDraws=paths.length;
+    state.racingSnapshot.currentRouteProgress=30;updateRacingRoutePath();const progressedDraws=paths.length;
+    let replacementDraws=0;state.routeLines=[{setPath(){replacementDraws++}}];updateRacingRoutePath();updateRacingRoutePath();const afterReplacement=replacementDraws;
+    state.racingSession=Racing.createRaceSession({route:route.map(p=>({...p,longitude:p.longitude+.001})),target:Racing.createTargetSpeedTarget(5)});updateRacingRoutePath();
+    return{stableDraws,progressedDraws,afterReplacement,afterReroute:replacementDraws,unchanged:JSON.stringify(route)===original,maxOffRoute:Math.max(...paths.flat().map(p=>projectOnRoute(route,p).offRouteDistance))};
+  })()`,context);
+  assert.equal(result.stableDraws,1);assert.equal(result.progressedDraws,2);assert.equal(result.afterReplacement,1);assert.equal(result.afterReroute,2);assert.equal(result.unchanged,true);assert.ok(result.maxOffRoute<0.01);
 });
 
 test('Racing diagnostics are disabled by default and report live target state only when enabled', () => {
@@ -2461,7 +2518,7 @@ test('screen transitions retire stale Racing course responses and refresh viewpo
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
     racingClass:false,ordinarySearchRacingClass:false,returnHidden:true,navMenuHidden:true,
-    setupPreserved:true,staleRouteApplied:false,viewportHeight:'800px',keyboard:{layoutHeight:'800px',inset:'300px',open:true},
+    setupPreserved:true,staleRouteApplied:false,viewportHeight:'800px',keyboard:{layoutHeight:'500px',inset:'0px',open:false},
   });
   assert.match(styles,/\.main-menu-drawer\{[^}]*width:min\(42vw,170px\)/);
   assert.match(styles,/#navMenu\{[^}]*width:50%/);
