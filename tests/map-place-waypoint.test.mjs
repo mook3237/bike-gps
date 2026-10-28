@@ -738,9 +738,32 @@ test('destination and current-location overlays use the expected marker design a
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
     destination:{html:'<img src="assets/destination-pin.svg" alt="">',xAnchor:.5,yAnchor:1},
     mapLocation:{className:'gps-arrow',html:'▲',xAnchor:.5,yAnchor:.5},
-    racingLocation:{className:'gps-arrow racing-rider-marker',html:'▲',position:[37.51,127.01],transform:'rotate(123deg) translateX(36px)'},
+    racingLocation:{className:'gps-arrow',html:'▲',position:[37.51,127.01],transform:'rotate(123deg)'},
     navigationLocation:{className:'gps-arrow',html:'▲',position:[37.52,127.02],transform:'rotate(123deg)'},
   });
+});
+
+test('rider offset and connector appear only after actual racing start and disappear on completion', () => {
+  const context=loadApp('',true,true);
+  const result=vm.runInContext(`(()=>{
+    class LatLng {constructor(latitude,longitude){Object.assign(this,{latitude,longitude})}}
+    class Overlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setPosition(position){this.position=position}}
+    kakao={maps:{LatLng,CustomOverlay:Overlay}};state.map={getProjection:()=>({pointFromCoords:p=>({x:p.longitude*1000,y:-p.latitude*1000})})};
+    const point={latitude:37,longitude:127};state.currentLocation=point;state.racingHeading=90;
+    state.routes=[{_points:[point,{latitude:37,longitude:127.001}]}];state.selectedRoute=0;
+    const snapshot=()=>({className:state.gpsMarkerEl.className,transform:state.gpsMarkerEl.style.transform,position:[state.gpsMarker.position.latitude,state.gpsMarker.position.longitude]});
+    const before=[];for(const screen of ['racing-route','racing'])for(const phase of ['idle','countdown','waiting-gps']){state.screen=screen;state.racingPhase=phase;setGpsMarker(point,false,90);before.push(snapshot())}
+    state.racingPhase='active';setGpsMarker(point,false,90);const active=snapshot(),linkLength=state.gpsMarkerEl.style.getPropertyValue('--rider-link-length');
+    state.racingPhase='completion-pending';renderRacingHud();const completed=snapshot();
+    state.racingPhase='idle';renderRacingHud();setGpsMarker(point,false,90);const idle=snapshot();
+    return{before,active,linkLength,completed,idle};
+  })()`,context);
+  const centered={className:'gps-arrow',transform:'rotate(90deg)',position:[37,127]};
+  assert.deepEqual(JSON.parse(JSON.stringify(result.before)),Array(6).fill(centered));
+  assert.deepEqual(JSON.parse(JSON.stringify(result.active)),{className:'gps-arrow racing-rider-marker',transform:'rotate(90deg) translateX(36px)',position:[37,127]});
+  assert.equal(result.linkLength,'20px');
+  assert.deepEqual(JSON.parse(JSON.stringify(result.completed)),centered);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.idle)),centered);
 });
 
 test('racing marker offsets follow cardinal headings at fixed pixel spacing without changing GPS or race coordinates', () => {
