@@ -772,8 +772,50 @@ test('racing marker offsets follow cardinal headings at fixed pixel spacing with
   }
   assert.equal(result.cleared,true);assert.equal(result.mapClass,'gps-arrow');assert.equal(result.mapTransform,'');
   assert.match(styles,/\.gps-arrow\.racing-rider-marker::before,\.gps-arrow\.racing-target-marker::before\{[^}]*position:absolute;[^}]*width:20px;height:2px/);
-  assert.match(styles,/\.gps-arrow\.racing-rider-marker::before\{left:calc\(50% - 36px\)\}/);
+  assert.match(styles,/\.gps-arrow\.racing-rider-marker::before\{left:50%;width:var\(--rider-link-length,0px\);transform-origin:0 50%;transform:rotate\(var\(--rider-link-angle,180deg\)\) translateX\(16px\)/);
   assert.match(styles,/\.gps-arrow\.racing-target-marker::before\{left:calc\(50% \+ 16px\);background:#ff4f5e\}/);
+});
+
+test('rider connector stays attached to the matched route through GPS drift, recovery, zoom and rerouting without moving GPS', () => {
+  const context=loadApp('',true,true);
+  const result=vm.runInContext(`(()=>{
+    class LatLng {constructor(latitude,longitude){Object.assign(this,{latitude,longitude})}}
+    class Overlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setPosition(position){this.position=position}}
+    kakao={maps:{LatLng,CustomOverlay:Overlay}};
+    let scale=1;const point=(x,y)=>({latitude:y/111195,longitude:x/111195});
+    const projection={pointFromCoords:p=>({x:p.longitude*111195*scale,y:-p.latitude*111195*scale})};
+    state.screen='racing';state.racingPhase='active';state.map={getProjection:()=>projection};
+    const results=[];
+    for(const scenario of [
+      {route:[point(0,0),point(100,0),point(0,0)],base:0,progress:50,anchor:point(50,0)},
+      {route:[point(0,0),point(100,0),point(0,0)],base:0,progress:150,anchor:point(50,0)},
+      {route:[point(200,200),point(200,300)],base:500,progress:550,anchor:point(200,250)}
+    ]){
+      state.racingSession=Racing.createRaceSession({route:scenario.route,target:Racing.createTargetSpeedTarget(5)});
+      state.racingSession.progressBase=scenario.base;
+      state.racingSnapshot={currentRouteProgress:scenario.progress,targetRouteProgress:scenario.progress,distanceDifference:0};
+      const before=JSON.stringify({session:state.racingSession,snapshot:state.racingSnapshot,ride:state.ride});
+      for(const heading of [0,90,180,270])for(const drift of [[0,0],[60,40],[-50,-30],[0,0]]){
+        const gps={latitude:scenario.anchor.latitude+drift[1]/111195,longitude:scenario.anchor.longitude+drift[0]/111195};
+        state.currentLocation=gps;state.racingHeading=heading;scale=1;setGpsMarker(gps,false,heading);
+        for(const zoomScale of [1,3]){
+          scale=zoomScale;handleMapBoundsChanged();
+          const length=parseFloat(state.gpsMarkerEl.style.getPropertyValue('--rider-link-length'));
+          const angle=parseFloat(state.gpsMarkerEl.style.getPropertyValue('--rider-link-angle'))*Math.PI/180,rotation=heading*Math.PI/180;
+          const localX=36+(length+16)*Math.cos(angle),localY=(length+16)*Math.sin(angle);
+          const origin=projection.pointFromCoords(state.gpsMarker.position),expected=projection.pointFromCoords(scenario.anchor);
+          const end={x:origin.x+localX*Math.cos(rotation)-localY*Math.sin(rotation),y:origin.y+localX*Math.sin(rotation)+localY*Math.cos(rotation)};
+          results.push({error:Math.hypot(end.x-expected.x,end.y-expected.y),gpsKept:state.gpsMarker.position.latitude===gps.latitude&&state.gpsMarker.position.longitude===gps.longitude&&state.currentLocation===gps,
+            dataUnchanged:before===JSON.stringify({session:state.racingSession,snapshot:state.racingSnapshot,ride:state.ride})});
+        }
+      }
+    }
+    state.racingSession=null;state.racingSnapshot=null;state.racingCourse=null;state.routes=[];updateRacingRiderConnector();
+    return{results,noRouteLength:state.gpsMarkerEl.style.getPropertyValue('--rider-link-length')};
+  })()`,context);
+  assert.equal(result.results.length,96);
+  for(const check of result.results){assert.ok(check.error<0.05,`connector misses route by ${check.error}px`);assert.equal(check.gpsKept,true);assert.equal(check.dataUnchanged,true)}
+  assert.equal(result.noRouteLength,'0px');
 });
 
 test('an initial calculated route overview long press renders navigation actions without changing the route', () => {

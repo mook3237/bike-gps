@@ -657,7 +657,9 @@
 .gps-arrow.racing-target-marker{background:#ff4f5e;box-shadow:0 0 0 2px #ff4f5e,0 0 16px rgba(255,79,94,.65)}
 .gps-arrow.racing-rider-marker,.gps-arrow.racing-target-marker{position:relative;overflow:visible;pointer-events:none}
 .gps-arrow.racing-rider-marker::before,.gps-arrow.racing-target-marker::before{content:'';position:absolute;top:calc(50% - 1px);width:20px;height:2px;background:#0a84ff}
-.gps-arrow.racing-rider-marker::before{left:calc(50% - 36px)}
+/* Keep the connector aligned with the arrow; GPS heading already has smoothing. */
+.gps-arrow.racing-rider-marker{transition:none}
+.gps-arrow.racing-rider-marker::before{left:50%;width:var(--rider-link-length,0px);transform-origin:0 50%;transform:rotate(var(--rider-link-angle,180deg)) translateX(16px)}
 .gps-arrow.racing-target-marker::before{left:calc(50% + 16px);background:#ff4f5e}
 .racing-target-indicator{position:absolute;top:88px;left:50%;transform:translateX(-50%);z-index:6;color:#ff7a84;font-size:13px;font-weight:900;text-shadow:0 2px 7px #020a18}
 .racing-target-indicator::before{content:'▲';display:inline-block;margin-right:6px;transform:rotate(var(--target-angle));-webkit-text-stroke:2px #fff;paint-order:stroke fill}
