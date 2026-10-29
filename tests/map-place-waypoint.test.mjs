@@ -1883,6 +1883,7 @@ test('Racing starts explicitly after countdown and connects shared GPS updates t
     emitNativePosition({coords:{latitude:0,longitude:.00056,accuracy:3,speed:5,heading:90},timestamp:base+16000});
     const resumed={moving:state.ride.motion.moving,movingTimeAdvanced:state.ride.movingTime>movingTime,snapshotChanged:JSON.stringify(state.racingSnapshot)!==JSON.stringify(movingSnapshot)};
     $('#mainMenu').setAttribute=()=>{};openMainMenu();const racingEndVisible=!$('#mainMenu').querySelector('[data-menu-item="racing-end"]').classList.contains('hidden');closeMainMenu(true);
+    emitNativePosition({coords:{latitude:0,longitude:.00093,accuracy:3,speed:5,heading:90},timestamp:base+17000});
     emitNativePosition({coords:{latitude:0,longitude:.001,accuracy:3,speed:5,heading:90},timestamp:base+18000});
     const savePrompt={visible:!$('#racingSaveDecisionDialog').classList.contains('hidden'),hasRoute:state.racingFrozenRecord?.route?.length>1,completed:state.racingFrozenRecord?.completed,phase:state.racingPhase};
     $('#saveFrozenRacingBtn').onclick();
@@ -4652,6 +4653,38 @@ test('Racing reroute requires accurate consecutive movement and excludes saved r
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{before:0,afterNew:1,afterSaved:1});
 });
 
+test('racing route retains its final approach until arrival is confirmed instead of becoming a single invisible point', () => {
+  const context=loadApp('',true,true);
+  const result=vm.runInContext(`(()=>{
+    kakao={maps:{LatLng:class{constructor(latitude,longitude){Object.assign(this,{latitude,longitude})}}}};
+    const route=[{latitude:0,longitude:0},{latitude:0,longitude:100/111195}];
+    state.screen='racing';state.racingPhase='active';state.racingSession=Racing.createRaceSession({route,target:Racing.createTargetSpeedTarget(5)});
+    const end=state.racingSession.routeDistance;state.racingSnapshot={currentRouteProgress:end,targetRouteProgress:end};state.selectedRoute=0;
+    let path;state.routeLines=[{setPath(points){path=points}}];updateRacingRoutePath();
+    return{count:path.length,visibleLength:hav(path[0],path.at(-1)),end:path.at(-1).longitude,expectedEnd:route.at(-1).longitude};
+  })()`,context);
+  assert.ok(result.count>=2);assert.ok(Math.abs(result.visibleLength-15)<.01);assert.equal(result.end,result.expectedEnd);
+});
+
+test('racing arrival detects the 3m gate and rear 5m zone while stationary before any rerouting', () => {
+  const context=loadApp('',true,true);
+  const result=vm.runInContext(`(()=>{
+    const route=[{latitude:0,longitude:0},{latitude:0,longitude:100/111195}];
+    state.screen='racing';state.racingPhase='active';state.racingSession=Racing.createRaceSession({route,target:Racing.createTargetSpeedTarget(5)});
+    state.racingCourse={source:'new',tripType:'one-way',route,checkpointAlong:[100],checkpoints:[route.at(-1)]};
+    state.racingSnapshot=Racing.updateRace(state.racingSession,{currentProgressDistance:98,currentMovingTime:10000});
+    let cards=0,reroutes=0;openRacingSaveDecision=()=>{cards++};recalculateRacingRoute=()=>{reroutes++};renderRacingHud=()=>{};renderRacingSettings=()=>{};
+    createRacingRecord=(now,{completed})=>({completed,route,distance:100,movingTime:10000});
+    const fix=(meters,time)=>({timestamp:time,position:{latitude:0,longitude:meters/111195,accuracy:3},quality:{fresh:true,monotonic:true,plausiblePosition:true}});
+    updateActiveRacing(fix(98,10000),{moving:false});const approach=state.racingSession.finalArrivalDetector.approached;
+    const width=state.racingSession.finalArrivalGate.gateWidthM,radius=state.racingSession.finalArrivalGate.radiusM;
+    updateActiveRacing(fix(103,11000),{moving:false});
+    updateActiveRacing(fix(130,12000),{moving:true});
+    return{approach,width,radius,cards,reroutes,completed:state.racingFrozenRecord?.completed,phase:state.racingPhase};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{approach:true,width:3,radius:5,cards:1,reroutes:0,completed:true,phase:'completion-pending'});
+});
+
 test('Racing reaching the final checkpoint blocks later off-route rerouting without ending the race', () => {
   const context=loadApp('',false,true);
   const result=vm.runInContext(`(()=>{
@@ -4660,7 +4693,10 @@ test('Racing reaching the final checkpoint blocks later off-route rerouting with
     state.racingSession={target:{type:Racing.TARGET_SPEED},progressBase:0,routeDistance:100};
     state.racingCourse={source:'new',checkpoints:[{latitude:37,longitude:127.001}],checkpointAlong:[100]};
     const arrived={currentRouteProgress:100,offRouteDistance:3};
-    advanceRacingCheckpoint(arrived);
+    state.racingSession.route=[{latitude:0,longitude:0},{latitude:0,longitude:100/111195}];
+    const arrivalFix=meters=>({timestamp:1000,position:{latitude:0,longitude:meters/111195,accuracy:3},quality:{fresh:true,monotonic:true,plausiblePosition:true}});
+    advanceRacingCheckpoint({...arrived,currentRouteProgress:98},arrivalFix(98));
+    advanceRacingCheckpoint(arrived,arrivalFix(103));
     const fast=timestamp=>({timestamp,position:{latitude:37,longitude:127.002,accuracy:3},quality:{fresh:true,monotonic:true,plausiblePosition:true}});
     observeRacingOffRoute(fast(1000),{moving:true},{currentRouteProgress:100,offRouteDistance:45});
     observeRacingOffRoute(fast(3000),{moving:true},{currentRouteProgress:100,offRouteDistance:45});
@@ -4686,6 +4722,8 @@ test('Racing confirmed arrival freezes once and ignores later racing GPS updates
     state.racingCourse={source:'new',checkpoints:[{latitude:37,longitude:127.001}],checkpointAlong:[100]};
     state.racingCapture={startedAt:0,startedRide:false,distance:0,movingTime:0,routeIndex:0,detailedIndex:0};
     const fast={timestamp:12000,position:{latitude:37,longitude:127.001,accuracy:3},quality:{fresh:true,monotonic:true,plausiblePosition:true}};
+    state.racingSession.route=[{latitude:37,longitude:127},{latitude:37,longitude:127.001}];
+    updateActiveRacing({...fast,timestamp:11000,position:{...fast.position,longitude:127.0009}},{moving:true});
     updateActiveRacing(fast,{moving:true});
     const frozen=JSON.stringify(state.racingFrozenRecord),snapshot=JSON.stringify(state.racingSnapshot),phase=state.racingPhase;
     let level=2,zoomCalls=0;state.map={getLevel:()=>level,setLevel(value){level=value;zoomCalls++}};updateRacingLiveDisplay({...fast,speed:{valid:true,mps:75/3.6}},{moving:true});
