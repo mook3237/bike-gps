@@ -4946,6 +4946,23 @@ test('Racing app reroutes 3, 10, and 100 times without losing return state, rout
   ]);
 });
 
+test('automatic zoom uses animation and defers navigation panning until the zoom guard ends', () => {
+  const context=loadApp('',true,true);
+  const result=vm.runInContext(`(()=>{
+    const timers=[],zooms=[],pans=[];setTimeout=callback=>{timers.push(callback);return timers.length};
+    state.screen='navigation';state.nav.follow=true;
+    state.map={setLevel(level,options){zooms.push({level,options})},panTo(position){pans.push(position)}};
+    navigationCameraTarget=position=>position;shouldUpdateNavigationCamera=()=>true;isFastObservationUsable=()=>true;
+    const position={latitude:37,longitude:127},fast={position,timestamp:1000};
+    setNavigationLevel(3);followNavigationPosition(position,false,3,1000,false,fast);
+    const before={pans:pans.length,pending:!!state.nav.pendingCameraFollow};
+    timers[0]();const after={pans:pans.length,pending:!!state.nav.pendingCameraFollow,guard:navProgrammaticZoom};
+    setNavigationLevel(2,false);
+    return{zooms,before,after,lastPosition:pans.at(-1)};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{zooms:[{level:3,options:{animate:{duration:350}}},{level:2,options:{animate:false}}],before:{pans:0,pending:true},after:{pans:1,pending:false,guard:false},lastPosition:{latitude:37,longitude:127}});
+});
+
 test('Racing camera chooses one command per GPS update and applies speed hysteresis', () => {
   const context=loadApp('',false,true);
   const result=vm.runInContext(`(()=>{
