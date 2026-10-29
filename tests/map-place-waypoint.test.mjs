@@ -12,6 +12,27 @@ const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const styles = fs.readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 const vercelConfig = JSON.parse(fs.readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'));
 
+test('settings diagnostic log button copies racing events and offers selectable text when clipboard fails', async () => {
+  const context=loadApp('',true,true);
+  vm.runInContext(fs.readFileSync(new URL('../diagnostics.js',import.meta.url),'utf8'),context);
+  const result=await vm.runInContext(`(async()=>{
+    const copies=[];navigator.clipboard={writeText:async text=>{copies.push(text)}};
+    state.racingPhase='active';state.racingSnapshot={currentRouteProgress:98,targetRouteProgress:100};
+    appDiagnostic('arrival-check',{reason:'approaching',arrived:false});
+    await $('#copyDiagnosticLogsBtn').onclick();
+    const copied=JSON.parse(copies[0]);
+    navigator.clipboard.writeText=async()=>{throw new Error('clipboard blocked')};
+    await $('#copyDiagnosticLogsBtn').onclick();
+    const fallback={visible:!$('#diagnosticLogDialog').classList.contains('hidden'),text:JSON.parse($('#diagnosticLogText').value)};
+    $('#closeDiagnosticLogBtn').onclick();
+    return{events:copied.entries.map(entry=>entry.event),context:copied.context,fallbackVisible:fallback.visible,fallbackHasArrival:fallback.text.entries.some(entry=>entry.event==='arrival-check'),closed:$('#diagnosticLogDialog').classList.contains('hidden'),textCleared:$('#diagnosticLogText').value===''};
+  })()`,context);
+  assert.ok(result.events.includes('arrival-check'));assert.ok(result.events.includes('copy-logs'));
+  assert.equal(result.context.progress,98);assert.equal(result.context.phase,'active');
+  assert.equal(result.fallbackVisible,true);assert.equal(result.fallbackHasArrival,true);assert.equal(result.closed,true);assert.equal(result.textCleared,true);
+  assert.ok(html.indexOf('/diagnostics.js')<html.indexOf('/app.js'));
+});
+
 test('course best includes faster general records for both result and frozen racing saves', () => {
   for(const hasOlderRacing of [false,true]) {
     const context=loadApp('',false,true);context.testOlderRacing=hasOlderRacing;

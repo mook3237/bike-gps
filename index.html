@@ -168,7 +168,17 @@
           <label class="app-setting-row"><span><strong>짧은 주행 저장</strong><small>저장 기준 확정 후 적용 예정</small></span><input type="checkbox" data-setting="saveShortRides"></label>
           <label class="app-setting-row"><span><strong>시계 형식</strong><small>도착 예정 시간 표시</small></span><select data-setting="clockFormat"><option value="device">기기 설정</option><option value="12h">12시간</option><option value="24h">24시간</option></select></label>
           <button id="voiceVolumeSettingsBtn" class="app-setting-row app-setting-action" type="button"><span><strong>🔊 음성 안내 음량</strong><small id="voiceVolumeSummary">현재 음량: 100%</small></span><span aria-hidden="true">›</span></button>
+          <button id="copyDiagnosticLogsBtn" class="app-setting-row app-setting-action" type="button"><span><strong>진단 로그 복사</strong><small>새로고침 이후 최근 동작·오류·위치 정보를 복사합니다.</small></span><span aria-hidden="true">›</span></button>
         </main>
+      </section>
+
+      <section id="diagnosticLogDialog" class="dialog-backdrop hidden" aria-hidden="true">
+        <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="diagnosticLogTitle">
+          <h2 id="diagnosticLogTitle">진단 로그</h2>
+          <p>자동 복사가 되지 않았습니다. 아래 내용을 길게 눌러 전체 선택 후 복사해주세요.</p>
+          <textarea id="diagnosticLogText" readonly aria-label="복사할 진단 로그" spellcheck="false"></textarea>
+          <button id="closeDiagnosticLogBtn" class="secondary-btn" type="button">닫기</button>
+        </div>
       </section>
 
       <section id="voiceVolumeDialog" class="dialog-backdrop hidden" aria-hidden="true">
@@ -557,6 +567,7 @@
       </nav>
     </div>
   </main>
+  <script src="/diagnostics.js?v=20261029"></script>
   <script src="/ride-foundation.js?v=20261008-navigation-fast"></script>
   <script src="/racing-foundation.js?v=20261008-navigation-fast"></script>
   <script src="/settings-foundation.js?v=20261008-navigation-fast"></script>
