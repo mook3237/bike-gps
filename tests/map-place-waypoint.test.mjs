@@ -1903,7 +1903,7 @@ test('Racing starts explicitly after countdown and connects shared GPS updates t
     before:{phase:'idle',snapshot:null,watchers:1},
     countdown:{phase:'countdown',text:'3',snapshot:null},
     active:{phase:'active',type:'TARGET_SPEED',watchers:1,snapshot:true,targetMarker:true,setupHidden:true,level:2},
-    live:{snapshot:true,gap:20,hud:'20m 앞섬'},
+    live:{snapshot:true,gap:28,hud:'28m 앞섬'},
     stopped:{moving:false,movingTime:4000,elapsedAdvanced:true,snapshotFrozen:true},
     resumed:{moving:true,movingTimeAdvanced:true,snapshotChanged:true},
     racingEndVisible:true,
@@ -5213,6 +5213,22 @@ test('Racing actual start centers immediately after zoom and removes SDK departu
     return{afterStart,redrawDeparture:state.routeEndpointMarkers.some(marker=>marker.getContent().className.includes('departure')),redrawDestination:state.routeEndpointMarkers.some(marker=>marker.getContent().className.includes('destination')&&marker.map===state.map)};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{afterStart:{departureRemoved:true,destinationKept:true,turnaroundKept:true,centered:true,destinationMoved:true,level:2,camera:['zoom','center']},redrawDeparture:false,redrawDestination:true});
+});
+
+test('accelerating Ghost animation increases its travelled distance gradually within each GPS interval', () => {
+  const context=loadApp('',true,true);
+  const distances=vm.runInContext(`(()=>{
+    class LatLng {constructor(latitude,longitude){Object.assign(this,{latitude,longitude})}}
+    class Overlay {constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setPosition(position){this.position=position}}
+    kakao={maps:{LatLng,CustomOverlay:Overlay}};let now=0,id=0;const frames=new Map();performance={now:()=>now};
+    requestAnimationFrame=callback=>{frames.set(++id,callback);return id};cancelAnimationFrame=id=>frames.delete(id);
+    state.screen='racing';state.racingPhase='active';state.map={};state.ride=Ride.startRide(Ride.createRideSession(),0);
+    state.racingSession=Racing.createRaceSession({route:[{latitude:0,longitude:0},{latitude:0,longitude:.01}],target:Racing.createTargetSpeedTarget(30/3.6,3000)});
+    state.racingSnapshot=Racing.updateRace(state.racingSession,{currentProgressDistance:0,currentMovingTime:0});renderRacingHud();
+    state.racingSnapshot=Racing.updateRace(state.racingSession,{currentProgressDistance:0,currentMovingTime:3000});renderRacingHud();
+    return[1000,2000,3000].map(time=>{now=time;const pending=[...frames.values()];frames.clear();pending.forEach(frame=>frame(time));return state.racingTargetMarker.position.longitude*111195});
+  })()`,context);
+  for(let i=0;i<3;i++)assert.ok(Math.abs(distances[i]-(30/3.6)*(i+1)**2/6)<0.01);
 });
 
 test('Racing Ghost animation follows route corners and stops on pause, stale GPS, reroute and teardown', () => {

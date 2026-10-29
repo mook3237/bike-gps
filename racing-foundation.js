@@ -233,14 +233,27 @@
     return { type: SAVED_RIDE, samples, distance: samples.at(-1).distance, movingTime: samples.at(-1).movingTime };
   }
 
-  function createTargetSpeedTarget(speedMps) {
+  function createTargetSpeedTarget(speedMps, accelerationMs = 0) {
     if (!finite(speedMps) || speedMps <= 0) throw new TypeError('speedMps must be greater than zero');
-    return { type: TARGET_SPEED, speedMps };
+    if (!finite(accelerationMs) || accelerationMs < 0) throw new TypeError('accelerationMs must be nonnegative');
+    return { type: TARGET_SPEED, speedMps, ...(accelerationMs ? { accelerationMs, restartTimes: [0] } : {}) };
+  }
+
+  function speedRunDistance(target, duration) {
+    const seconds = Math.max(0, duration) / 1000, ramp = (target.accelerationMs || 0) / 1000;
+    return target.speedMps * (ramp && seconds < ramp ? seconds * seconds / (2 * ramp) : seconds - ramp / 2);
+  }
+
+  function stopTargetSpeed(session) {
+    if (session.target.type === TARGET_SPEED && session.target.accelerationMs) session.targetNeedsRestart = true;
   }
 
   function targetProgressAtTime(target, movingTime) {
     const time = Math.max(0, finite(movingTime) ? movingTime : 0);
-    if (target.type === TARGET_SPEED) return target.speedMps * (time / 1000);
+    if (target.type === TARGET_SPEED) {
+      const starts = target.restartTimes || [0];
+      return starts.reduce((distance, start, index) => distance + (time > start ? speedRunDistance(target, Math.min(time, starts[index + 1] ?? time) - start) : 0), 0);
+    }
     const samples = target.samples;
     if (time <= samples[0].movingTime) return samples[0].distance;
     let before = samples[0];
@@ -260,7 +273,16 @@
 
   function targetTimeAtProgress(target, progressDistance) {
     const distance = Math.max(0, finite(progressDistance) ? progressDistance : 0);
-    if (target.type === TARGET_SPEED) return distance / target.speedMps * 1000;
+    if (target.type === TARGET_SPEED) {
+      const starts = target.restartTimes || [0], ramp = (target.accelerationMs || 0) / 1000;
+      let remaining = distance;
+      for (let index = 0; index < starts.length; index++) {
+        const available = index + 1 < starts.length ? speedRunDistance(target, starts[index + 1] - starts[index]) : Infinity;
+        if (remaining > available) { remaining -= available; continue; }
+        const seconds = ramp && remaining < target.speedMps * ramp / 2 ? Math.sqrt(2 * remaining * ramp / target.speedMps) : remaining / target.speedMps + ramp / 2;
+        return starts[index] + seconds * 1000;
+      }
+    }
     const samples = target.samples;
     if (distance <= samples[0].distance) return samples[0].movingTime;
     let before = samples[0];
@@ -323,7 +345,7 @@
     return {
       route: raceRoute,
       routeDistance: routeDistance(raceRoute),
-      target,
+      target: target.accelerationMs ? { ...target, restartTimes: [0] } : target,
       lastMovingTime: baseline,
       raceElapsedTime: 0,
       progressBase: 0,
@@ -417,8 +439,13 @@
   }
 
   function updateRace(session, observation = {}) {
+    if (observation.manuallyPaused === true) stopTargetSpeed(session);
     const suppliedMovingTime = finite(observation.currentMovingTime) ? Math.max(0, observation.currentMovingTime) : session.lastMovingTime;
     const monotonicMovingTime = Math.max(session.lastMovingTime, suppliedMovingTime);
+    if (session.targetNeedsRestart && observation.manuallyPaused !== true && monotonicMovingTime > session.lastMovingTime) {
+      if (session.target.restartTimes.at(-1) < session.raceElapsedTime) session.target.restartTimes.push(session.raceElapsedTime);
+      session.targetNeedsRestart = false;
+    }
     if (observation.manuallyPaused !== true) session.raceElapsedTime += monotonicMovingTime - session.lastMovingTime;
     session.lastMovingTime = monotonicMovingTime;
 
@@ -555,6 +582,7 @@
     createRaceSession,
     createSavedRideTarget,
     createTargetSpeedTarget,
+    stopTargetSpeed,
     pointAtRouteDistance,
     prepareRaceStart,
     projectOnRoute,

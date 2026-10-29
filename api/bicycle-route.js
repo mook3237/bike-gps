@@ -8,6 +8,8 @@ export default async function handler(req,res){
  const viaX=String(via_x).split(',').filter(Boolean),viaY=String(via_y).split(',').filter(Boolean);if(viaX.length!==viaY.length||viaX.length>5)return res.status(400).json({error:'경유지는 최대 5개의 X/Y 좌표가 필요합니다.'});
  const viaCoords=viaX.flatMap((x,index)=>[+x,+viaY[index]]);if(!viaCoords.every((value,index)=>Number.isFinite(value)&&Math.abs(value)<=(index%2?90:180)))return res.status(400).json({error:'유효한 경유지 좌표가 필요합니다.'});
  const defs=[['BIKE_ONLY','자전거도로 우선'],['SHORTEST','최단 경로'],['ACCESSIBLE','편안한길']];
+ const requestedMode=req.query.route_mode;
+ if(requestedMode!==undefined&&!defs.some(([mode])=>mode===requestedMode))return res.status(400).json({error:'유효한 경로 탐색 기준이 필요합니다.'});
  const errors=[],activeRequests=new Map(),KAKAO_TIMEOUT_MS=8000;
  const hasUsableGeometry=route=>{const points=[];const visit=value=>{if(points.length>1||value==null)return;if(Array.isArray(value)){if(value.length>=4&&value.every(Number.isFinite)){for(let index=0;index+1<value.length&&points.length<2;index+=2)points.push([value[index],value[index+1]])}else if(value.length>=2&&Number.isFinite(value[0])&&Number.isFinite(value[1]))points.push([value[0],value[1]]);else value.forEach(visit)}else if(typeof value==='object')Object.entries(value).forEach(([key,child])=>{if(/coordinates|points|vertexes|path|roads|sections|legs|steps/i.test(key))visit(child)})};visit(route);return points.length>1&&(points[0][0]!==points[1][0]||points[0][1]!==points[1][1])};
  const one=async([mode,label])=>{
@@ -22,7 +24,7 @@ export default async function handler(req,res){
    }catch(e){errors.push({mode,status:e?.name==='AbortError'?504:502,message:e?.name==='AbortError'?'경로 API 시간 초과':e.message||'경로 API 연결 실패'});return null}
    finally{clearTimeout(timer);activeRequests.delete(controller);const ended=clock(),timing=performance.modes[mode];timing.endMs=ended-requestReceived;timing.durationMs=ended-started}
  };
- const pending=defs.map(one);let routes;
+ const pending=(requestedMode?defs.filter(([mode])=>mode===requestedMode):defs).map(one);let routes;
  if(firstUsable){try{const route=await Promise.any(pending.map(request=>request.then(value=>value||Promise.reject(new Error('unusable route')))));routes=[route]}catch{routes=[]}finally{activeRequests.forEach((timer,controller)=>{clearTimeout(timer);controller.abort()});activeRequests.clear()}}
  else routes=(await Promise.all(pending)).filter(Boolean);
  if(!routes.length)return res.status(502).json({error:'자전거 경로를 찾을 수 없음',details:errors,performance:finishPerformance()});

@@ -10,6 +10,28 @@ const metersPoint = meters => ({ latitude: 0, longitude: meters / 111195 });
 const metersPoint2D = (x, y) => ({ latitude: y / 111195, longitude: x / 111195 });
 const raceRoute = [metersPoint(0), metersPoint(100), metersPoint(200)];
 
+test('speed Ghost ramps for three seconds on start and restart with consistent distance and time comparison', () => {
+  const target=Racing.createTargetSpeedTarget(30/3.6,3000);
+  const session=Racing.createRaceSession({route:raceRoute,target});
+  for(const time of [0,1000,2000,3000,5000]){
+    const expected=time<3000?(30/3.6)*(time/1000)**2/6:(30/3.6)*(time/1000-1.5);
+    assert.ok(Math.abs(Racing.targetProgressAtTime(session.target,time)-expected)<1e-8);
+    assert.ok(Math.abs(Racing.targetTimeAtProgress(session.target,expected)-time)<1e-6);
+  }
+  Racing.updateRace(session,{currentMovingTime:5000,currentProgressDistance:20});
+  const stopped=Racing.targetProgressAtTime(session.target,5000);
+  Racing.stopTargetSpeed(session);Racing.stopTargetSpeed(session);
+  Racing.updateRace(session,{currentMovingTime:5000,currentProgressDistance:20,manuallyPaused:true});
+  assert.equal(Racing.targetProgressAtTime(session.target,5000),stopped);
+  Racing.updateRace(session,{currentMovingTime:6000,currentProgressDistance:20});
+  assert.deepEqual(session.target.restartTimes,[0,5000]);
+  const restarted=Racing.targetProgressAtTime(session.target,6000);
+  assert.ok(Math.abs(restarted-stopped-(30/3.6)/6)<1e-8);
+  for(const time of [5500,6000,8000,10000])assert.ok(Math.abs(Racing.targetTimeAtProgress(session.target,Racing.targetProgressAtTime(session.target,time))-time)<1e-6);
+  assert.deepEqual(target.restartTimes,[0],'session must not change the target used for another challenge');
+  assert.equal(Racing.targetProgressAtTime(Racing.createTargetSpeedTarget(5),1000),5);
+});
+
 function savedRideTargetRecord() {
   return {
     ghostDataVersion: 1,

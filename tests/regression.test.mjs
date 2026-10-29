@@ -270,6 +270,28 @@ test('initial, automatic, manual, and navigation preview routing share the bicyc
   assert.doesNotMatch(appSource, /dapi\.kakao\.com\/v\d+\/routing|\/v1\/directions|\/v2\/directions/);
 });
 
+test('single-mode rerouting requests exactly one Kakao route and preserves remaining waypoints', async () => {
+  const originalFetch=globalThis.fetch,originalKey=process.env.KAKAO_REST_API_KEY;
+  process.env.KAKAO_REST_API_KEY='test-key';
+  const calls=[];
+  globalThis.fetch=async url=>{calls.push(new URL(url));return{ok:true,status:200,json:async()=>({route:{properties:{totalDistance:100,totalTime:20},coordinates:[[127,37],[127.1,37.1]]}})}};
+  try{
+    const handler=await apiHandler('api/bicycle-route.js');
+    const query={start_x:'127',start_y:'37',end_x:'127.1',end_y:'37.1',via_x:'127.05',via_y:'37.05',first_usable:'1'};
+    for(const mode of ['BIKE_ONLY','SHORTEST','ACCESSIBLE']){
+      calls.length=0;const {output,response}=mockResponse();
+      await handler({method:'GET',query:{...query,route_mode:mode}},response);
+      assert.equal(output.status,200);assert.equal(calls.length,1);assert.equal(calls[0].searchParams.get('route_mode'),mode);
+      assert.equal(calls[0].searchParams.get('via_x'),'127.05');assert.equal(output.body.routes.length,1);
+    }
+    calls.length=0;const invalid=mockResponse();await handler({method:'GET',query:{...query,route_mode:'invalid'}},invalid.response);
+    assert.equal(invalid.output.status,400);assert.equal(calls.length,0);
+    globalThis.fetch=async url=>{calls.push(new URL(url));return{ok:false,status:404,json:async()=>({})}};
+    const failed=mockResponse();await handler({method:'GET',query:{...query,route_mode:'SHORTEST'}},failed.response);
+    assert.equal(failed.output.status,502);assert.equal(calls.length,1,'failure must not silently request other modes');
+  }finally{globalThis.fetch=originalFetch;if(originalKey===undefined)delete process.env.KAKAO_REST_API_KEY;else process.env.KAKAO_REST_API_KEY=originalKey}
+});
+
 test('reroute first-usable mode does not wait for a slower optional Kakao route', async () => {
   const originalFetch=globalThis.fetch,originalKey=process.env.KAKAO_REST_API_KEY;
   process.env.KAKAO_REST_API_KEY='test-key';
