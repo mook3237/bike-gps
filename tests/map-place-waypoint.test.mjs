@@ -33,31 +33,50 @@ test('settings diagnostic log button copies racing events and offers selectable 
   assert.ok(html.indexOf('/diagnostics.js')<html.indexOf('/app.js'));
 });
 
-test('search map diagnostics capture result extent, fit state, and later zoom changes', () => {
+test('search markers preserve the current viewport at every zoom level', () => {
+  for(const level of [3,2.4,4.2]){
+    const context=loadApp('',true,true);context.testLevel=level;
+    const result=vm.runInContext(`(()=>{
+      class LatLng{constructor(latitude,longitude){Object.assign(this,{latitude,longitude})}}
+      class Marker{setMap(){}}
+      kakao={maps:{LatLng,Marker,event:{addListener(){}}}};
+      const center=new LatLng(37.68,127.04);
+      state.map={getLevel:()=>testLevel,getCenter:()=>center,
+        setBounds(){throw Error('search must preserve bounds')},
+        setLevel(){throw Error('search must preserve zoom')},
+        setCenter(){throw Error('search must preserve center')},
+        panTo(){throw Error('search must preserve center')}};
+      showMarkers([{latitude:37.68,longitude:127.04},{latitude:35.9,longitude:128.5}]);
+      return{level:state.map.getLevel(),sameCenter:state.map.getCenter()===center,count:state.searchMarkers.length};
+    })()`,context);
+    assert.equal(result.level,level);assert.equal(result.sameCenter,true);assert.equal(result.count,2);
+  }
+});
+
+test('search viewport and selected places preserve the zoom level', () => {
   const context=loadApp('',true,true);
   const result=vm.runInContext(`(()=>{
-    const entries=[];globalThis.RideMateDiagnostics={record:(event,data)=>entries.push({event,data})};
-    class LatLng{constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}getLat(){return this.latitude}getLng(){return this.longitude}}
+    class LatLng{constructor(latitude,longitude){Object.assign(this,{latitude,longitude})}}
     class Bounds{constructor(){this.points=[]}extend(point){this.points.push(point)}}
-    class Marker{constructor(){}setMap(){}}
+    class Marker{setMap(){}}
     kakao={maps:{LatLng,LatLngBounds:Bounds,Marker,event:{addListener(){}}}};
-    const mapElement=$('#map');mapElement.boundingRect={width:390,height:640};
-    let level=5;state.screen='results';state.searchQuery='Dobong';
-    state.map={getLevel:()=>level,getCenter:()=>new LatLng(37.68,127.04),getBounds:()=>null,setBounds(bounds){this.fitted=bounds.points;level=7}};
-    showMarkers([{latitude:37.68,longitude:127.04},{latitude:37.681,longitude:127.041}]);
-    handleMapZoomChanged();handleMapIdle();level=9;handleMapZoomChanged();
-    return entries.filter(entry=>entry.event.startsWith('search-map-fit')||entry.event==='map-zoom-changed');
+    let level=12,center=null,fit=null;
+    state.map={getLevel:()=>level,setLevel:value=>{level=value},setBounds:bounds=>{fit=bounds.points},panTo:point=>{center=point}};
+    state.currentLocation={latitude:37.6,longitude:127.1};state.screen='results';
+    const near={name:'near',latitude:37.6,longitude:127.1},far={name:'far',latitude:35.9,longitude:128.5};
+    showMarkers([far,near,{...near,longitude:127.11}]);
+    const markerCount=state.searchMarkers.length;
+    renderScreen=()=>{};renderPlaceContent=()=>{};saveRecentSearch=()=>{};
+    openPlace(far,false,'initial');const selected={level,center};
+    level=12;openPlace(near,true,'initial');const inspected={level,center};
+    level=2;openPlace(near,true,'initial');
+    return{fit,markerCount,selected,inspected,preservedLevel:level};
   })()`,context);
-  assert.deepEqual([...result].map(entry=>entry.event),['search-map-fit-before','search-map-fit-after','map-zoom-changed','search-map-fit-idle','map-zoom-changed']);
-  assert.equal(result[0].data.count,2);
-  assert.ok(Math.abs(result[0].data.coordinateBounds.maxLatitude-result[0].data.coordinateBounds.minLatitude-.001)<1e-9);
-  assert.equal(result[0].data.map.level,5);
-  assert.equal(result[0].data.map.mapSize.height,640);
-  assert.equal(result[0].data.map.viewport.visualHeight,800);
-  assert.equal(result[1].data.map.level,7);
-  assert.equal(result[3].data.map.level,7);
-  assert.equal(result[4].data.map.level,9);
-  assert.equal(result[4].data.searchMapFitPending,false);
+  assert.equal(result.fit,null);
+  assert.equal(result.markerCount,3);
+  assert.equal(result.selected.level,12);assert.equal(result.selected.center.latitude,35.9);
+  assert.equal(result.inspected.level,12);assert.equal(result.inspected.center.latitude,35.9);
+  assert.equal(result.preservedLevel,2);
 });
 
 test('course best includes faster general records for both result and frozen racing saves', () => {
@@ -5604,4 +5623,37 @@ test('Racing manual map interaction pauses camera follow and restores it with th
     beforeReturn:{follow:false,pans:0},
     afterReturn:{follow:true,pans:1},
   });
+});
+
+ test('keyword pagination keeps the same area and accuracy order up to 45 without filling sparse results', async () => {
+  const originalFetch=globalThis.fetch,originalKey=process.env.KAKAO_REST_API_KEY;
+  process.env.KAKAO_REST_API_KEY='test-key';
+  try{
+    const handler=await apiHandler();
+    for(const total of [0,10,15,30,50]){
+      const requests=[];
+      globalThis.fetch=async url=>{
+        const parsed=new URL(url);
+        if(parsed.pathname.endsWith('/address.json'))return{ok:true,json:async()=>({documents:[]})};
+        const page=Number(parsed.searchParams.get('page'));requests.push(parsed.searchParams);
+        const start=(page-1)*15,count=Math.max(0,Math.min(15,total-start));
+        return{ok:true,json:async()=>({meta:{is_end:start+count>=total},documents:Array.from({length:count},(_,i)=>({id:String(start+i),place_name:'Place '+(start+i),x:'127.04',y:'37.68'}))})};
+      };
+      const {output,response}=mockResponse();
+      await handler({method:'GET',query:{query:'food',rect:'127,37.6,127.1,37.7',size:'45'}},response);
+      assert.equal(output.status,200);
+      assert.deepEqual(output.body.results.map(p=>p.id),Array.from({length:Math.min(total,45)},(_,i)=>String(i)));
+      assert.equal(requests.length,Math.max(1,Math.ceil(Math.min(total,45)/15)));
+      for(const params of requests){assert.equal(params.get('rect'),'127,37.6,127.1,37.7');assert.equal(params.get('sort'),'accuracy');assert.equal(params.get('size'),'15')}
+    }
+  }finally{globalThis.fetch=originalFetch;if(originalKey==null)delete process.env.KAKAO_REST_API_KEY;else process.env.KAKAO_REST_API_KEY=originalKey}
+});
+
+test('keyword search requests 45 in the current viewport and preserves API order', async () => {
+  const context=loadApp(),requests=[];
+  context.fetch=async url=>{requests.push(String(url));return{ok:true,json:async()=>({results:[{id:'first',name:'other'},{id:'second',name:'food'}]})}};
+  const results=await vm.runInContext(`state.map={getBounds:()=>({getSouthWest:()=>({getLng:()=>127,getLat:()=>37.6}),getNorthEast:()=>({getLng:()=>127.1,getLat:()=>37.7})})};searchPlaces('food')`,context);
+  const params=new URL(requests[0],'https://example.test').searchParams;
+  assert.equal(params.get('size'),'45');assert.equal(params.get('rect'),'127,37.6,127.1,37.7');
+  assert.deepEqual(Array.from(results,p=>p.id),['first','second']);
 });
