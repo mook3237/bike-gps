@@ -33,6 +33,33 @@ test('settings diagnostic log button copies racing events and offers selectable 
   assert.ok(html.indexOf('/diagnostics.js')<html.indexOf('/app.js'));
 });
 
+test('search map diagnostics capture result extent, fit state, and later zoom changes', () => {
+  const context=loadApp('',true,true);
+  const result=vm.runInContext(`(()=>{
+    const entries=[];globalThis.RideMateDiagnostics={record:(event,data)=>entries.push({event,data})};
+    class LatLng{constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}getLat(){return this.latitude}getLng(){return this.longitude}}
+    class Bounds{constructor(){this.points=[]}extend(point){this.points.push(point)}}
+    class Marker{constructor(){}setMap(){}}
+    kakao={maps:{LatLng,LatLngBounds:Bounds,Marker,event:{addListener(){}}}};
+    const mapElement=$('#map');mapElement.boundingRect={width:390,height:640};
+    let level=5;state.screen='results';state.searchQuery='Dobong';
+    state.map={getLevel:()=>level,getCenter:()=>new LatLng(37.68,127.04),getBounds:()=>null,setBounds(bounds){this.fitted=bounds.points;level=7}};
+    showMarkers([{latitude:37.68,longitude:127.04},{latitude:37.681,longitude:127.041}]);
+    handleMapZoomChanged();handleMapIdle();level=9;handleMapZoomChanged();
+    return entries.filter(entry=>entry.event.startsWith('search-map-fit')||entry.event==='map-zoom-changed');
+  })()`,context);
+  assert.deepEqual([...result].map(entry=>entry.event),['search-map-fit-before','search-map-fit-after','map-zoom-changed','search-map-fit-idle','map-zoom-changed']);
+  assert.equal(result[0].data.count,2);
+  assert.ok(Math.abs(result[0].data.coordinateBounds.maxLatitude-result[0].data.coordinateBounds.minLatitude-.001)<1e-9);
+  assert.equal(result[0].data.map.level,5);
+  assert.equal(result[0].data.map.mapSize.height,640);
+  assert.equal(result[0].data.map.viewport.visualHeight,800);
+  assert.equal(result[1].data.map.level,7);
+  assert.equal(result[3].data.map.level,7);
+  assert.equal(result[4].data.map.level,9);
+  assert.equal(result[4].data.searchMapFitPending,false);
+});
+
 test('course best includes faster general records for both result and frozen racing saves', () => {
   for(const hasOlderRacing of [false,true]) {
     const context=loadApp('',false,true);context.testOlderRacing=hasOlderRacing;
@@ -4715,7 +4742,7 @@ test('Racing reaching the final checkpoint blocks later off-route rerouting with
     state.racingCourse={source:'new',checkpoints:[{latitude:37,longitude:127.001}],checkpointAlong:[100]};
     const arrived={currentRouteProgress:100,offRouteDistance:3};
     state.racingSession.route=[{latitude:0,longitude:0},{latitude:0,longitude:100/111195}];
-    const arrivalFix=meters=>({timestamp:1000,position:{latitude:0,longitude:meters/111195,accuracy:3},quality:{fresh:true,monotonic:true,plausiblePosition:true}});
+    const arrivalFix=meters=>({timestamp:meters*100,position:{latitude:0,longitude:meters/111195,accuracy:3},quality:{fresh:true,monotonic:true,plausiblePosition:true}});
     advanceRacingCheckpoint({...arrived,currentRouteProgress:98},arrivalFix(98));
     advanceRacingCheckpoint(arrived,arrivalFix(103));
     const fast=timestamp=>({timestamp,position:{latitude:37,longitude:127.002,accuracy:3},quality:{fresh:true,monotonic:true,plausiblePosition:true}});
@@ -5143,6 +5170,88 @@ function racingStartFixture() {
   return context;
 }
 
+// Synthetic GPS replay through the real watcher, recorder, matcher and arrival flow.
+// These samples reproduce conditions; they are not the rider's missing field log.
+for (const scenario of [
+  {name:'normal finish aligns crossing time, endpoint and saved Ghost samples',meters:102,completed:true},
+  {name:'stopping before the finish does not complete',meters:99,completed:false},
+  {name:'a parallel path outside the selected route does not complete',meters:102,lateral:6,completed:false},
+  {name:'a stale finish fix does not complete',meters:102,receivedDelay:4000,completed:false},
+  {name:'finish proximity without an approach does not complete',meters:102,omitApproach:true,completed:false},
+  {name:'GPS skipping the finish zone must still complete',meters:108,completed:true},
+  {name:'a finish fix rejected by the recorder must not complete',meters:102,accuracy:100,completed:false},
+  {name:'a long GPS gap cannot complete from an old approach',meters:102,gap:10000,completed:false},
+  {name:'a normal round-trip turnaround does not finish the race',round:true,meters:102,returned:true,completed:false},
+  {name:'reversing before the round-trip turnaround does not confirm it',round:true,meters:98,reverse:true,returned:false,completed:false},
+  {name:'GPS skipping the turnaround zone must confirm the return leg',round:true,meters:108,returned:true,completed:false},
+  {name:'a rejected turnaround fix does not confirm the return leg',round:true,meters:102,accuracy:100,returned:false,completed:false},
+]) {
+  test('Racing arrival audit: '+scenario.name,()=>{
+    const context=racingStartFixture();
+    context.arrivalAuditScenario=scenario;
+    const result=vm.runInContext(`(()=>{
+      const scenario=arrivalAuditScenario,route=scenario.round?[racePoint(0),racePoint(100),racePoint(0)]:[racePoint(0),racePoint(100)];
+      const checkpoints=scenario.round?[route[1],route[2]]:[route[1]],checkpointAlong=racingCheckpointDistances(route,checkpoints);
+      state.racingCourse={source:'new',tripType:scenario.round?'round':'one-way',route,distance:checkpointAlong.at(-1),departure:route[0],destination:route.at(-1),checkpoints,checkpointAlong,turnaroundPoint:scenario.round?route[1]:null,turnaroundAlong:scenario.round?checkpointAlong[0]:null};
+      sendRaceFix(100000,0);requestRacingStart();finishRaceCountdown();
+      const startedAt=state.racingCapture.startedAt,capture=state.racingCapture.ride;
+      const send=(elapsed,meters,accuracy=3,receivedDelay=0)=>{
+        testNow=startedAt+elapsed+receivedDelay;
+        emitNativePosition({timestamp:startedAt+elapsed,coords:{latitude:(scenario.lateral||0)/111195,longitude:meters/111195,accuracy,speed:5,heading:scenario.reverse?270:90}});
+      };
+      if(!scenario.omitApproach)for(let meters=10;meters<=90;meters+=10)send(meters*200,meters);
+      if(scenario.reverse){send(18800,94);send(19600,98);send(20400,94)}
+      else send(scenario.meters*200+(scenario.gap||0),scenario.meters,scenario.accuracy||3,scenario.receivedDelay||0);
+      const record=state.racingFrozenRecord,target=record&&Racing.createSavedRideTarget(record);
+      return{completed:record?.completed===true,returned:state.racingReturnState?.actualPhase==='RETURN',phase:state.racingPhase,rejectedReason:capture.detailedSamples.at(-1)?.rejectedReason||null,
+        elapsedTime:record?.elapsedTime,movingTime:record?.movingTime,distance:record?.distance,endedAt:record?Date.parse(record.endedAt)-startedAt:null,lastRecordedMeters:record?.route.at(-1).longitude*111195,
+        samplesWithinFinish:record?.detailedSamples.every(sample=>sample.timestamp<=Date.parse(record.endedAt)),lastSampleTime:record?.route.at(-1).movingTime,
+        ghostAt19Seconds:target?Racing.targetProgressAtTime(target,19000):null,ghostAtFinish:target?Racing.targetProgressAtTime(target,20000):null,finalTimeDifference:record?.finalTimeDifference,
+        turnaround:state.racingReturnState?.capturePoint,turnaroundAt:state.racingReturnState?.confirmedAt-startedAt};
+    })()`,context);
+    if(scenario.accuracy===100)assert.equal(result.rejectedReason,'inaccurate');
+    assert.equal(result.completed,scenario.completed,JSON.stringify(result));
+    if(scenario.round){
+      assert.equal(result.returned,scenario.returned,JSON.stringify(result));
+      if(scenario.returned){assert.ok(Math.abs(result.turnaroundAt-20000)<1);assert.ok(Math.abs(result.turnaround.longitude*111195-100)<.01);assert.ok(Math.abs(result.turnaround.movingTime-20000)<1);assert.ok(Math.abs(result.turnaround.distance-100)<.02)}
+    }
+    if(scenario.completed){
+      assert.equal(result.phase,'completion-pending');
+      assert.ok(Math.abs(result.endedAt-20000)<1);assert.ok(Math.abs(result.elapsedTime-20000)<1);assert.ok(Math.abs(result.movingTime-20000)<1);
+      assert.ok(Math.abs(result.lastRecordedMeters-100)<.01);assert.ok(Math.abs(result.distance-100)<.02);
+      assert.equal(result.samplesWithinFinish,true);assert.equal(result.lastSampleTime,result.movingTime);
+      assert.ok(Math.abs(result.ghostAt19Seconds-95)<.02);
+      assert.ok(Math.abs(result.ghostAtFinish-100)<.02);assert.ok(Math.abs(result.finalTimeDifference-1500)<1);
+    }
+  });
+}
+
+test('Racing arrival audit: skipped turnaround and finish keep one coherent saved Ghost',()=>{
+  const context=racingStartFixture();
+  const result=vm.runInContext(`(()=>{
+    const route=[racePoint(0),racePoint(100),racePoint(0)],checkpointAlong=racingCheckpointDistances(route,[route[1],route[2]]);
+    state.racingCourse={...state.racingCourse,route,distance:checkpointAlong[1],turnaroundPoint:route[1],turnaroundAlong:checkpointAlong[0],checkpoints:[route[1],route[2]],checkpointAlong};
+    sendRaceFix(100000,0);requestRacingStart();finishRaceCountdown();const startedAt=testNow;
+    for(let meters=10;meters<=90;meters+=10)sendRaceFix(startedAt+meters*200,meters);
+    sendRaceFix(startedAt+21600,108);const confirmedAt=state.racingReturnState.confirmedAt;
+    for(let meters=90;meters>=10;meters-=10)sendRaceFix(startedAt+(216-meters)*200,meters);
+    sendRaceFix(startedAt+44800,-8);
+    const record=state.racingFrozenRecord,turn=record?.route[record.turnaroundRouteIndex],target=record&&Racing.createSavedRideTarget(record);
+    const before=JSON.stringify(record);sendRaceFix(startedAt+46800,-18);
+    return{completed:record?.completed,phase:state.racingPhase,unchanged:before===JSON.stringify(state.racingFrozenRecord),turnCount:record?.route.filter(point=>point.source==='race-turnaround').length,
+      turnAt:turn?.timestamp-startedAt,turnMeters:turn?.longitude*111195,turnTime:turn?.movingTime,turnDistance:turn?.distance,confirmedOnce:state.racingReturnState.confirmedAt===confirmedAt,
+      elapsed:record?.elapsedTime,movingTime:record?.movingTime,distance:record?.distance,end:record?.route.at(-1),
+      ghostAtTurn:target&&Racing.targetProgressAtTime(target,20000),ghostAtFinish:target&&Racing.targetProgressAtTime(target,43200),
+      bounded:record?.route.every(point=>point.timestamp<=Date.parse(record.endedAt))&&record?.detailedSamples.every(point=>point.timestamp<=Date.parse(record.endedAt))};
+  })()`,context);
+  assert.equal(result.completed,true,JSON.stringify(result));assert.equal(result.phase,'completion-pending');assert.equal(result.unchanged,true);
+  assert.equal(result.turnCount,1);assert.equal(result.confirmedOnce,true);assert.equal(result.turnAt,20000);assert.equal(result.turnTime,20000);
+  assert.ok(Math.abs(result.turnMeters-100)<.01);assert.ok(Math.abs(result.turnDistance-100)<.02);
+  assert.equal(result.elapsed,43200);assert.equal(result.movingTime,43200);assert.ok(Math.abs(result.distance-216)<.03);
+  assert.ok(Math.abs(result.end.longitude*111195)<.01);assert.equal(result.end.movingTime,result.movingTime);assert.equal(result.end.distance,result.distance);
+  assert.ok(Math.abs(result.ghostAtTurn-100)<.02);assert.ok(Math.abs(result.ghostAtFinish-216)<.03);assert.equal(result.bounded,true);
+});
+
 test('Racing countdown waits for valid GPS, rejects expired cached GPS, and starts once at the shared position', () => {
   for(const initiallyCached of [false,true]) {
     const context=racingStartFixture();
@@ -5372,7 +5481,7 @@ test('Racing completes the full 2000m round trip and preserves faster and slower
       let turnaround;
       for(let progress=10;progress<=2000;progress+=10){
         const position=point(progress<=1000?progress:2000-progress),movingTime=progress*millisecondsPerMeter,timestamp=base+movingTime;
-        state.racingCapture.ride.distance=progress;state.racingCapture.ride.movingTime=movingTime;
+        state.racingCapture.ride.distance=progress;state.racingCapture.ride.movingTime=movingTime;state.racingCapture.ride.currentSpeed=1000/millisecondsPerMeter;
         state.racingCapture.ride.routePoints.push({...position,timestamp,distance:progress,movingTime});
         updateActiveRacing({timestamp,position:{...position,accuracy:3},speed:{valid:true,mps:1000/millisecondsPerMeter},heading:{source:'gps',degrees:progress<=1000?90:270},quality:{fresh:true,monotonic:true,plausiblePosition:true}},{moving:true});
         if(progress===1000)turnaround={phase:state.racingReturnState.actualPhase,progress:state.racingSnapshot.currentRouteProgress,reached:state.racingReachedDestination};

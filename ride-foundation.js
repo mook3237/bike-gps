@@ -577,7 +577,7 @@
   }
 
   function createRouteArrivalState() {
-    return { approached: false, arrived: false };
+    return { approached: false, arrived: false, previous: null, crossing: null };
   }
 
   function evaluateRouteArrival(detectorState, gate, observation = {}) {
@@ -585,9 +585,11 @@
     if (state.arrived) return { state, arrived: true, reason: 'already-arrived' };
     const position = observation.position;
     const routeProgress = Number(observation.routeProgress), offRouteDistance = Number(observation.offRouteDistance);
+    const timestamp = observation.timestamp, accuracy = observation.accuracy;
     const usable = gate && Number.isFinite(position?.latitude) && Number.isFinite(position?.longitude)
-      && Number.isFinite(routeProgress) && Number.isFinite(offRouteDistance);
-    if (!usable) return { state, arrived: false, reason: 'uncertain-observation' };
+      && Number.isFinite(routeProgress) && Number.isFinite(offRouteDistance) && Number.isFinite(timestamp)
+      && Number.isFinite(accuracy) && accuracy > 0 && accuracy <= FAST_MAX_ACCURACY_M && !observation.rejectedReason;
+    if (!usable) return { state: createRouteArrivalState(), arrived: false, reason: 'uncertain-observation' };
     const radians = Math.PI / 180, latitudeScale = Math.cos(gate.center.latitude * radians);
     const local = point => ({ east: (point.longitude - gate.center.longitude) * 111195 * latitudeScale, north: (point.latitude - gate.center.latitude) * 111195 });
     const coordinates = local(position), forwardDistance = coordinates.east * gate.direction.east + coordinates.north * gate.direction.north;
@@ -598,13 +600,42 @@
       && routeProgress >= gate.approachStartAlong - tolerance
       && routeProgress <= gate.alongDistance + tolerance
       && forwardDistance <= tolerance;
-    const hadApproach = state.approached;
+    let previous = state.previous;
+    if (previous) {
+      const elapsed = timestamp - previous.timestamp, displacement = haversineDistance(previous.position, position);
+      const speedLimit = Number.isFinite(previous.filteredSpeed) && Number.isFinite(observation.filteredSpeed)
+        ? Math.min(FAST_MAX_PLAUSIBLE_SPEED_MPS, Math.max(previous.filteredSpeed, observation.filteredSpeed)) : FAST_MAX_PLAUSIBLE_SPEED_MPS;
+      // Use the recorder's continuity window; never bridge outages or GPS jumps.
+      if (elapsed <= 0 || elapsed > MOTION_WINDOW_MS || displacement >= GPS_JUMP_MAX_M
+        || displacement > speedLimit * elapsed / 1000 + 2 * Math.max(3, accuracy, previous.accuracy)) {
+        previous = null;
+        state.approached = false;
+      }
+    }
     if (inApproach) state.approached = true;
-    const insideForwardSemicircle = forwardDistance >= -tolerance
-      && Math.hypot(forwardDistance, lateralDistance) <= gate.radiusM + tolerance;
     const progressAtGate = routeProgress >= gate.alongDistance - gate.gateWidthM;
-    state.arrived = hadApproach && onSelectedRoute && insideForwardSemicircle && progressAtGate;
-    return { state, arrived: state.arrived, reason: state.arrived ? 'entered-arrival-zone' : inApproach ? 'approaching' : 'outside' };
+    const span = previous ? forwardDistance - previous.forwardDistance : 0;
+    if (previous?.inApproach && previous.forwardDistance <= 0 && forwardDistance >= -1e-6 && span > 0 && progressAtGate) {
+      const ratio = Math.max(0, Math.min(1, -previous.forwardDistance / span));
+      const lateralAtGate = previous.lateralDistance + (lateralDistance - previous.lateralDistance) * ratio;
+      // Keep the existing 5m route corridor even when the next fix is past its end.
+      if (Math.abs(lateralAtGate) <= gate.radiusM + tolerance && Math.abs(lateralDistance) <= gate.radiusM + tolerance) {
+        const interpolate = key => Number.isFinite(previous[key]) && Number.isFinite(observation[key])
+          ? previous[key] + (observation[key] - previous[key]) * ratio : undefined;
+        const movingTime = interpolate('movingTime');
+        state.crossing = {
+          position: { latitude: previous.position.latitude + (position.latitude - previous.position.latitude) * ratio,
+            longitude: previous.position.longitude + (position.longitude - previous.position.longitude) * ratio },
+          timestamp: Math.round(previous.timestamp + (timestamp - previous.timestamp) * ratio),
+          distance: interpolate('distance'), movingTime: Number.isFinite(movingTime) ? Math.round(movingTime) : undefined, filteredSpeed: interpolate('filteredSpeed'),
+          moving: observation.moving === true, estimated: ratio > 0 && ratio < 1,
+        };
+        state.arrived = true;
+      }
+    }
+    state.previous = { position: { latitude: position.latitude, longitude: position.longitude }, timestamp, accuracy,
+      forwardDistance, lateralDistance, inApproach, distance: observation.distance, movingTime: observation.movingTime, filteredSpeed: observation.filteredSpeed };
+    return { state, arrived: state.arrived, reason: state.arrived ? 'crossed-arrival-line' : inApproach ? 'approaching' : 'outside' };
   }
 
   function createNavigationArrivalState() {

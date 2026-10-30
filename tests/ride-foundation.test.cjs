@@ -463,7 +463,7 @@ test('route arrival rejects pre-line proximity and proximity without a selected-
   ]).arrived, false);
 });
 
-test('route arrival keeps selected-route approach across low accuracy and more than five seconds', () => {
+test('route arrival breaks interpolation across a gap longer than the recorder motion window', () => {
   const route = [pointAtMeters(0, 0), pointAtMeters(30, 1000)];
   const gate = createRouteArrivalGate(route);
   let state = createRouteArrivalState();
@@ -477,7 +477,9 @@ test('route arrival keeps selected-route approach across low accuracy and more t
   };
 
   assert.equal(observe(0, 15, 3).arrived, false);
-  assert.equal(observe(7000, 31, 30, 30).arrived, true);
+  assert.equal(observe(7000, 31, 30, 30).arrived, false);
+  assert.equal(observe(8000, 29, 3).arrived, false);
+  assert.equal(observe(9000, 31, 3, 30).arrived, true);
 });
 
 test('route arrival accepts five metres of lateral GPS error at the semicircle boundary after route approach', () => {
@@ -494,4 +496,30 @@ test('route arrival accepts five metres of lateral GPS error at the semicircle b
   };
 
   assert.equal(run([[0, 15, 0, 15], [1000, 30, 5, 30]]).arrived, true);
+});
+
+test('route arrival interpolates a bounded forward crossing in either route orientation', () => {
+  for(const direction of [{east:1,north:0},{east:0,north:1},{east:-1,north:0}]){
+    const point=meters=>({latitude:direction.north*meters/111195,longitude:direction.east*meters/111195});
+    const gate=createRouteArrivalGate([point(0),point(100)]);
+    const first=evaluateRouteArrival(null,gate,{position:point(90),timestamp:18000,accuracy:3,routeProgress:90,offRouteDistance:0,distance:90,movingTime:18000,filteredSpeed:5,moving:true});
+    const result=evaluateRouteArrival(first.state,gate,{position:point(108),timestamp:21600,accuracy:3,routeProgress:100,offRouteDistance:8,distance:108,movingTime:21600,filteredSpeed:5,moving:true});
+    assert.equal(result.arrived,true);
+    assert.ok(haversineDistance(result.state.crossing.position,point(100))<.01);
+    assert.ok(Math.abs(result.state.crossing.timestamp-20000)<1);
+    assert.ok(Math.abs(result.state.crossing.distance-100)<.01);
+    assert.ok(Math.abs(result.state.crossing.movingTime-20000)<1);
+  }
+});
+
+test('route arrival cannot connect an inaccurate sample, implausible jump or reverse entry', () => {
+  const point=meters=>({latitude:0,longitude:meters/111195}),gate=createRouteArrivalGate([point(0),point(100)]);
+  const observe=(state,meters,timestamp,overrides={})=>evaluateRouteArrival(state,gate,{position:point(meters),timestamp,accuracy:3,routeProgress:Math.min(100,meters),offRouteDistance:Math.max(0,meters-100),...overrides});
+  const approach=observe(null,90,18000);
+  assert.equal(observe(approach.state,102,18001).arrived,false);
+  const rejected=observe(approach.state,99,19800,{accuracy:100});
+  assert.equal(rejected.arrived,false);
+  assert.equal(observe(rejected.state,102,20400).arrived,false);
+  const reverse=observe({approached:true},110,20000);
+  assert.equal(observe(reverse.state,102,21600).arrived,false);
 });
