@@ -5649,11 +5649,49 @@ test('Racing manual map interaction pauses camera follow and restores it with th
   }finally{globalThis.fetch=originalFetch;if(originalKey==null)delete process.env.KAKAO_REST_API_KEY;else process.env.KAKAO_REST_API_KEY=originalKey}
 });
 
-test('keyword search requests 45 in the current viewport and preserves API order', async () => {
+test('keyword search requests 45 without clipping named destinations and preserves API order', async () => {
   const context=loadApp(),requests=[];
   context.fetch=async url=>{requests.push(String(url));return{ok:true,json:async()=>({results:[{id:'first',name:'other'},{id:'second',name:'food'}]})}};
   const results=await vm.runInContext(`state.map={getBounds:()=>({getSouthWest:()=>({getLng:()=>127,getLat:()=>37.6}),getNorthEast:()=>({getLng:()=>127.1,getLat:()=>37.7})})};searchPlaces('food')`,context);
   const params=new URL(requests[0],'https://example.test').searchParams;
-  assert.equal(params.get('size'),'45');assert.equal(params.get('rect'),'127,37.6,127.1,37.7');
+  assert.equal(params.get('size'),'45');assert.equal(params.has('rect'),false);
   assert.deepEqual(Array.from(results,p=>p.id),['first','second']);
+});
+
+ test('repeated destination searches close to the base map with one tap or back', async () => {
+  for(const base of ['map','racing'])for(const exit of ['results-tap','place-tap','back']){
+    const context=loadApp('',true,true);context.testBase=base;context.testExit=exit;
+    const result=await vm.runInContext(`(async()=>{
+      class LatLng{constructor(latitude,longitude){Object.assign(this,{latitude,longitude})}getLat(){return this.latitude}getLng(){return this.longitude}}
+      class Marker{constructor(options){Object.assign(this,options)}setMap(map){this.map=map}}
+      kakao={maps:{LatLng,Marker,CustomOverlay:Marker,event:{addListener(){}}}};
+      const center=new LatLng(37.67,127.04);let level=4.2;
+      state.map={getLevel:()=>level,getCenter:()=>center,relayout(){},panTo(){},
+        setLevel(){throw Error('zoom must not change')},setBounds(){throw Error('zoom must not change')}};
+      const entries=[{screen:testBase}];let index=0;
+      history={get state(){return entries[index]},
+        pushState(entry){entries.splice(index+1);entries.push(entry);index++},
+        replaceState(entry){entries[index]=entry},
+        back(){if(index>0){index--;handlePopState({state:this.state})}}};
+      saveRecentSearch=()=>{};renderRecentSearches=()=>{};
+      lookupMapPlaces=async()=>{throw Error('a closing tap must not search for another place')};
+      renderScreen(testBase,false);
+      const destination={id:'target',name:'Target',latitude:37.61,longitude:127.15};
+      for(let i=0;i<3;i++){
+        $('#searchEntry').onclick();
+        renderResults([destination],'target');
+        await choosePlace(destination);
+      }
+      $('#searchEntry').onclick();
+      const racingContext=testBase!=='racing'||state.editingEndpoint==='racing-destination'&&document.body.classList.contains('racing-active');
+      renderResults([destination],'target');
+      if(testExit!=='results-tap')await choosePlace(destination);
+      const before={depth:index+1,racingContext};
+      if(testExit==='back')history.back();else await handleMapClick({point:{x:20,y:20},latLng:center});
+      return{before,screen:state.screen,depth:index+1,setup:state.racingCourseSetup,
+        sheetHidden:ui.sheet.classList.contains('hidden'),bottomVisible:!ui.bottom.classList.contains('hidden'),
+        searchMarkers:state.searchMarkers.length,endpointMarkers:state.routeEndpointMarkers.length,level};
+    })()`,context);
+    assert.deepEqual(JSON.parse(JSON.stringify(result)),{before:{depth:2,racingContext:true},screen:base,depth:1,setup:null,sheetHidden:true,bottomVisible:true,searchMarkers:0,endpointMarkers:0,level:4.2},base+' '+exit);
+  }
 });
