@@ -142,7 +142,7 @@ function racingTurnaroundPoint(course=state.racingCourse){if(course?.tripType!==
 function resetRacingReturnState(course=state.racingCourse){const point=racingTurnaroundPoint(course),turnaroundProgress=Number.isFinite(course?.turnaroundAlong)?course.turnaroundAlong:Number.isFinite(course?.checkpointAlong?.[0])?course.checkpointAlong[0]:null,arrivalGate=course?.route?.length&&Number.isFinite(turnaroundProgress)?Ride.createRouteArrivalGate(course.route,turnaroundProgress):null;state.racingReturnState=point?{actualPhase:'OUTBOUND',virtualPhase:'OUTBOUND',turnaroundPoint:{latitude:point.latitude,longitude:point.longitude},turnaroundProgress,arrivalDetector:Ride.createRouteArrivalState(),arrivalGate,arrivalGateRoute:course?.route||null,arrivalGateAlong:turnaroundProgress,lastFixAt:null,turnaroundRouteIndex:null,notificationIssued:false}:null;return state.racingReturnState}
 function racingReturnProgressOptions(){const returnState=state.racingReturnState;if(!returnState)return{};if(returnState.actualPhase==='OUTBOUND'&&Number.isFinite(returnState.turnaroundProgress))return{currentProgressLimit:returnState.turnaroundProgress};if(returnState.actualPhase==='RETURN'&&Number.isFinite(returnState.turnaroundProgress))return{minimumCurrentProgress:returnState.turnaroundProgress};return{}}
 function updateRacingVirtualReturnPhase(snapshot=state.racingSnapshot){const returnState=state.racingReturnState;if(!returnState||!Number.isFinite(returnState.turnaroundProgress)||!Number.isFinite(snapshot?.targetRouteProgress))return false;if(snapshot.targetRouteProgress>=returnState.turnaroundProgress)returnState.virtualPhase='RETURN';return returnState.virtualPhase}
-function racingArrivalObservation(fast,routeProgress,offRouteDistance){const ride=state.racingCapture?.ride;return{position:fast.position,timestamp:fast.timestamp,accuracy:fast.position.accuracy,routeProgress,offRouteDistance,distance:ride?.distance,movingTime:ride?.movingTime,filteredSpeed:ride?.currentSpeed,moving:ride?.motion?.moving===true}}
+function racingArrivalObservation(fast,routeProgress,offRouteDistance){const ride=state.racingCapture?.ride;return{position:fast.position,timestamp:fast.timestamp,accuracy:fast.position.accuracy,routeProgress,offRouteDistance,distance:ride?ride.distance+(ride.motion.moving?ride.motion.distancePath:0):undefined,movingTime:ride?.movingTime,filteredSpeed:ride?.currentSpeed,moving:ride?.motion?.moving===true}}
 function racingCrossingPoint(crossing,source){return{...crossing.position,timestamp:crossing.timestamp,distance:crossing.distance,movingTime:crossing.movingTime,filteredSpeed:crossing.filteredSpeed,moving:crossing.moving,estimated:crossing.estimated,source}}
 function observeRacingTurnaround(fast,movement,snapshot=state.racingSnapshot){
   const returnState=state.racingReturnState;
@@ -219,7 +219,7 @@ function createRacingRecord(now=Date.now(),{completed:completedOverride}={}){
   const crossing=completedOverride===true?state.racingSession?.finalArrivalDetector?.crossing:null;
   if(crossing)now=crossing.timestamp;
   const ride=capture.ride,metrics=Ride.rideMetrics(ride,now),distance=Number.isFinite(crossing?.distance)?crossing.distance:metrics.distance,movingTime=Number.isFinite(crossing?.movingTime)?crossing.movingTime:metrics.movingTime;
-  const route=[{...capture.startPoint},...ride.routePoints.filter(point=>point.timestamp>capture.startedAt&&point.timestamp<=now).map(point=>({...point}))];
+  const route=[{...capture.startPoint},...ride.routePoints.filter(point=>point.timestamp>capture.startedAt&&point.timestamp<=now).map(({racingDistance,...point})=>({...point,distance:racingDistance??point.distance}))];
   if(crossing){if(route.at(-1)?.timestamp===now)route.pop();route.push(racingCrossingPoint(crossing,'race-finish'))}
   const turnAnchor=state.racingReturnState?.capturePoint;
   if(turnAnchor){const index=route.findIndex(point=>point.timestamp>=turnAnchor.timestamp);if(index<0)route.push({...turnAnchor});else route.splice(index,route[index].timestamp===turnAnchor.timestamp?1:0,{...turnAnchor})}
@@ -377,6 +377,8 @@ function handleRideRecordingFix(fix,fast=sharedGpsSource.getLatestFast()){
   if(tryStartPendingRacing(fast))return;
   const capture=state.racingCapture,afterStart=!capture||fix.timestamp>=capture.startedAt;
   const raceMovement=capture?.ride&&afterStart&&state.racingPhase==='active'?Ride.ingestRideFix(capture.ride,fix,fast):null;
+  // Keep the recorder's batching intact; Ghost samples need distance at this GPS timestamp.
+  if(raceMovement&&!raceMovement.rejectedReason){const point=capture.ride.routePoints.at(-1);if(point?.timestamp===raceMovement.timestamp)point.racingDistance=capture.ride.distance+(capture.ride.motion.moving?capture.ride.motion.distancePath:0)}
   if(state.screen==='racing')updateRacingLiveDisplay(fast,movement);
   const snapshotUpdated=afterStart&&updateActiveRacing(fast,capture?.ride?raceMovement:movement);
   maybeFinishRideAfterArrival(fix.timestamp);let markerUpdated=false;

@@ -5174,6 +5174,7 @@ function racingStartFixture() {
 // These samples reproduce conditions; they are not the rider's missing field log.
 for (const scenario of [
   {name:'normal finish aligns crossing time, endpoint and saved Ghost samples',meters:102,completed:true},
+  {name:'dense 1m fixes include uncredited distance at the finish',meters:101,step:1,completed:true},
   {name:'stopping before the finish does not complete',meters:99,completed:false},
   {name:'a parallel path outside the selected route does not complete',meters:102,lateral:6,completed:false},
   {name:'a stale finish fix does not complete',meters:102,receivedDelay:4000,completed:false},
@@ -5199,7 +5200,7 @@ for (const scenario of [
         testNow=startedAt+elapsed+receivedDelay;
         emitNativePosition({timestamp:startedAt+elapsed,coords:{latitude:(scenario.lateral||0)/111195,longitude:meters/111195,accuracy,speed:5,heading:scenario.reverse?270:90}});
       };
-      if(!scenario.omitApproach)for(let meters=10;meters<=90;meters+=10)send(meters*200,meters);
+      if(!scenario.omitApproach)for(let meters=scenario.step||10;meters<=(scenario.step?99:90);meters+=scenario.step||10)send(meters*200,meters);
       if(scenario.reverse){send(18800,94);send(19600,98);send(20400,94)}
       else send(scenario.meters*200+(scenario.gap||0),scenario.meters,scenario.accuracy||3,scenario.receivedDelay||0);
       const record=state.racingFrozenRecord,target=record&&Racing.createSavedRideTarget(record);
