@@ -5,19 +5,22 @@ const CATEGORY_CODES=['MT1','CS2','PS3','SC4','AC5','PK6','OL7','SW8','BK9','CT1
 function place(x){const roadAddress=x.road_address_name||'',lotAddress=x.address_name||'';return{id:x.id,name:x.place_name,category:x.category_name||'',address:roadAddress||lotAddress,roadAddress,lotAddress,placeUrl:x.place_url||'',latitude:+x.y,longitude:+x.x,distance:x.distance?+x.distance:null,phone:x.phone||''}}
 function addressPlace(x){const roadAddress=x.road_address?.address_name||x.road_address_name||'',lotAddress=x.address?.address_name||x.address_name||'',name=x.road_address?.building_name||x.address?.building_name||roadAddress||lotAddress;return{id:`address:${x.x},${x.y}`,name,category:'',address:roadAddress||lotAddress,roadAddress,lotAddress,placeUrl:'',latitude:+x.y,longitude:+x.x,distance:null,phone:''}}
 async function kakaoDocuments(url,key){const r=await fetch(url,{headers:{Authorization:'KakaoAK '+key}}),d=await r.json().catch(()=>({}));if(!r.ok)throw Object.assign(new Error(d.msg||'카카오 장소검색 실패'),{status:r.status||502});return d.documents||[]}
-async function kakaoKeywordDocuments(params,key,limit){
+async function kakaoKeywordDocuments(params,key,limit,accept=()=>true){
  const documents=[],seen=new Set();
- params.set('size',String(Math.min(limit,15)));params.set('sort','accuracy');
+ params.set('size',String(Math.min(limit,15)));if(!params.has('sort'))params.set('sort','accuracy');
  for(let page=1;page<=Math.ceil(limit/15);page++){
    params.set('page',String(page));
+   try{
    const r=await fetch('https://dapi.kakao.com/v2/local/search/keyword.json?'+params,{headers:{Authorization:'KakaoAK '+key}}),d=await r.json().catch(()=>({}));
    if(!r.ok)throw Object.assign(new Error(d.msg||'Kakao keyword search failed'),{status:r.status||502});
    const batch=d.documents||[];
-   for(const item of batch){const id=item.id||item.x+','+item.y;if(!seen.has(id)){seen.add(id);documents.push(item)}}
+   for(const item of batch){const id=item.id||item.x+','+item.y;if(!seen.has(id)&&accept([+item.x,+item.y])){seen.add(id);documents.push(item)}}
    if(documents.length>=limit||d.meta?.is_end||batch.length<Math.min(limit,15))break;
+   }catch(error){if(page===1)throw error;return{documents,complete:false}}
  }
- return documents.slice(0,limit);
+ return {documents:documents.slice(0,limit),complete:true};
 }
+function distanceFrom(item,x,y){const rad=Math.PI/180,a=Math.sin((item.latitude-y)*rad/2)**2+Math.cos(y*rad)*Math.cos(item.latitude*rad)*Math.sin((item.longitude-x)*rad/2)**2;return 12742000*Math.asin(Math.sqrt(Math.min(1,a)))}
 export default async function handler(req,res){
  if(req.method!=='GET')return res.status(405).json({error:'Method Not Allowed'});
  const key=process.env.KAKAO_REST_API_KEY;if(!key)return res.status(500).json({error:'KAKAO_REST_API_KEY 환경변수가 없습니다.'});
@@ -27,13 +30,24 @@ export default async function handler(req,res){
  if(hasX){const x=+req.query.x,y=+req.query.y;if(!Number.isFinite(x)||!Number.isFinite(y)||Math.abs(x)>180||Math.abs(y)>90)return res.status(400).json({error:'유효한 x와 y 좌표가 필요합니다.'})}
  const rect=String(req.query.rect||'').trim(),rectValues=rect?rect.split(',').map(Number):null;if(rect){if(rectValues.length!==4||!rectValues.every(Number.isFinite)||rectValues[0]>=rectValues[2]||rectValues[1]>=rectValues[3]||Math.abs(rectValues[0])>180||Math.abs(rectValues[2])>180||Math.abs(rectValues[1])>90||Math.abs(rectValues[3])>90)return res.status(400).json({error:'유효한 지도 영역(rect)이 필요합니다.'})}
  if(nearby){const radius=Number(req.query.radius);if(!hasX||!Number.isInteger(radius)||radius<1||radius>50)return res.status(400).json({error:'좌표와 1~50m 반경이 필요합니다.'});try{const categoryStartedAt=performance.now(),lists=await Promise.all(CATEGORY_CODES.map(async category=>{const startedAt=performance.now(),p=new URLSearchParams({category_group_code:category,x:req.query.x,y:req.query.y,radius:String(radius),sort:'distance',size:'3'}),documents=await kakaoDocuments('https://dapi.kakao.com/v2/local/search/category.json?'+p,key);return{documents,durationMs:performance.now()-startedAt}})),categorySearchMs=performance.now()-categoryStartedAt,unique=new Map();lists.flatMap(item=>item.documents).forEach(item=>{if(!unique.has(item.id))unique.set(item.id,item)});const docs=[...unique.values()].sort((a,b)=>(+a.distance||Infinity)-(+b.distance||Infinity));return res.status(200).json({results:docs.map(place),timing:{categorySearchMs,categoryDurationsMs:lists.map(item=>item.durationMs)}})}catch(e){return res.status(e.status||502).json({error:e.message||'카카오 주변 장소검색 API에 연결하지 못했습니다.'})}}
- const p=new URLSearchParams({query,size:String(size)});if(rect)p.set('rect',rect);else if(hasX){p.set('x',req.query.x);p.set('y',req.query.y)}
  try{
-   const addressParams=new URLSearchParams({query,size:String(Math.min(size,30))}),[keywordResult,addressResult]=await Promise.allSettled([kakaoKeywordDocuments(p,key,size),kakaoDocuments('https://dapi.kakao.com/v2/local/search/address.json?'+addressParams,key)]);
+   const area=rectValues?{bounds:rectValues,contains:point=>point[0]>=rectValues[0]&&point[0]<=rectValues[2]&&point[1]>=rectValues[1]&&point[1]<=rectValues[3]}:null;
+   const p=new URLSearchParams({query,size:String(size)});if(area)p.set('rect',area.bounds.join(','));if(hasX){p.set('x',req.query.x);p.set('y',req.query.y)}
+   const addressParams=new URLSearchParams({query,size:String(Math.min(size,30))}),[keywordResult,addressResult]=await Promise.allSettled([kakaoKeywordDocuments(p,key,size,area?.contains),kakaoDocuments('https://dapi.kakao.com/v2/local/search/address.json?'+addressParams,key)]);
    if(keywordResult.status==='rejected'&&addressResult.status==='rejected')throw keywordResult.reason;
-   const docs=(keywordResult.status==='fulfilled'?keywordResult.value:[]),keywordResults=docs.map(place),keywordCoordinates=new Set(keywordResults.map(item=>`${item.longitude},${item.latitude}`)),addressCoordinates=new Set(),addressResults=[];
-   for(const item of (addressResult.status==='fulfilled'?addressResult.value:[]).filter(item=>!item.place_name).map(addressPlace)){const coordinate=`${item.longitude},${item.latitude}`,insideRect=!rectValues||item.longitude>=rectValues[0]&&item.latitude>=rectValues[1]&&item.longitude<=rectValues[2]&&item.latitude<=rectValues[3];if(Number.isFinite(item.latitude)&&Number.isFinite(item.longitude)&&insideRect&&!keywordCoordinates.has(coordinate)&&!addressCoordinates.has(coordinate)){addressResults.push(item);addressCoordinates.add(coordinate)}}
-   const results=[...addressResults,...keywordResults];
+   const keywordResults=(keywordResult.status==='fulfilled'?keywordResult.value.documents:[]).map(place),keywordCoordinates=new Set(keywordResults.map(item=>item.longitude+','+item.latitude)),addressCoordinates=new Set(),addressResults=[];
+   const addresses=(addressResult.status==='fulfilled'?addressResult.value:[]).filter(item=>!item.place_name).map(addressPlace).filter(item=>Number.isFinite(item.latitude)&&Number.isFinite(item.longitude));
+   for(const item of addresses){const coordinate=item.longitude+','+item.latitude;if((!area||area.contains([item.longitude,item.latitude]))&&!keywordCoordinates.has(coordinate)&&!addressCoordinates.has(coordinate)){addressResults.push(item);addressCoordinates.add(coordinate)}}
+   let results=[...addressResults,...keywordResults];
+   if(!results.length&&rectValues&&hasX){
+     let nearest=[];
+     if(keywordResult.status==='fulfilled'&&keywordResult.value.complete){
+       const fallback=new URLSearchParams({query,x:req.query.x,y:req.query.y,sort:'distance'});
+       try{nearest=(await kakaoKeywordDocuments(fallback,key,size)).documents.map(place)}catch{}
+     }
+     const nearestCoordinates=new Set(nearest.map(item=>item.longitude+','+item.latitude));
+     results=[...addresses.filter(item=>!nearestCoordinates.has(item.longitude+','+item.latitude)),...nearest].map(item=>({...item,distance:distanceFrom(item,+req.query.x,+req.query.y)})).sort((a,b)=>a.distance-b.distance).slice(0,size);
+   }
    return res.status(200).json({results:results.slice(0,size)});
  }catch(e){return res.status(e.status||502).json({error:e.message||'카카오 장소검색 API에 연결하지 못했습니다.'})}
 }

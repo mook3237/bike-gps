@@ -5649,12 +5649,12 @@ test('Racing manual map interaction pauses camera follow and restores it with th
   }finally{globalThis.fetch=originalFetch;if(originalKey==null)delete process.env.KAKAO_REST_API_KEY;else process.env.KAKAO_REST_API_KEY=originalKey}
 });
 
-test('keyword search requests 45 without clipping named destinations and preserves API order', async () => {
+test('keyword search captures the starting viewport and preserves API order', async () => {
   const context=loadApp(),requests=[];
   context.fetch=async url=>{requests.push(String(url));return{ok:true,json:async()=>({results:[{id:'first',name:'other'},{id:'second',name:'food'}]})}};
   const results=await vm.runInContext(`state.map={getBounds:()=>({getSouthWest:()=>({getLng:()=>127,getLat:()=>37.6}),getNorthEast:()=>({getLng:()=>127.1,getLat:()=>37.7})})};searchPlaces('food')`,context);
   const params=new URL(requests[0],'https://example.test').searchParams;
-  assert.equal(params.get('size'),'45');assert.equal(params.has('rect'),false);
+  assert.equal(params.get('size'),'45');assert.equal(params.get('rect'),'127,37.6,127.1,37.7');assert.equal(params.has('min_dong'),false);
   assert.deepEqual(Array.from(results,p=>p.id),['first','second']);
 });
 
@@ -5694,4 +5694,90 @@ test('keyword search requests 45 without clipping named destinations and preserv
     })()`,context);
     assert.deepEqual(JSON.parse(JSON.stringify(result)),{before:{depth:2,racingContext:true},screen:base,depth:1,setup:null,sheetHidden:true,bottomVisible:true,searchMarkers:0,endpointMarkers:0,level:4.2},base+' '+exit);
   }
+});
+
+test('nearby search keeps sparse results, falls back only when empty, and retains pages on extra request failure', async () => {
+  const originalFetch=globalThis.fetch,originalKey=process.env.KAKAO_REST_API_KEY;
+  process.env.KAKAO_REST_API_KEY='test-key';
+  try{
+    const handler=await apiHandler();
+    for(const scenario of ['sparse','empty','page-error','fallback-error','address-error']){
+      const calls=[];
+      globalThis.fetch=async url=>{
+        const p=new URL(url),params=p.searchParams;
+        if(p.pathname.endsWith('/address.json')){if(scenario==='address-error')return{ok:false,status:503,json:async()=>({})};return{ok:true,json:async()=>({documents:[]})}}
+        calls.push(params);
+        if(!params.has('rect')){
+          assert.equal(params.get('sort'),'distance');assert.equal(params.get('size'),'15');
+          assert.equal(params.get('x'),'127.03953');assert.equal(params.get('y'),'37.6722');
+          if(scenario==='fallback-error')throw Error('offline');
+          const page=Number(params.get('page')),start=(page-1)*15;return{ok:true,json:async()=>({documents:Array.from({length:15},(_,i)=>({id:'closest-'+(start+i),place_name:'Closest '+(start+i),x:'127.036',y:'37.669'})),meta:{is_end:page===3}})};
+        }
+        if(params.get('page')==='2')throw Error('offline');
+        const count=scenario==='sparse'?1:scenario==='page-error'?15:0;
+        return{ok:true,json:async()=>({documents:Array.from({length:count},(_,i)=>({id:String(i),place_name:'Near '+i,x:'127.047',y:'37.665'})),meta:{is_end:scenario!=='page-error'}})};
+      };
+      const {output,response}=mockResponse();
+      await handler({method:'GET',query:{query:'food',size:'45',rect:'127.0469,37.6649,127.0471,37.6651',x:'127.03953',y:'37.6722'}},response);
+      assert.equal(output.status,200,scenario);assert.equal(output.body.error,undefined);
+      assert.equal(output.body.results.length,scenario==='sparse'?1:scenario==='fallback-error'?0:scenario==='page-error'?15:scenario==='sparse'?1:45,scenario);
+      assert.equal(calls.length,scenario==='sparse'?1:scenario==='page-error'?2:scenario==='fallback-error'?2:scenario==='sparse'?1:scenario==='empty'?4:4,scenario);
+      if(scenario==='empty'||scenario==='address-error')assert.equal(output.body.results[0].id,'closest-0');
+      if(scenario==='page-error')assert.equal(calls[0].get('rect'),calls[1].get('rect'));if(scenario==='empty'||scenario==='address-error')assert.equal(calls.at(-1).get('sort'),'distance');
+    }
+  }finally{globalThis.fetch=originalFetch;if(originalKey==null)delete process.env.KAKAO_REST_API_KEY;else process.env.KAKAO_REST_API_KEY=originalKey}
+});
+
+test('search results focus the first and top visible rows without changing zoom', () => {
+  const context=loadApp('',true,true);
+  const result=vm.runInContext(`(()=>{
+    class LatLng{constructor(latitude,longitude){Object.assign(this,{latitude,longitude})}}
+    class Marker{setMap(){}}
+    kakao={maps:{LatLng,Marker,event:{addListener(){}}}};
+    const pans=[];state.map={panTo(p){pans.push(p.latitude)},getLevel:()=>4.2,relayout(){},setBounds(){throw Error('unexpected fit')},setLevel(){throw Error('unexpected zoom')}};
+    const list=document.createElement('div');list.boundingRect={top:100,bottom:500};ui.sheetContent.boundingRect={top:100,bottom:500};
+    const originalQuery=ui.sheetContent.querySelector.bind(ui.sheetContent);
+    ui.sheetContent.querySelector=selector=>selector==='.result-list'?list:originalQuery(selector);
+    const places=[0,1,2].map(i=>({id:String(i),name:'Place '+i,latitude:37+i*.01,longitude:127}));
+    renderResults(places,'food');
+    const rows=[...ui.sheetContent.querySelectorAll('[data-i]')];
+    rows.forEach((row,i)=>row.boundingRect={top:100+i*80,bottom:180+i*80});
+    list.onscroll();rows[0].boundingRect.bottom=100;list.onscroll();list.onscroll();
+    rows[1].boundingRect.bottom=100;ui.sheetContent.onscroll();
+    state.screen='map';rows[0].boundingRect.bottom=200;list.onscroll();
+    return{pans,level:state.map.getLevel()};
+  })()`,context);
+  assert.deepEqual(Array.from(result.pans),[37,37.01,37.02]);assert.equal(result.level,4.2);
+});
+
+
+test('search freezes the opening viewport until search here replaces it', async () => {
+  const context=loadApp('',true,true),requests=[];
+  context.fetch=async url=>{requests.push(String(url));return{ok:true,json:async()=>({results:[]})}};
+  await vm.runInContext(`(async()=>{
+    const viewport={west:127,south:37.6,east:127.1,north:37.7};
+    state.map={getBounds:()=>({getSouthWest:()=>({getLng:()=>viewport.west,getLat:()=>viewport.south}),getNorthEast:()=>({getLng:()=>viewport.east,getLat:()=>viewport.north})}),getLevel:()=>3,relayout(){}};
+    renderRecentSearches=()=>{};openSearch();
+    viewport.west=128;viewport.east=128.1;
+    await searchPlaces('food');state.searchQuery='food';
+    doSearch=(q,live,rect)=>{testNewRect=rect};searchCurrentMap();
+    await searchPlaces('food');
+  })()`,context);
+  assert.equal(new URL(requests[0],'https://test').searchParams.get('rect'),'127,37.6,127.1,37.7');
+  assert.equal(new URL(requests[1],'https://test').searchParams.get('rect'),'128,37.6,128.1,37.7');
+  assert.equal(context.testNewRect,'128,37.6,128.1,37.7');
+});
+
+test('a precise address outside the screen remains in nearest fallback results', async () => {
+  const originalFetch=globalThis.fetch,originalKey=process.env.KAKAO_REST_API_KEY;
+  process.env.KAKAO_REST_API_KEY='test-key';
+  globalThis.fetch=async url=>String(url).includes('/search/address.json')
+    ? {ok:true,json:async()=>({documents:[{address_name:'Exact address',x:'127.1',y:'37.6'}]})}
+    : {ok:true,json:async()=>({documents:[],meta:{is_end:true}})};
+  try{
+    const handler=await apiHandler(),{output,response}=mockResponse();
+    await handler({method:'GET',query:{query:'Exact address',rect:'126.9,37.5,127,37.7',x:'126.95',y:'37.6',size:'45'}},response);
+    assert.equal(output.status,200);
+    assert.deepEqual(output.body.results.map(place=>place.address),['Exact address']);
+  }finally{globalThis.fetch=originalFetch;if(originalKey==null)delete process.env.KAKAO_REST_API_KEY;else process.env.KAKAO_REST_API_KEY=originalKey}
 });
