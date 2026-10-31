@@ -38,6 +38,15 @@
     return elapsedMs > 0 && distance >= 0 ? distance / (elapsedMs / 1000) : 0;
   }
 
+  function smoothHeading(previous, candidate, moving = true) {
+    if (!moving || !Number.isFinite(candidate)) return Number.isFinite(previous) ? previous : null;
+    const target = ((candidate % 360) + 360) % 360;
+    if (!Number.isFinite(previous)) return target;
+    const current = ((previous % 360) + 360) % 360;
+    const delta = ((target - current + 540) % 360) - 180;
+    return previous + delta * .65;
+  }
+
   function createFastObservationState() {
     return {
       sequence: 0,
@@ -803,6 +812,7 @@
     resetMotionState,
     resolveSpeed,
     setGpsDiagnosticsEnabled,
+    smoothHeading,
     resumeRide,
     rideMetrics,
     startRide,

@@ -810,6 +810,24 @@ test('destination and current-location overlays use the expected marker design a
   });
 });
 
+test('navigation and racing use the same responsive heading rule', () => {
+  const context=loadApp('',true,true);
+  const result=vm.runInContext(`(()=>{
+    class LatLng{constructor(latitude,longitude){Object.assign(this,{latitude,longitude})}}
+    class Overlay{constructor(options){Object.assign(this,options)}setMap(map){this.map=map}setPosition(position){this.position=position}}
+    kakao={maps:{LatLng,CustomOverlay:Overlay}};state.map={};
+    const fast={timestamp:1000,position:{latitude:37,longitude:127,accuracy:3},speed:{valid:true,mps:5},heading:{degrees:122},quality:{fresh:true,monotonic:true,plausiblePosition:true}};
+    state.screen='navigation';state.nav.empty=true;state.nav.follow=false;state.nav.heading=120;
+    renderEmptyNavigationFix({latitude:37,longitude:127,timestamp:1000,accuracy:3},fast,{moving:true});
+    const navigation=state.nav.heading;
+    state.screen='racing';state.racingHeading=120;state.racingDisplaySpeed=5;
+    updateRacingLiveDisplay(fast,{moving:true});
+    return{navigation,racing:state.racingHeading};
+  })()`,context);
+  assert.ok(Math.abs(result.navigation-121.3)<1e-9);
+  assert.ok(Math.abs(result.racing-121.3)<1e-9);
+});
+
 test('rider offset and connector appear only after actual racing start and disappear on completion', () => {
   const context=loadApp('',true,true);
   const result=vm.runInContext(`(()=>{

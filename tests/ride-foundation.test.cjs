@@ -22,12 +22,21 @@ const {
   processFastObservation,
   rideMetrics,
   resumeRide,
+  smoothHeading,
   startRide,
 } = require('../ride-foundation.js');
 
 function pointAtMeters(meters, timestamp, speed = 10, accuracy = 3) {
   return { latitude: 0, longitude: meters / 111195, timestamp, speed, accuracy, heading: 90 };
 }
+
+test('smooth heading follows arbitrary angles quickly across north by the shortest turn', () => {
+  assert.equal(smoothHeading(null, 122), 122);
+  assert.ok(Math.abs(smoothHeading(120, 122) - 121.3) < 1e-9);
+  assert.ok(Math.abs(smoothHeading(250, 253) - 251.95) < 1e-9);
+  assert.ok(Math.abs(smoothHeading(359, 1) - 360.3) < 1e-9);
+  assert.ok(Math.abs(smoothHeading(1, 359) - (-.3)) < 1e-9);
+});
 
 test('shared GPS source keeps one native watcher for multiple consumers', () => {
   let starts = 0;
