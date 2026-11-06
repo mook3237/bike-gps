@@ -1,17 +1,21 @@
-function norm(s=''){return String(s).replace(/\s+/g,'').toLowerCase()}
-function transit(c=''){return /(지하철|철도|기차|역사|교통|수도권전철)/.test(c)}
-function score(x,q){const n=norm(x.place_name),z=norm(q);return (n===z?100000:0)+(/역$/.test(z)&&transit(x.category_name)?20000:0)+(n.startsWith(z)?5000:0)+(n.includes(z)?1000:0)}
 const CATEGORY_CODES=['MT1','CS2','PS3','SC4','AC5','PK6','OL7','SW8','BK9','CT1','AG2','PO3','AT4','AD5','FD6','CE7','HP8','PM9'];
 function place(x){const roadAddress=x.road_address_name||'',lotAddress=x.address_name||'';return{id:x.id,name:x.place_name,category:x.category_name||'',address:roadAddress||lotAddress,roadAddress,lotAddress,placeUrl:x.place_url||'',latitude:+x.y,longitude:+x.x,distance:x.distance?+x.distance:null,phone:x.phone||''}}
 function addressPlace(x){const roadAddress=x.road_address?.address_name||x.road_address_name||'',lotAddress=x.address?.address_name||x.address_name||'',name=x.road_address?.building_name||x.address?.building_name||roadAddress||lotAddress;return{id:`address:${x.x},${x.y}`,name,category:'',address:roadAddress||lotAddress,roadAddress,lotAddress,placeUrl:'',latitude:+x.y,longitude:+x.x,distance:null,phone:''}}
-async function kakaoDocuments(url,key){const r=await fetch(url,{headers:{Authorization:'KakaoAK '+key}}),d=await r.json().catch(()=>({}));if(!r.ok)throw Object.assign(new Error(d.msg||'카카오 장소검색 실패'),{status:r.status||502});return d.documents||[]}
+async function kakaoResponse(url,key){
+ const controller=new AbortController();let timer;
+ try{return await Promise.race([
+   (async()=>{const response=await fetch(url,{headers:{Authorization:'KakaoAK '+key},signal:controller.signal});return{response,data:await response.json().catch(()=>({}))}})(),
+   new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(Object.assign(new Error('카카오 검색 시간 초과'),{status:504}))},6000)})
+ ])}finally{clearTimeout(timer)}
+}
+async function kakaoDocuments(url,key){const {response:r,data:d}=await kakaoResponse(url,key);if(!r.ok)throw Object.assign(new Error(d.msg||'카카오 장소검색 실패'),{status:r.status||502});return d.documents||[]}
 async function kakaoKeywordDocuments(params,key,limit,accept=()=>true){
  const documents=[],seen=new Set();
  params.set('size',String(Math.min(limit,15)));if(!params.has('sort'))params.set('sort','accuracy');
  for(let page=1;page<=Math.ceil(limit/15);page++){
    params.set('page',String(page));
    try{
-   const r=await fetch('https://dapi.kakao.com/v2/local/search/keyword.json?'+params,{headers:{Authorization:'KakaoAK '+key}}),d=await r.json().catch(()=>({}));
+   const {response:r,data:d}=await kakaoResponse('https://dapi.kakao.com/v2/local/search/keyword.json?'+params,key);
    if(!r.ok)throw Object.assign(new Error(d.msg||'Kakao keyword search failed'),{status:r.status||502});
    const batch=d.documents||[];
    for(const item of batch){const id=item.id||item.x+','+item.y;if(!seen.has(id)&&accept([+item.x,+item.y])){seen.add(id);documents.push(item)}}

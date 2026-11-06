@@ -134,12 +134,15 @@
   function createWakeLockController({ navigator: nav = globalThis.navigator, document: doc = globalThis.document } = {}) {
     let enabled = false;
     let sentinel = null;
+    let revision = 0;
     async function release() {
+      revision += 1;
       const current = sentinel;
       sentinel = null;
       if (current) try { await current.release(); } catch {}
     }
     async function sync() {
+      const requestedRevision = revision;
       if (!enabled || doc?.visibilityState === 'hidden') {
         await release();
         return false;
@@ -148,15 +151,20 @@
       if (!nav?.wakeLock?.request) return false;
       try {
         const acquired = await nav.wakeLock.request('screen');
+        if (requestedRevision !== revision || !enabled || doc?.visibilityState === 'hidden') {
+          try { await acquired.release(); } catch {}
+          return false;
+        }
         sentinel = acquired;
         acquired.addEventListener?.('release', () => { if (sentinel === acquired) sentinel = null; });
         return true;
       } catch {
-        sentinel = null;
+        if (requestedRevision === revision) sentinel = null;
         return false;
       }
     }
     async function setEnabled(value) {
+      revision += 1;
       enabled = value === true;
       return sync();
     }

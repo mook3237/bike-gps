@@ -157,6 +157,43 @@
 .racing-decision-actions button:disabled{opacity:.55;cursor:default}
 #racingSaveDecisionDialog .racing-decision-actions{grid-template-columns:1fr}
 .record-route-map{height:260px;margin-top:14px;border:1px solid #294257;border-radius:16px;overflow:hidden}
+
+/* Saved record details use their own map and scrolling surface. */
+#recordsScreen{background:#080d14;color:#f4f7fc;overscroll-behavior:contain}
+#recordsScreen>.app-settings-header{position:sticky;top:calc(-8px - env(safe-area-inset-top));z-index:2;background:#080d14}
+#recordsScreen>.app-settings-content{max-width:680px;min-width:0;margin:12px auto;padding:0;border:0;background:transparent}
+#recordsScreen .record-detail{margin:0;padding:0;border:0;border-radius:0;background:transparent}
+#recordsScreen .record-detail h2{margin:12px 0 18px;color:#fff;font-size:clamp(21px,5.5vw,28px);overflow-wrap:anywhere}
+.record-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#aab6c6;font-size:13px}
+.record-kind{padding:5px 12px;border-radius:20px;background:#17314d;color:#8bbaff;font-weight:700}
+#recordsScreen .record-detail-stats{grid-template-columns:repeat(3,minmax(0,1fr));padding:8px;gap:6px;border-radius:18px;background:#151b24}
+#recordsScreen .record-detail-stats>div{padding:12px 4px;border:0;background:transparent}
+#recordsScreen .record-detail-stats>div:last-child{grid-column:span 2}
+#recordsScreen .record-detail-stats b{font-size:clamp(15px,4.3vw,22px);line-height:1.35}
+.record-comparison,.record-caption,.record-note,.record-empty,#recordMapMessage{color:#aab6c6;line-height:1.6;font-size:14px}
+.record-tabs{display:flex;margin:22px 0 16px;border-bottom:1px solid #293342}
+.record-tabs button{flex:1;min-height:48px;padding:10px 4px;border:0;border-bottom:3px solid transparent;background:transparent;color:#b1bdcd;font-weight:700}
+.record-tabs button[aria-selected=true]{border-bottom-color:#4d8dff;color:#85b3ff}
+.record-summary-list{margin:0}.record-summary-list>div{display:flex;justify-content:space-between;gap:16px;padding:14px 2px;border-bottom:1px solid #25303e}
+.record-summary-list dt{color:#aab6c6}.record-summary-list dd{margin:0;text-align:right;overflow-wrap:anywhere}
+#recordPanelsplits h3{font-size:20px;margin:16px 0 6px}.record-caption{margin:0 0 12px}
+.record-table-scroll{max-width:100%;overflow-x:auto;border:1px solid #293342;border-radius:12px;-webkit-overflow-scrolling:touch}
+.record-splits{border-collapse:collapse;width:100%;table-layout:fixed;font-size:clamp(11px,3vw,13px);font-variant-numeric:tabular-nums}
+.record-splits th,.record-splits td{padding:14px 4px;text-align:right;border-bottom:1px solid #293342;overflow-wrap:anywhere}
+.record-splits th:first-child{width:26%}
+.record-splits thead{background:#19212c;color:#c8d2e0}.record-splits th:first-child{text-align:left}
+.record-splits tbody tr:last-child{background:#112536}.record-estimated{display:block;color:#a9cbff;font-size:11px;font-weight:400;margin-top:5px}
+.record-map-section{margin:24px 0 16px}.record-map-section h2{font-size:20px;color:#f4f7fc;margin:0 0 12px}
+.record-map-preview{position:relative}.record-map-preview .record-route-map{height:clamp(190px,32vh,280px);margin:0}
+.record-map-expand{position:absolute;inset:0;z-index:1;width:100%;border:0;border-radius:16px;background:transparent;color:#fff;text-align:right;padding:12px;font-size:24px;display:flex;align-items:flex-start;justify-content:flex-end}
+.record-map-expand span{font-size:12px;padding:8px;border-radius:8px;background:#07131fe0}
+.record-route-marker{display:block;padding:5px 9px;border:2px solid #fff;border-radius:16px;background:#147a45;color:#fff;font-size:12px;font-weight:700}.record-route-marker.finish{background:#1c2433}
+.record-map-overlay{position:fixed;inset:0;z-index:70;display:flex;flex-direction:column;background:#080d14;color:#fff;pointer-events:auto;padding-top:env(safe-area-inset-top)}
+.record-map-overlay>.app-settings-header{flex-shrink:0;padding:0 12px;height:56px}.record-map-stage{flex:1;min-height:0;position:relative}
+.record-map-stage .record-route-map{position:absolute;inset:0;height:100%;margin:0;border:0;border-radius:0}
+.record-map-zoom{position:absolute;top:calc(env(safe-area-inset-top) + 72px);right:16px;z-index:2;display:grid;gap:8px}
+.record-map-zoom button{height:44px;width:44px;border:1px solid #43516a;border-radius:12px;background:#091728ed;color:#fff;font-size:24px}
+.record-map-fit{position:absolute;bottom:calc(env(safe-area-inset-bottom) + 24px);left:50%;transform:translateX(-50%);min-height:48px;padding:12px 22px;border:0;border-radius:28px;background:#2878ed;color:#fff;font-weight:700;white-space:nowrap;z-index:2}
 #diagnosticLogDialog{position:fixed;top:var(--visual-viewport-top,0px);bottom:auto;height:var(--visual-viewport-height,100dvh);z-index:80}
 #diagnosticLogText{display:block;width:100%;height:220px;max-height:35dvh;resize:none;font:11px/1.5 monospace;user-select:text;-webkit-user-select:text}
 

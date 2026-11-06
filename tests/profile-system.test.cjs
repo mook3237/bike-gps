@@ -11,6 +11,8 @@ const {
 function memoryStorage(entries = {}) {
   const values = new Map(Object.entries(entries));
   return {
+    get length() { return values.size; },
+    key(index) { return [...values.keys()][index] ?? null; },
     getItem(key) { return values.has(key) ? values.get(key) : null; },
     setItem(key, value) { values.set(key, String(value)); },
     removeItem(key) { values.delete(key); },
@@ -25,6 +27,105 @@ function repository(storage, ids = ['profile-dad', 'profile-new']) {
     now: () => '2026-09-30T00:00:00.000Z',
   });
 }
+
+function memoryRecordStore() {
+  const entries = new Map();
+  let fail = false;
+  return {
+    setFail(value) { fail = value; },
+    async readAll() { return [...entries.values()].map(value => structuredClone(value)); },
+    async saveBest(entry, prefix, sameCourse) {
+      const comparable = [...entries.values()].filter(saved => saved.key.startsWith(prefix)
+        && typeof sameCourse === 'function' && sameCourse(saved.value.record, entry.value.record));
+      if (comparable.some(saved => saved.value.record.completed !== false && Number(saved.value.record.movingTime) > 0
+        && Number(saved.value.record.movingTime) <= Number(entry.value.record.movingTime))) throw new Error('not faster');
+      await this.write([entry], comparable.map(saved => saved.key));
+      return this.readAll();
+    },
+    async write(added, removed = []) {
+      if (fail) throw new Error('quota');
+      const next = new Map(entries);
+      for (const entry of added) next.set(entry.key, structuredClone(entry));
+      for (const key of removed) next.delete(key);
+      entries.clear();
+      for (const [key, value] of next) entries.set(key, value);
+    },
+  };
+}
+
+test('IndexedDB migration keeps legacy records, order, profile ownership and detailed GPS', async () => {
+  const storage = memoryStorage();
+  const old = repository(storage);
+  old.initialize();
+  old.prependRide('profile-dad', { name: 'first' });
+  old.prependRide('profile-dad', { name: 'second' });
+  const other = old.addProfile('other');
+  old.prependRide(other.id, { name: 'other ride' });
+  old.prependRacing('profile-dad', { name: 'old race', courseId: 'course', movingTime: 10000 });
+  old.prependRacing('profile-dad', { name: 'race', courseId: 'course', movingTime: 9000, route: [{ latitude: 37, longitude: 127 }], detailedSamples: [{ timestamp: 1 }] }, { sameCourse: (a, b) => a.courseId === b.courseId });
+  const indexed = memoryRecordStore();
+  const repo = createProfileRepository(storage, { recordStore: indexed });
+  await repo.initializeRecords();
+  assert.deepEqual(repo.readRides('profile-dad').map(ride => ride.name), ['second', 'first']);
+  assert.deepEqual(repo.readRides(other.id).map(ride => ride.name), ['other ride']);
+  assert.deepEqual(repo.readRacing('profile-dad')[0].detailedSamples, [{ timestamp: 1 }]);
+  assert.equal(repo.readRacing('profile-dad').length, 1);
+  assert.equal(JSON.parse(storage.getItem(PROFILE_STORE_KEY)).recordsIndexedDB, true);
+  assert.equal(Object.keys(storage.snapshot()).filter(key => key.includes(':record:')).length, 0);
+  const reopened = createProfileRepository(storage, { recordStore: indexed });
+  await reopened.initializeRecords();
+  assert.deepEqual(reopened.readRides('profile-dad').map(ride => ride.name), ['second', 'first']);
+  await reopened.prependRide('profile-dad', { name: 'third' });
+  assert.deepEqual(repo.readRides('profile-dad').map(ride => ride.name), ['second', 'first']);
+  await repo.refreshRecords();
+  assert.deepEqual(repo.readRides('profile-dad').map(ride => ride.name), ['third', 'second', 'first']);
+});
+
+test('IndexedDB best replacement commits once and failed writes retain the old GPS record', async () => {
+  const storage = memoryStorage();
+  const indexed = memoryRecordStore();
+  const repo = createProfileRepository(storage, { recordStore: indexed, createId: () => 'profile-dad' });
+  repo.initialize();
+  await repo.initializeRecords();
+  const sameCourse = (a, b) => a.courseId === b.courseId;
+  const old = { courseId: 'route', movingTime: 10000, detailedSamples: [{ timestamp: 1 }] };
+  await repo.prependRacing('profile-dad', old, { sameCourse });
+  indexed.setFail(true);
+  await assert.rejects(repo.prependRacing('profile-dad', { ...old, movingTime: 9000 }, { sameCourse }), /quota/);
+  assert.deepEqual(repo.readRacing('profile-dad'), [old]);
+  indexed.setFail(false);
+  await repo.prependRacing('profile-dad', { ...old, movingTime: 9000 }, { sameCourse });
+  assert.deepEqual(repo.readRacing('profile-dad').map(record => record.movingTime), [9000]);
+  assert.equal((await indexed.readAll()).length, 1);
+});
+
+test('failed IndexedDB migration leaves every legacy record readable', async () => {
+  const storage = memoryStorage();
+  const old = repository(storage);
+  old.initialize();
+  old.prependRide('profile-dad', { name: 'saved' });
+  const indexed = memoryRecordStore();
+  indexed.setFail(true);
+  const repo = createProfileRepository(storage, { recordStore: indexed });
+  await assert.rejects(repo.initializeRecords(), /quota/);
+  assert.equal(old.readRides('profile-dad')[0].name, 'saved');
+  assert.equal(JSON.parse(storage.getItem(PROFILE_STORE_KEY)).recordsIndexedDB, undefined);
+  indexed.setFail(false);
+  await repo.initializeRecords();
+  assert.equal(repo.readRides('profile-dad')[0].name, 'saved');
+});
+
+test('first profile import sends legacy rides to IndexedDB without duplicating localStorage', async () => {
+  const storage = memoryStorage({ ridemate_rides: JSON.stringify([{ name: 'older ride' }]) });
+  const indexed = memoryRecordStore();
+  const repo = createProfileRepository(storage, { recordStore: indexed, createId: () => 'profile-dad' });
+  repo.initialize();
+  assert.deepEqual(JSON.parse(storage.getItem(PROFILE_STORE_KEY)).dataByProfileId['profile-dad'].rides, []);
+  assert.ok(storage.getItem('ridemate_rides'));
+  await repo.initializeRecords();
+  assert.deepEqual(repo.readRides('profile-dad').map(ride => ride.name), ['older ride']);
+  assert.equal(storage.getItem('ridemate_rides'), null);
+});
 
 test('first initialization creates only Dad and imports both legacy arrays once', () => {
   const legacyRecent = [{ query: '한강', place: { id: 'river', name: '한강', latitude: 37.5, longitude: 127 } }];
@@ -47,6 +148,30 @@ test('first initialization creates only Dad and imports both legacy arrays once'
   assert.deepEqual(repo.initialize(), store);
   assert.equal(repo.getProfiles().length, 1);
   assert.equal(repo.readRides('profile-dad').length, 1);
+});
+
+test('separate tabs preserve rides when another tab saves settings and recent searches', () => {
+  const storage = memoryStorage();
+  const first = repository(storage), second = repository(storage);
+  first.initialize(); second.initialize();
+  first.prependRide('profile-dad', { distance: 1234 });
+  second.updateSettings('profile-dad', { distanceUnit: 'mi' });
+  second.replaceRecentSearches('profile-dad', [{ query: '도봉동' }]);
+  assert.equal(first.readRides('profile-dad')[0].distance, 1234);
+  assert.equal(second.readRides('profile-dad')[0].distance, 1234);
+  assert.equal(first.readSettings('profile-dad').distanceUnit, 'mi');
+});
+
+test('concurrent independent ride writes keep both records and failed writes keep old data', () => {
+  const backing = memoryStorage(); let fail = false;
+  const storage = { get length() { return backing.length; }, key: index => backing.key(index), getItem: key => backing.getItem(key), setItem(key, value) { if (fail) throw new Error('quota'); backing.setItem(key, value); } };
+  const first = repository(storage), second = repository(storage);
+  first.initialize(); second.initialize();
+  first.prependRide('profile-dad', { distance: 100 });
+  second.prependRide('profile-dad', { distance: 200 });
+  fail = true;
+  assert.throws(() => first.prependRide('profile-dad', { distance: 300 }), /quota/);
+  assert.deepEqual(second.readRides('profile-dad').map(ride => ride.distance).sort(), [100, 200]);
 });
 
 test('an existing empty profile store stays empty across initialization', () => {
@@ -123,8 +248,11 @@ test('deleting the last profile is allowed and does not recreate Dad', () => {
   const storage = memoryStorage();
   const repo = repository(storage);
   repo.initialize();
+  repo.prependRide('profile-dad', { distance: 1 });
+  repo.prependRacing('profile-dad', { distance: 1 });
 
   assert.equal(repo.deleteProfile('profile-dad'), true);
+  assert.equal(Object.keys(storage.snapshot()).filter(key => key.includes(':record:')).length, 0);
   assert.deepEqual(repo.getProfiles(), []);
   assert.deepEqual(repo.initialize().profiles, []);
   assert.equal(JSON.parse(storage.getItem(PROFILE_STORE_KEY)).profiles.length, 0);
@@ -384,7 +512,7 @@ test('profile controller enters the map only after explicit selection and keeps 
 
 test('best racing replacement is atomic, retains full GPS, and isolates courses and profiles', () => {
   const backing=memoryStorage();let fail=false;
-  const storage={...backing,setItem(key,value){if(fail)throw new Error('quota');backing.setItem(key,value)}};
+  const storage={get length(){return backing.length},key:index=>backing.key(index),getItem:key=>backing.getItem(key),setItem(key,value){if(fail)throw new Error('quota');backing.setItem(key,value)}};
   const repo=repository(storage);repo.initialize();repo.addProfile('second');
   const sameCourse=(a,b)=>a.courseId===b.courseId;
   const old={courseId:'A',completed:true,movingTime:10000,route:[{latitude:37,longitude:127}],detailedSamples:[{timestamp:1000,accuracy:3}]};
@@ -401,4 +529,65 @@ test('best racing replacement is atomic, retains full GPS, and isolates courses 
   assert.throws(()=>repo.prependRacing('profile-dad',old,{sameCourse}));
   assert.throws(()=>repo.prependRacing('profile-dad',better,{sameCourse}));
   assert.deepEqual(repo.readRacing('profile-dad'),saved);
+});
+
+test('a faster racing record uses short replacement IDs and releases the old record after saving', () => {
+  const backing = memoryStorage();
+  let limit = Infinity;
+  const size = entries => Object.entries(entries).reduce((total, [key, value]) => total + key.length + value.length, 0);
+  const storage = {
+    get length() { return backing.length; },
+    key: index => backing.key(index),
+    getItem: key => backing.getItem(key),
+    removeItem: key => backing.removeItem(key),
+    setItem(key, value) {
+      if (size({ ...backing.snapshot(), [key]: String(value) }) > limit) throw new Error('quota');
+      backing.setItem(key, value);
+    },
+  };
+  const repo = repository(storage);
+  repo.initialize();
+  const sameCourse = (a, b) => a.courseId === b.courseId;
+  const route = Array.from({ length: 100 }, (_, index) => ({ latitude: 37 + index / 10000, longitude: 127 + index / 10000 }));
+  const old = { courseId: 'A', completed: true, movingTime: 10000, route };
+  const better = { ...old, movingTime: 9000 };
+  repo.prependRacing('profile-dad', old);
+  const before = backing.snapshot();
+  limit = size(before) + JSON.stringify({ record: better, supersedes: ['x'.repeat(80)] }).length + 200;
+
+  assert.doesNotThrow(() => repo.prependRacing('profile-dad', better, { sameCourse }));
+  assert.equal(repo.readRacing('profile-dad').length, 1);
+  assert.equal(repo.readRacing('profile-dad')[0].movingTime, 9000);
+  const racingKeys = Object.keys(backing.snapshot()).filter(key => key.includes(':racing:'));
+  assert.equal(racingKeys.length, 1);
+  assert.deepEqual(JSON.parse(backing.getItem(racingKeys[0])).supersedes.length, 1);
+  assert.ok(JSON.parse(backing.getItem(racingKeys[0])).supersedes[0].length < 100);
+
+  limit = size(backing.snapshot());
+  assert.throws(() => repo.prependRacing('profile-dad', { ...better, movingTime: 8000 }, { sameCourse }), /quota/);
+  assert.equal(repo.readRacing('profile-dad')[0].movingTime, 9000);
+});
+
+test('replacing an old-format racing entry keeps its hidden base record hidden', () => {
+  const storage = memoryStorage();
+  const repo = repository(storage);
+  const store = repo.initialize();
+  const old = { courseId: 'A', completed: true, movingTime: 10000 };
+  const sameCourse = (a, b) => a.courseId === b.courseId;
+  store.dataByProfileId['profile-dad'].racing = [old];
+  storage.setItem(PROFILE_STORE_KEY, JSON.stringify(store));
+  storage.setItem(`${PROFILE_STORE_KEY}:record:profile-dad:racing:0000000000:old`, JSON.stringify({
+    record: { ...old, movingTime: 9000 },
+    supersedes: [JSON.stringify(old)],
+  }));
+  assert.deepEqual(repo.readRacing('profile-dad').map(record => record.movingTime), [9000]);
+
+  repo.prependRacing('profile-dad', { ...old, movingTime: 8000 }, { sameCourse });
+  assert.deepEqual(repo.readRacing('profile-dad').map(record => record.movingTime), [8000]);
+  repo.prependRacing('profile-dad', { ...old, movingTime: 7000 }, { sameCourse });
+
+  assert.deepEqual(repo.readRacing('profile-dad').map(record => record.movingTime), [7000]);
+  const keys = Object.keys(storage.snapshot()).filter(key => key.includes(':racing:'));
+  assert.equal(keys.length, 1);
+  assert.ok(JSON.parse(storage.getItem(keys[0])).supersedes.includes('base:0'));
 });

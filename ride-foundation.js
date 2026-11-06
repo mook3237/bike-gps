@@ -365,6 +365,42 @@
     return Number.isFinite(best) ? best : null;
   }
 
+  function calculateKilometerSplits(history, distance, movingTime, { finalBoundaryInterpolated = false } = {}) {
+    if (!Array.isArray(history) || !Number.isFinite(distance) || distance <= 0
+      || !Number.isFinite(movingTime) || movingTime <= 0) return [];
+    const points = [{ distance: 0, movingTime: 0 }];
+    for (const point of history) {
+      const previous = points.at(-1);
+      if (Number.isFinite(point.distance) && Number.isFinite(point.movingTime)
+        && point.distance >= previous.distance && point.movingTime >= previous.movingTime
+        && point.distance <= distance && point.movingTime <= movingTime)
+        points.push({ distance: point.distance, movingTime: point.movingTime });
+    }
+    // The final record may end at an interpolated racing finish, before the last credited batch.
+    points.push({ distance, movingTime });
+    const splits = [];
+    let index = 0, startDistanceM = 0, startTime = 0, startBoundaryInterpolated = false;
+    while (startDistanceM < distance) {
+      const endDistanceM = Math.min(startDistanceM + 1000, distance);
+      let endTime = movingTime, endBoundaryInterpolated = finalBoundaryInterpolated === true;
+      if (endDistanceM < distance) {
+        while (points[index + 1].distance < endDistanceM) index++;
+        const before = points[index], after = points[index + 1];
+        endBoundaryInterpolated = after.distance !== endDistanceM;
+        endTime = after.distance === endDistanceM ? after.movingTime
+          : before.movingTime + (after.movingTime - before.movingTime)
+            * (endDistanceM - before.distance) / (after.distance - before.distance);
+      }
+      const distanceM = endDistanceM - startDistanceM, movingTimeMs = endTime - startTime;
+      splits.push({ startDistanceM, endDistanceM, distanceM, movingTimeMs,
+        averageSpeedMps: movingTimeMs > 0 ? distanceM * 1000 / movingTimeMs : null,
+        paceMsPerKm: movingTimeMs > 0 ? movingTimeMs * 1000 / distanceM : null,
+        startBoundaryInterpolated, endBoundaryInterpolated });
+      startDistanceM = endDistanceM; startTime = endTime; startBoundaryInterpolated = endBoundaryInterpolated;
+    }
+    return splits;
+  }
+
   function createRideSession() {
     return {
       recordingState: 'idle',
@@ -516,6 +552,7 @@
         maxSpeed: metrics.maxSpeed,
         averageMovingPace: metrics.averageMovingPace,
         bestKilometerPace: metrics.bestKilometerPace,
+        kilometerSplits: calculateKilometerSplits(ride.distanceHistory, metrics.distance, metrics.movingTime),
       },
       route: ride.routePoints.map(point => ({ ...point })),
       detailedSamples: ride.detailedSamples.map(sample => ({ ...sample })),
@@ -534,8 +571,8 @@
   }
 
   function routePointAtDistance(route, distance) {
-    if (!Array.isArray(route) || route.length < 2) return null;
-    const bounded = Math.max(0, Math.min(routeDistance(route), Number(distance) || 0));
+    if (!Array.isArray(route) || !route.length) return null;
+    const bounded = Math.max(0, Number(distance) || 0);
     let walked = 0;
     for (let index = 1; index < route.length; index += 1) {
       const start = route[index - 1], end = route[index], segment = haversineDistance(start, end);
@@ -647,67 +684,6 @@
     return { state, arrived: state.arrived, reason: state.arrived ? 'crossed-arrival-line' : inApproach ? 'approaching' : 'outside' };
   }
 
-  function createNavigationArrivalState() {
-    return {
-      candidateCount: 0,
-      candidateSince: null,
-      candidateQualified: false,
-      approached: false,
-      previousDistance: null,
-      previousUncertainty: null,
-      bestCandidateDistance: Infinity,
-      bestCandidateUncertainty: Infinity,
-      arrived: false,
-    };
-  }
-
-  function evaluateNavigationArrival(detectorState, observation) {
-    const state = { ...createNavigationArrivalState(), ...(detectorState || {}) };
-    if (state.arrived) return { state, arrived: true, candidate: true, reason: 'already-arrived' };
-    const timestamp = Number(observation?.timestamp);
-    const selectedDistance = Math.max(0, Number(observation?.selectedDistance));
-    const routeEndDistance = Math.max(0, Number(observation?.routeEndDistance));
-    const endpointOffset = Math.max(0, Number(observation?.endpointOffset));
-    const remainingRouteDistance = Math.max(0, Number(observation?.remainingRouteDistance));
-    const reportedAccuracy = Number(observation?.accuracy);
-    if (![timestamp, selectedDistance, routeEndDistance, endpointOffset, remainingRouteDistance, reportedAccuracy].every(Number.isFinite)) {
-      return { state, arrived: false, candidate: false, reason: 'invalid-observation' };
-    }
-    const uncertainty = Math.max(3, reportedAccuracy);
-    const targetDistance = Math.min(selectedDistance, routeEndDistance);
-    if (state.previousDistance != null && state.previousDistance - targetDistance > Math.max(uncertainty, state.previousUncertainty || 3)) state.approached = true;
-    state.previousDistance = targetDistance;
-    state.previousUncertainty = uncertainty;
-
-    const physicalCandidate = selectedDistance <= endpointOffset + uncertainty || routeEndDistance <= uncertainty;
-    const routeCandidate = remainingRouteDistance <= endpointOffset + uncertainty * 2;
-    const candidate = physicalCandidate && routeCandidate;
-    if (candidate) {
-      if (!state.candidateCount) state.candidateSince = timestamp;
-      state.candidateCount += 1;
-      if (targetDistance < state.bestCandidateDistance) {
-        state.bestCandidateDistance = targetDistance;
-        state.bestCandidateUncertainty = uncertainty;
-      }
-      if (state.candidateCount >= 3 && timestamp - state.candidateSince >= 2000) state.candidateQualified = true;
-    } else if (!state.candidateQualified) {
-      state.candidateCount = 0;
-      state.candidateSince = null;
-      state.bestCandidateDistance = Infinity;
-      state.bestCandidateUncertainty = Infinity;
-    }
-
-    const stable = state.candidateQualified
-      && observation.moving === false
-      && Number.isFinite(observation.stationaryCandidateSince)
-      && timestamp - observation.stationaryCandidateSince >= 2000;
-    const passed = state.candidateQualified
-      && state.approached
-      && routeCandidate
-      && targetDistance - state.bestCandidateDistance > Math.max(uncertainty, state.bestCandidateUncertainty);
-    state.arrived = stable || passed;
-    return { state, arrived: state.arrived, candidate, reason: stable ? 'stable' : passed ? 'passed' : candidate ? 'candidate' : 'outside' };
-  }
 
 
   function normalizePosition(position) {
@@ -784,29 +760,37 @@
     return { subscribe, unsubscribe, getLatest: () => latest, getLatestFast: () => latestFast, getStatus: () => status, getWatchId: () => watchId };
   }
 
+  function isFastObservationUsable(observation) {
+    return !!(observation?.quality?.fresh && observation.quality.monotonic && observation.quality.plausiblePosition
+      && Number.isFinite(observation.position?.latitude) && Number.isFinite(observation.position?.longitude));
+  }
+
   return {
     GHOST_DATA_VERSION,
     GPS_JUMP_MAX_M,
     calculateBestKilometer,
+    calculateKilometerSplits,
+    bearingDegrees,
     createFastObservationState,
     createGpsSource,
-    createNavigationArrivalState,
     createRouteArrivalGate,
     createRouteArrivalState,
     createMotionState,
     createRideSession,
     discardRide,
     ensureRideStarted,
-    evaluateNavigationArrival,
     evaluateRouteArrival,
     elapsedRideTime,
     finishRide,
     haversineDistance,
     ingestRideFix,
+    isFastObservationUsable,
     movementWindowEvidence,
     pauseRide,
     permanentRideRecord,
     processFastObservation,
+    routePointAtDistance,
+    routeDistance,
     processMotionFix,
     reportGpsDisplay,
     resetMotionState,

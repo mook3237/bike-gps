@@ -24,44 +24,10 @@
     return finite(point?.latitude) && finite(point?.longitude);
   }
 
-  function routeDistance(route) {
-    let total = 0;
-    for (let index = 1; index < route.length; index += 1) total += distanceBetween(route[index - 1], route[index]);
-    return total;
-  }
+  const routeDistance = Ride.routeDistance;
 
-  function pointAtRouteDistance(route, distance) {
-    if (!Array.isArray(route) || !route.length) return null;
-    const target = Math.max(0, finite(distance) ? distance : 0);
-    if (target === 0) return { latitude: route[0].latitude, longitude: route[0].longitude };
-    let walked = 0;
-    for (let index = 1; index < route.length; index += 1) {
-      const start = route[index - 1];
-      const end = route[index];
-      const segment = distanceBetween(start, end);
-      if (target <= walked + segment) {
-        const ratio = segment > 0 ? Math.max(0, Math.min(1, (target - walked) / segment)) : 1;
-        return {
-          latitude: start.latitude + (end.latitude - start.latitude) * ratio,
-          longitude: start.longitude + (end.longitude - start.longitude) * ratio,
-        };
-      }
-      walked += segment;
-    }
-    const last = route.at(-1);
-    return { latitude: last.latitude, longitude: last.longitude };
-  }
-
-  function routeBearing(start, end) {
-    const radians = Math.PI / 180;
-    const latitude1 = start.latitude * radians;
-    const latitude2 = end.latitude * radians;
-    const longitude = (end.longitude - start.longitude) * radians;
-    const y = Math.sin(longitude) * Math.cos(latitude2);
-    const x = Math.cos(latitude1) * Math.sin(latitude2)
-      - Math.sin(latitude1) * Math.cos(latitude2) * Math.cos(longitude);
-    return (Math.atan2(y, x) / radians + 360) % 360;
-  }
+  const pointAtRouteDistance = Ride.routePointAtDistance;
+  const routeBearing = Ride.bearingDegrees;
 
   function headingDifference(first, second) {
     return Math.abs(((first - second + 540) % 360) - 180);

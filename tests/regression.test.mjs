@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
 import vm from 'node:vm';
+import Ride from '../ride-foundation.js';
 
 const root = new URL('../', import.meta.url);
 const appSource = fs.readFileSync(new URL('app.js', root), 'utf8');
@@ -10,10 +11,43 @@ const appLines = appSource.split(/\r?\n/);
 function appFunction(name, context = {}) {
   const line = appLines.find(value => value.startsWith(`function ${name}(`) || value.startsWith(`async function ${name}(`));
   assert.ok(line, `${name} must exist`);
+  context.Ride = Ride;
+  context.clearTimeout ??= () => {};
+  context.searchTimer ??= null;
   vm.createContext(context);
   vm.runInContext(line, context);
   return context[name];
 }
+
+test('bicycle API accepts a duplicate starting point only when a later valid segment moves', async () => {
+  const originalFetch=globalThis.fetch,originalKey=process.env.KAKAO_REST_API_KEY;
+  process.env.KAKAO_REST_API_KEY='test-key';
+  const handler=await apiHandler('api/bicycle-route.js');
+  const request={method:'GET',query:{start_x:'127',start_y:'37',end_x:'127.001',end_y:'37'}};
+  try{
+    for(const [points,expected] of [
+      [[[127,37],[127,37],[127.001,37]],200],
+      [[[127,37],[127,37],[127,37]],502],
+      [[[999,37],[999,37],[999.001,37]],502],
+    ]){
+      globalThis.fetch=async()=>({ok:true,status:200,json:async()=>({route:{properties:{totalDistance:100},coordinates:points}})});
+      const {output,response}=mockResponse();await handler(request,response);assert.equal(output.status,expected);
+    }
+  }finally{globalThis.fetch=originalFetch;if(originalKey===undefined)delete process.env.KAKAO_REST_API_KEY;else process.env.KAKAO_REST_API_KEY=originalKey}
+});
+
+test('place API bounds a stalled Kakao request', async () => {
+  const originalFetch=globalThis.fetch,originalTimer=globalThis.setTimeout,originalClear=globalThis.clearTimeout,originalKey=process.env.KAKAO_REST_API_KEY;
+  process.env.KAKAO_REST_API_KEY='test-key';
+  globalThis.fetch=()=>new Promise(()=>{});
+  globalThis.setTimeout=callback=>{queueMicrotask(callback);return 1};
+  globalThis.clearTimeout=()=>{};
+  try{
+    const handler=await apiHandler('api/place-search.js'),{output,response}=mockResponse();
+    await handler({method:'GET',query:{query:'cafe'}},response);
+    assert.equal(output.status,504);
+  }finally{globalThis.fetch=originalFetch;globalThis.setTimeout=originalTimer;globalThis.clearTimeout=originalClear;if(originalKey===undefined)delete process.env.KAKAO_REST_API_KEY;else process.env.KAKAO_REST_API_KEY=originalKey}
+});
 
 async function apiHandler(relativePath) {
   const source = fs.readFileSync(new URL(relativePath, root), 'utf8');

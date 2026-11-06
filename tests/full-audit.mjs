@@ -4,6 +4,7 @@ import vm from 'node:vm';
 
 const root = new URL('../', import.meta.url);
 const app = fs.readFileSync(new URL('app.js', root), 'utf8');
+const rideSource = fs.readFileSync(new URL('ride-foundation.js', root), 'utf8');
 const html = fs.readFileSync(new URL('index.html', root), 'utf8');
 const bikeSource = fs.readFileSync(new URL('api/bicycle-route.js', root), 'utf8');
 const placeSource = fs.readFileSync(new URL('api/place-search.js', root), 'utf8');
@@ -24,6 +25,10 @@ async function check(name, fn) {
 
 function functions(names, context = {}) {
   vm.createContext(context);
+  vm.runInContext(rideSource, context);
+  context.Ride = context.RideMateRide;
+  context.clearTimeout ??= () => {};
+  context.searchTimer ??= null;
   for (const name of names) {
     const line = lines.find(value => value.startsWith(`function ${name}(`) || value.startsWith(`async function ${name}(`));
     assert.ok(line, `${name} missing`);
@@ -62,7 +67,7 @@ await check('bicycle endpoint is unchanged', () => assert.match(bikeSource, /htt
 await check('three route modes are unchanged', () => assert.match(bikeSource, /\[\['BIKE_ONLY'.*\['SHORTEST'.*\['ACCESSIBLE'/s));
 await check('SPA history still uses pushState and popstate', () => { assert.match(app, /history\.pushState/); assert.match(app, /addEventListener\('popstate'/); });
 await check('initial current-location acquisition remains', () => assert.match(app, /geolocation\.getCurrentPosition/));
-await check('ride storage is routed through the active profile repository', () => assert.match(app, /profileRepository\.prependRide\(activeProfileId/));
+await check('ride storage is routed through the owning profile repository', () => assert.match(app, /profileRepository\.prependRide\(owner/));
 
 await check('HTML escaping still covers unsafe characters', () => {
   const { esc } = functions(['esc']);
@@ -76,16 +81,6 @@ await check('haversine distance remains plausible', () => {
   const { hav } = functions(['hav']);
   const distance = hav({ latitude: 0, longitude: 0 }, { latitude: 0, longitude: 1 });
   assert.ok(distance > 111000 && distance < 112000);
-});
-await check('exact place name ranks first', () => {
-  const c = functions(['normalize', 'isTransit', 'rankPlaces']);
-  const result = c.rankPlaces([{ name: '강남역 맛집', category: '음식점' }, { name: '강남역', category: '장소' }], '강남역');
-  assert.equal(result[0].name, '강남역');
-});
-await check('transit station category receives station priority', () => {
-  const c = functions(['normalize', 'isTransit', 'rankPlaces']);
-  const result = c.rankPlaces([{ name: '서울역점', category: '음식점' }, { name: '서울역', category: '지하철역' }], '서울역');
-  assert.equal(result[0].category, '지하철역');
 });
 await check('official Kakao points geometry extracts', () => {
   const { extractPoints } = functions(['extractPoints']);
@@ -177,11 +172,11 @@ process.env.KAKAO_REST_API_KEY = 'test-key';
 await check('place API rejects an empty query', async () => assert.equal((await invoke(place, { method: 'GET', query: {} })).status, 400));
 await check('place API rejects invalid size values', async () => assert.equal((await invoke(place, { method: 'GET', query: { query: '서울', size: '-1' } })).status, 400));
 await check('place API validates coordinate pairs', async () => assert.equal((await invoke(place, { method: 'GET', query: { query: '서울', x: '127' } })).status, 400));
-await check('place API maps and ranks successful results', async () => {
+await check('place API maps successful results in provider order', async () => {
   let requested = '';
   globalThis.fetch = async url => { requested = String(url); return { ok: true, status: 200, json: async () => ({ documents: [{ id: '1', place_name: '서울역 맛집', category_name: '음식점', x: '127.1', y: '37.1' }, { id: '2', place_name: '서울역', category_name: '지하철역', x: '127.2', y: '37.2' }] }) }; };
   const out = await invoke(place, { method: 'GET', query: { query: '서울역', x: '127', y: '37' } });
-  assert.equal(out.status, 200); assert.equal(out.body.results[0].id, '2'); assert.equal(out.body.results[0].latitude, 37.2); assert.match(requested, /size=15/);
+  assert.equal(out.status, 200); assert.equal(out.body.results[0].id, '1'); assert.equal(out.body.results[0].latitude, 37.1); assert.match(requested, /size=15/);
 });
 await check('place API handles network and non-JSON upstream failures', async () => {
   globalThis.fetch = async () => { throw new Error('network'); };

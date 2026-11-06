@@ -11,7 +11,6 @@ const chromeCandidates = [
   'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
 ];
 const chromePath = chromeCandidates.find(fs.existsSync);
-if (!chromePath) throw new Error('Browser verification requires Chrome or Edge.');
 
 function contentType(file) {
   const extension = path.extname(file).toLowerCase();
@@ -45,31 +44,39 @@ function createServer() {
 function waitForDevtools(child) {
   return new Promise((resolve, reject) => {
     let output = '';
-    const timeout = setTimeout(() => reject(new Error(`DevTools did not start. ${output}`)), 10000);
-    child.stderr.on('data', chunk => {
+    const finish = (error, url) => {
+      clearTimeout(timeout);
+      child.stderr.removeListener('data', onData);
+      child.removeListener('error', onError);
+      child.removeListener('exit', onExit);
+      if (error) reject(error); else resolve(url);
+    };
+    const onError = error => finish(new Error(`[BROWSER ENVIRONMENT] Browser spawn failed: ${error.message}`, { cause: error }));
+    const onExit = code => finish(new Error(`[BROWSER ENVIRONMENT] Browser exited before DevTools was ready (${code}). ${output}`));
+    const timeout = setTimeout(() => finish(new Error(`[BROWSER ENVIRONMENT] DevTools did not start. ${output}`)), 10000);
+    const onData = chunk => {
       output += chunk.toString();
       const match = output.match(/DevTools listening on (ws:\/\/[^\s]+)/);
       if (match) {
-        clearTimeout(timeout);
-        resolve(match[1]);
+        finish(null, match[1]);
       }
-    });
-    child.once('exit', code => {
-      clearTimeout(timeout);
-      reject(new Error(`Browser exited before DevTools was ready (${code}). ${output}`));
-    });
+    };
+    child.stderr.on('data', onData);
+    child.once('error', onError);
+    child.once('exit', onExit);
   });
 }
 
 async function connectPage(browserWebSocketUrl) {
   const port = new URL(browserWebSocketUrl).port;
-  const pages = await fetch(`http://127.0.0.1:${port}/json/list`).then(response => response.json());
+  const pages = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(10000) }).then(response => response.json());
   const page = pages.find(target => target.type === 'page');
   if (!page) throw new Error('No browser page target was created.');
   const socket = new WebSocket(page.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => {
-    socket.addEventListener('open', resolve, { once: true });
-    socket.addEventListener('error', reject, { once: true });
+    const timer = setTimeout(() => { socket.close(); reject(new Error('DevTools WebSocket open timed out')); }, 10000);
+    socket.addEventListener('open', () => { clearTimeout(timer); resolve(); }, { once: true });
+    socket.addEventListener('error', error => { clearTimeout(timer); socket.close(); reject(error); }, { once: true });
   });
   let nextId = 0;
   const pending = new Map();
@@ -78,15 +85,21 @@ async function connectPage(browserWebSocketUrl) {
     const waiter = pending.get(message.id);
     if (!waiter) return;
     pending.delete(message.id);
+    clearTimeout(waiter.timer);
     if (message.error) waiter.reject(new Error(message.error.message));
     else waiter.resolve(message.result);
+  });
+  socket.addEventListener('close', () => {
+    for (const waiter of pending.values()) { clearTimeout(waiter.timer); waiter.reject(new Error('DevTools disconnected')); }
+    pending.clear();
   });
   return {
     socket,
     send(method, params = {}) {
       return new Promise((resolve, reject) => {
         const id = ++nextId;
-        pending.set(id, { resolve, reject });
+        const timer = setTimeout(() => { pending.delete(id); reject(new Error(`DevTools command timed out: ${method}`)); }, 15000);
+        pending.set(id, { resolve, reject, timer });
         socket.send(JSON.stringify({ id, method, params }));
       });
     },
@@ -103,13 +116,72 @@ const kakaoStub = `(() => {
   Object.defineProperty(navigator, 'geolocation', { configurable: true, value: { getCurrentPosition(success, error) { error?.(new Error('QA geolocation unavailable')); }, watchPosition() { return 1; }, clearWatch() {} } });
 })();`;
 
-async function run() {
+function waitForClose(closed, milliseconds) {
+  return new Promise(resolve => {
+    const timer = setTimeout(() => resolve(false), milliseconds);
+    closed.then(() => { clearTimeout(timer); resolve(true); });
+  });
+}
+
+async function stopBrowser(browser, closed, client) {
+  if (!browser?.pid || browser.exitCode !== null || browser.signalCode !== null) return;
+  let closeError;
+  if (client?.socket.readyState === WebSocket.OPEN) {
+    // No response is required: Browser.close closes the DevTools connection too.
+    try { client.socket.send(JSON.stringify({ id: 0, method: 'Browser.close' })); }
+    catch (error) { closeError = error; }
+    if (!closeError && await waitForClose(closed, 5000)) return;
+  }
+  // This PID came directly from this test's spawn; never kill by browser image name.
+  if (process.platform === 'win32') {
+    const result = await new Promise((resolve, reject) => {
+      const killer = spawn('taskkill.exe', ['/PID', String(browser.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+      const timer = setTimeout(() => { killer.kill(); reject(new Error('Browser tree termination timed out')); }, 5000);
+      killer.once('error', error => { clearTimeout(timer); reject(error); });
+      killer.once('close', code => { clearTimeout(timer); resolve(code); });
+    });
+    if (result !== 0 && !await waitForClose(closed, 1000)) throw new Error(`Browser tree termination failed (${result})`);
+  } else browser.kill('SIGKILL');
+  if (!await waitForClose(closed, 5000)) throw new Error('Browser process did not close');
+  if (closeError) throw closeError;
+}
+
+async function cleanupBrowserTest({ browser, closed, client, server, userDataDir, removeProfile }) {
+  const errors = [];
+  const attempt = async (stage, action) => {
+    try { await action(); } catch (error) { errors.push(new Error(`[BROWSER CLEANUP] ${stage}: ${error.message}`, { cause: error })); }
+  };
+  await attempt('browser process tree', () => stopBrowser(browser, closed, client));
+  await attempt('DevTools socket', () => client?.socket.close());
+  await attempt('test server', async () => {
+    server.closeAllConnections();
+    await new Promise((resolve, reject) => server.close(error => error && error.code !== 'ERR_SERVER_NOT_RUNNING' ? reject(error) : resolve()));
+  });
+  if (userDataDir) await attempt('temporary profile', async () => {
+    const resolved = path.resolve(userDataDir);
+    if (path.dirname(resolved) !== path.resolve(os.tmpdir()) || !path.basename(resolved).startsWith('ridemate-profile-qa-'))
+      throw new Error(`Refusing to remove unexpected profile path: ${resolved}`);
+    for (let attempt = 0; ; attempt++) {
+      try { removeProfile(resolved); return; }
+      catch (error) {
+        if (!['EPERM', 'EBUSY', 'ENOTEMPTY'].includes(error.code) || attempt >= 49) throw error;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+  });
+  return errors;
+}
+
+async function run({ browserPath = chromePath, check, menuOnly = false, onResources = () => {}, removeProfile = dir => fs.rmSync(dir, { recursive: true, force: true }) } = {}) {
+  if (!browserPath) throw new Error('[BROWSER ENVIRONMENT] Browser verification requires Chrome or Edge.');
   const server = createServer();
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  let userDataDir, browser, client, closed, bodyError;
+  try {
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   const address = server.address();
   const url = `http://127.0.0.1:${address.port}`;
-  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ridemate-profile-qa-'));
-  const browser = spawn(chromePath, [
+  userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ridemate-profile-qa-'));
+  try { browser = spawn(browserPath, [
     '--headless=new',
     '--remote-debugging-port=0',
     `--user-data-dir=${userDataDir}`,
@@ -117,11 +189,13 @@ async function run() {
     '--disable-gpu',
     '--disable-background-networking',
     'about:blank',
-  ], { stdio: ['ignore', 'ignore', 'pipe'] });
+  ], { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
+  } catch (error) { throw new Error(`[BROWSER ENVIRONMENT] Browser spawn failed: ${error.message}`, { cause: error }); }
+    closed = new Promise(resolve => browser.once('close', resolve));
 
-  try {
+    onResources({ server, browser, userDataDir });
     const browserWebSocketUrl = await waitForDevtools(browser);
-    const client = await connectPage(browserWebSocketUrl);
+    client = await connectPage(browserWebSocketUrl);
     await client.send('Page.enable');
     await client.send('Runtime.enable');
     await client.send('Emulation.setDeviceMetricsOverride', {
@@ -136,7 +210,7 @@ async function run() {
 
     async function evaluate(expression) {
       const result = await client.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
-      if (result.exceptionDetails) throw new Error(result.exceptionDetails.text || 'Browser evaluation failed.');
+      if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text || 'Browser evaluation failed.');
       return result.result.value;
     }
     async function ready() {
@@ -150,11 +224,45 @@ async function run() {
       await client.send('Page.reload', { ignoreCache: true });
       await ready();
     }
+    async function assertRestoredProfile() {
+      const restored = await evaluate(`({
+        lastId: profileRepository.readLastActiveProfileId(),
+        selectedIds: [...document.querySelectorAll('[data-profile-select].selected')].map(node => node.dataset.profileSelect),
+        disabled: document.querySelector('#profileSelectButton').disabled,
+        profileVisible: !document.querySelector('#profileScreen').classList.contains('hidden'),
+        appHidden: document.querySelector('#app').classList.contains('hidden'),
+        activeId: activeProfileId,
+        sessionActiveId: profileSession.getActiveProfileId(),
+        mapInitialized: state.map !== null
+      })`);
+      assert.ok(restored.lastId);
+      assert.deepEqual(restored.selectedIds, [restored.lastId]);
+      assert.equal(restored.disabled, false);
+      assert.equal(restored.profileVisible, true);
+      assert.equal(restored.appHidden, true);
+      assert.equal(restored.activeId, null);
+      assert.equal(restored.sessionActiveId, null);
+      assert.equal(restored.mapInitialized, false);
+      return restored.lastId;
+    }
+    async function confirmProfile(expectedId) {
+      await evaluate(`document.querySelector('#profileSelectButton').click()`);
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if (await evaluate(`document.querySelector('#profileScreen').classList.contains('hidden')`)) break;
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+      assert.deepEqual(await evaluate(`({activeId:activeProfileId, sessionActiveId:profileSession.getActiveProfileId(),
+        profileHidden:document.querySelector('#profileScreen').classList.contains('hidden'),
+        appVisible:!document.querySelector('#app').classList.contains('hidden'),mapInitialized:state.map!==null,screen:state.screen})`),
+      {activeId:expectedId,sessionActiveId:expectedId,profileHidden:true,appVisible:true,mapInitialized:true,screen:'map'});
+    }
 
     await client.send('Page.navigate', { url });
     await ready();
     await evaluate('localStorage.clear()');
     await reload();
+
+    if (check) return await check(evaluate, client);
 
     const firstBoot = await evaluate(`(async () => {
       const screen = document.querySelector('#profileScreen');
@@ -215,7 +323,43 @@ async function run() {
     assert.equal(await evaluate(`document.querySelector('#profileScreen').classList.contains('hidden')`), true);
     assert.equal(await evaluate(`document.querySelector('#mapHeader').classList.contains('hidden')`), false);
 
-    const menuItems = ['내 장소 집 · 회사 · 즐겨찾기', '레이싱 기록', '앱 설정', '공지사항', '도움말', '앱 정보'];
+    if (process.argv.includes('--indexeddb-check')) {
+      const owner = await evaluate('activeProfileId');
+      await evaluate(`(() => {
+        const store = JSON.parse(localStorage.getItem('ridemate_profile_store_v1'));
+        store.recordsIndexedDB = false;
+        store.dataByProfileId[activeProfileId].rides = [{ name: 'legacy ride' }];
+        store.dataByProfileId[activeProfileId].racing = [{ name: 'legacy race', detailedSamples: [{ timestamp: 0 }] }];
+        localStorage.setItem('ridemate_profile_store_v1', JSON.stringify(store));
+      })()`);
+      await reload();
+      await evaluate(`document.querySelector('[data-profile-select]').click(); document.querySelector('#profileSelectButton').click()`);
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if (await evaluate(`JSON.parse(localStorage.getItem('ridemate_profile_store_v1')).recordsIndexedDB === true`)) break;
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+      assert.deepEqual(await evaluate(`({ ride: profileRepository.readRides(${JSON.stringify(owner)})[0]?.name, race: profileRepository.readRacing(${JSON.stringify(owner)})[0]?.name })`), { ride: 'legacy ride', race: 'legacy race' });
+      const saved = await evaluate(`(async () => {
+        await profileRepository.prependRide(activeProfileId, { name: 'saved ride', route: [{ latitude: 37, longitude: 127 }] });
+        await profileRepository.prependRacing(activeProfileId, { name: 'saved race', movingTime: 10000, detailedSamples: [{ timestamp: 1 }] });
+        await profileRepository.prependRacing(activeProfileId, { name: 'saved race', movingTime: 9000, detailedSamples: [{ timestamp: 2 }] }, { sameCourse: (a, b) => a.name === b.name });
+        const db = await new Promise((resolve, reject) => { const request = indexedDB.open('ridemate-records'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+        const stores = [...db.objectStoreNames]; db.close();
+        return { rides: profileRepository.readRides(activeProfileId).length, races: profileRepository.readRacing(activeProfileId).length, best: profileRepository.readRacing(activeProfileId)[0].movingTime, stores };
+      })()`);
+      assert.deepEqual(saved, { rides: 2, races: 2, best: 9000, stores: ['records'] });
+      await reload();
+      const restored = await evaluate(`(async () => {
+        await profileRepository.initializeRecords();
+        return { rides: profileRepository.readRides(${JSON.stringify(owner)}).map(item => item.name), races: profileRepository.readRacing(${JSON.stringify(owner)}).map(item => item.name), bestSample: profileRepository.readRacing(${JSON.stringify(owner)})[0]?.detailedSamples?.[0]?.timestamp };
+      })()`);
+      assert.deepEqual(restored, { rides: ['saved ride', 'legacy ride'], races: ['saved race', 'legacy race'], bestSample: 2 });
+      process.stdout.write('BROWSER PASS: legacy records migrate and IndexedDB records survive reload\n');
+      return;
+    }
+
+    const menuItems = ['내 장소 집 · 회사 · 즐겨찾기', '라이딩 기록', '과거 기록과 레이싱', '앱 설정', '공지사항', '도움말', '앱 정보'];
+    const visibleMenu = `[...document.querySelectorAll('[data-menu-item]')].filter(node => node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden')`;
     const routeBefore = await evaluate(`(() => {
       state.destination = { id: 'destination' };
       state.waypoints = [{ id: 'waypoint' }];
@@ -227,10 +371,19 @@ async function run() {
     await evaluate(`document.querySelector('#menuBtn').click()`);
     assert.equal(await evaluate(`document.querySelector('#mainMenu').classList.contains('hidden')`), false);
     assert.equal(await evaluate(`document.querySelector('#mainMenuProfileName').textContent.trim()`), '메뉴 사용자');
-    assert.deepEqual(await evaluate(`[...document.querySelectorAll('[data-menu-item]')].map(node => node.textContent.trim().replace(/\\s+/g, ' '))`), menuItems);
-    assert.equal(await evaluate(`document.querySelector('#mainMenu').textContent.includes('라이딩 기록')`), false);
+    assert.deepEqual(await evaluate(`${visibleMenu}.map(node => node.textContent.trim().replace(/\\s+/g, ' '))`), menuItems);
+    const mapScreen = await evaluate('state.screen');
+    for (const phase of ['idle', 'active']) {
+      await evaluate(`closeMainMenu(false); state.screen='racing'; state.racingPhase=${JSON.stringify(phase)}; openMainMenu()`);
+      const expected = [...menuItems]; expected.splice(3, 0, '레이싱 모드 설정');
+      if (phase === 'active') expected.push('레이싱 종료');
+      assert.deepEqual(await evaluate(`${visibleMenu}.map(node => node.textContent.trim().replace(/\\s+/g, ' '))`), expected);
+    }
+    await evaluate(`closeMainMenu(false); state.screen=${JSON.stringify(mapScreen)}; state.racingPhase='idle'; openMainMenu()`);
     assert.equal(await evaluate(`document.querySelector('#mainMenu').textContent.includes('저장 경로')`), false);
-    assert.equal(await evaluate(`[...document.querySelectorAll('[data-menu-item]')].every(node => node.getBoundingClientRect().height >= 44)`), true);
+    assert.equal(await evaluate(`${visibleMenu}.every(node => node.getBoundingClientRect().height >= 44)`), true);
+    process.stdout.write('BROWSER MENU PASS: visible map, racing idle and racing active menus\n');
+    if (menuOnly) return;
     assert.equal(await evaluate(`document.querySelector('#mainMenuProfile').getBoundingClientRect().height <= 64`), true);
     await evaluate(`document.querySelector('#mainMenuDrawer').click()`);
     assert.equal(await evaluate(`document.querySelector('#mainMenu').classList.contains('hidden')`), false);
@@ -450,17 +603,21 @@ async function run() {
     });
 
     await reload();
-    assert.equal(await evaluate(`document.querySelectorAll('.profile-select-control.selected').length`), 0);
-    assert.equal(await evaluate(`document.querySelector('#profileSelectButton').disabled`), true);
+    const restoredId = await assertRestoredProfile();
+    await confirmProfile(restoredId);
+    await reload();
+    assert.equal(await assertRestoredProfile(), restoredId);
 
     await evaluate(`document.querySelector('#profileAddTop').click()`);
     await evaluate(`(() => { const input = document.querySelector('#profileNameInput'); input.value = '아이'; document.querySelector('input[name="profileAvatar"][value="leaf"]').checked = true; document.querySelector('#profileEditorForm').requestSubmit(); })()`);
     assert.deepEqual(await evaluate(`[...document.querySelectorAll('[data-profile-select] strong')].map(node => node.textContent)`), ['메뉴 사용자', '아이']);
     await evaluate(`[...document.querySelectorAll('[data-profile-select]')].find(node => node.textContent.includes('아이')).click()`);
-    await evaluate(`document.querySelector('#profileSelectButton').click()`);
-    assert.equal(await evaluate(`document.querySelector('#profileScreen').classList.contains('hidden')`), true);
+    const childId = await evaluate(`document.querySelector('[data-profile-select].selected').dataset.profileSelect`);
+    assert.notEqual(childId, restoredId);
+    await confirmProfile(childId);
 
     await reload();
+    assert.equal(await assertRestoredProfile(), childId);
     for (let count = 0; count < 2; count += 1) {
       await evaluate(`document.querySelector('[data-profile-manage]').click()`);
       await evaluate(`document.querySelector('#profileDeleteButton').click()`);
@@ -479,28 +636,19 @@ async function run() {
     await reload();
     assert.equal(await evaluate(`document.querySelectorAll('[data-profile-select]').length`), 0);
     assert.equal(await evaluate(`document.querySelector('#profileEmptyState').classList.contains('hidden')`), false);
-    client.socket.close();
     process.stdout.write('BROWSER FLOW PASS: profile flow and main menu drawer regression cases\n');
+  } catch (error) {
+    bodyError = error;
+    throw error;
   } finally {
-    if (browser.exitCode == null) {
-      const exited = new Promise(resolve => browser.once('exit', resolve));
-      browser.kill();
-      await exited;
-    }
-    await new Promise(resolve => server.close(resolve));
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      try {
-        fs.rmSync(userDataDir, { recursive: true, force: true });
-        break;
-      } catch (error) {
-        if (error.code !== 'EPERM' || attempt === 19) throw error;
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-    }
+    const cleanupErrors = await cleanupBrowserTest({ browser, closed, client, server, userDataDir, removeProfile });
+    if (cleanupErrors.length) throw new AggregateError(bodyError ? [bodyError, ...cleanupErrors] : cleanupErrors,
+      bodyError ? 'Browser test body and cleanup both failed' : 'Browser test cleanup failed');
   }
 }
 
-run().catch(error => {
+module.exports = { run };
+if (require.main === module) run().catch(error => {
   console.error(error);
   process.exitCode = 1;
 });

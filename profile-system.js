@@ -4,6 +4,8 @@
   if (root) root.RideMateProfiles = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function createProfileSystemApi() {
   const PROFILE_STORE_KEY = 'ridemate_profile_store_v1';
+  const RECORD_ENTRY_PREFIX = `${PROFILE_STORE_KEY}:record:`;
+  const RECORD_REVISION_KEY = `${PROFILE_STORE_KEY}:record-revision`;
   const PROFILE_SCHEMA_VERSION = 1;
   const LEGACY_RECENT_KEY = 'ridemate_recent_searches';
   const LEGACY_RIDES_KEY = 'ridemate_rides';
@@ -75,7 +77,118 @@
     const createId = options.createId || defaultCreateId;
     const now = options.now || (() => new Date().toISOString());
     const onPhotoRemoved = typeof options.onPhotoRemoved === 'function' ? options.onPhotoRemoved : () => {};
+    const recordStore = options.recordStore || null;
     let currentStore = null;
+    let indexedRecords = null;
+
+    function notifyRecordsChanged() {
+      try { storage.setItem(RECORD_REVISION_KEY, defaultCreateId()); } catch {}
+    }
+
+    function recordEntries(profileId, kind) {
+      if (indexedRecords) {
+        const prefix = `${RECORD_ENTRY_PREFIX}${encodeURIComponent(profileId)}:${kind}:`;
+        return [...indexedRecords.values()].filter(entry => entry.key.startsWith(prefix))
+          .sort((a, b) => a.key.localeCompare(b.key))
+          .map(entry => ({ key: entry.key, id: entry.key.slice(prefix.length), value: clone(entry.value) }));
+      }
+      if (typeof storage.key !== 'function' || !Number.isInteger(storage.length)) return null;
+      const prefix = `${RECORD_ENTRY_PREFIX}${encodeURIComponent(profileId)}:${kind}:`;
+      const entries = [];
+      for (let index = 0; index < storage.length; index += 1) {
+        const key = storage.key(index);
+        if (!key?.startsWith(prefix)) continue;
+        const raw = storage.getItem(key);
+        if (raw != null) entries.push({ key, id: key.slice(prefix.length), value: JSON.parse(raw) });
+      }
+      return entries.sort((a, b) => a.key.localeCompare(b.key));
+    }
+
+    function appendRecord(profileId, kind, value) {
+      const key = `${RECORD_ENTRY_PREFIX}${encodeURIComponent(profileId)}:${kind}:${Date.now().toString(36).padStart(10, '0')}:${defaultCreateId()}`;
+      if (indexedRecords) {
+        const entry = { key, value: clone(value) };
+        return recordStore.write([entry]).then(() => { indexedRecords.set(key, entry); notifyRecordsChanged(); });
+      }
+      storage.setItem(key, JSON.stringify(value));
+    }
+
+    async function refreshRecords() {
+      if (indexedRecords) indexedRecords = new Map((await recordStore.readAll()).map(entry => [entry.key, entry]));
+    }
+
+    async function initializeRecords() {
+      if (!recordStore || indexedRecords) return;
+      const existing = await recordStore.readAll();
+      const store = ensureStore();
+      if (store.recordsIndexedDB === true) {
+        indexedRecords = new Map(existing.map(entry => [entry.key, entry]));
+        return;
+      }
+      const migrated = [];
+      const legacyKeys = [];
+      for (const profile of store.profiles) {
+        const prefix = `${RECORD_ENTRY_PREFIX}${encodeURIComponent(profile.id)}:`;
+        const rideEntries = recordEntries(profile.id, 'rides') || [];
+        legacyKeys.push(...rideEntries.map(entry => entry.key));
+        const rides = recordsFor(profile.id, 'rides');
+        if (store.legacyRidesPendingProfileId === profile.id)
+          rides.push(...readLegacyArray(storage, LEGACY_RIDES_KEY).items);
+        for (const [index, ride] of rides.entries())
+          migrated.push({ key: `${prefix}rides:!legacy:${String(rides.length - index).padStart(10, '0')}`, value: ride });
+        const racingEntries = recordEntries(profile.id, 'racing') || [];
+        legacyKeys.push(...racingEntries.map(entry => entry.key));
+        const races = racingEntriesFor(profile.id);
+        for (const [index, entry] of races.entries())
+          migrated.push({ key: `${prefix}racing:!legacy:${String(races.length - index).padStart(10, '0')}`, value: { record: entry.record, supersedes: [] } });
+      }
+      await recordStore.write(migrated);
+      // The IndexedDB commit is durable before freeing the old localStorage quota.
+      for (const key of legacyKeys) try { storage.removeItem?.(key); } catch {}
+      const next = clone(store);
+      for (const data of Object.values(next.dataByProfileId)) { data.rides = []; data.racing = []; }
+      delete next.legacyRidesPendingProfileId;
+      next.recordsIndexedDB = true;
+      persist(next);
+      if (store.migration?.legacyV1?.sources?.[LEGACY_RIDES_KEY]?.status === 'imported')
+        try { storage.removeItem?.(LEGACY_RIDES_KEY); } catch {}
+      indexedRecords = new Map([...existing, ...migrated].map(entry => [entry.key, entry]));
+      notifyRecordsChanged();
+    }
+
+    function recordsFor(profileId, kind) {
+      if (kind === 'racing') return racingEntriesFor(profileId).map(entry => entry.record);
+      const data = ensureStore().dataByProfileId[profileId];
+      if (!data) throw new Error('프로필을 찾을 수 없습니다.');
+      const records = clone(Array.isArray(data[kind]) ? data[kind] : []);
+      for (const entry of recordEntries(profileId, kind) || []) records.unshift(entry.value);
+      return records;
+    }
+
+    function racingEntriesFor(profileId) {
+      const data = ensureStore().dataByProfileId[profileId];
+      if (!data) throw new Error('프로필을 찾을 수 없습니다.');
+      let records = clone(Array.isArray(data.racing) ? data.racing : [])
+        .map((record, index) => ({ id: `base:${index}`, key: null, record, supersedes: [] }));
+      for (const entry of recordEntries(profileId, 'racing') || []) {
+        const removed = new Set(entry.value.supersedes || []);
+        const legacyRemoved = [...removed].filter(value => typeof value === 'string' && value.startsWith('{'));
+        const hidden = records.filter(saved => removed.has(saved.id) || (legacyRemoved.length > 0 && legacyRemoved.includes(JSON.stringify(saved.record))));
+        records = [
+          {
+            id: entry.id,
+            key: entry.key,
+            record: entry.value.record,
+            supersedes: [...new Set([
+              ...[...removed].filter(value => typeof value === 'string' && !value.startsWith('{')),
+              ...hidden.flatMap(saved => [saved.id, ...saved.supersedes]),
+            ])],
+          },
+          ...records.filter(saved => !hidden.includes(saved)),
+        ];
+      }
+      return records;
+    }
 
     function persist(nextStore) {
       storage.setItem(PROFILE_STORE_KEY, JSON.stringify(nextStore));
@@ -100,7 +213,7 @@
       const rides = readLegacyArray(storage, LEGACY_RIDES_KEY);
       const data = emptyProfileData();
       data.places.recentSearches = recent.items;
-      data.rides = rides.items;
+      data.rides = recordStore ? [] : rides.items;
       return clone(persist({
         schemaVersion: PROFILE_SCHEMA_VERSION,
         profiles: [{
@@ -111,6 +224,7 @@
           updatedAt: timestamp,
         }],
         dataByProfileId: { [id]: data },
+        ...(recordStore && rides.items.length ? { legacyRidesPendingProfileId: id } : {}),
         migration: {
           legacyV1: {
             completed: true,
@@ -126,6 +240,12 @@
 
     function ensureStore() {
       if (!currentStore) initialize();
+      const raw = storage.getItem(PROFILE_STORE_KEY);
+      if (raw != null) {
+        const parsed = JSON.parse(raw);
+        if (!validateStore(parsed)) throw new Error('프로필 저장 데이터 형식이 올바르지 않습니다.');
+        currentStore = parsed;
+      }
       return currentStore;
     }
 
@@ -150,7 +270,7 @@
     function getProfileData(profileId) {
       const data = ensureStore().dataByProfileId[profileId];
       if (!data) throw new Error('프로필을 찾을 수 없습니다.');
-      return clone(data);
+      return { ...clone(data), rides: recordsFor(profileId, 'rides'), racing: recordsFor(profileId, 'racing') };
     }
 
     function addProfile(name, avatar = DEFAULT_AVATAR) {
@@ -192,11 +312,16 @@
       const store = ensureStore();
       if (!store.profiles.some(profile => profile.id === profileId)) return false;
       const removedProfile = store.profiles.find(profile => profile.id === profileId);
+      const recordKeys = [...(recordEntries(profileId, 'rides') || []), ...(recordEntries(profileId, 'racing') || [])].map(entry => entry.key);
       const next = clone(store);
       next.profiles = next.profiles.filter(profile => profile.id !== profileId);
       delete next.dataByProfileId[profileId];
       if (next.lastActiveProfileId === profileId) delete next.lastActiveProfileId;
       persist(next);
+      if (indexedRecords) {
+        for (const key of recordKeys) indexedRecords.delete(key);
+        recordStore.write([], recordKeys).catch(() => {});
+      } else for (const key of recordKeys) try { storage.removeItem?.(key); } catch {}
       if (removedProfile.avatar?.type === 'photo') onPhotoRemoved(removedProfile.avatar.photoId);
       return true;
     }
@@ -229,12 +354,15 @@
     }
 
     function readRecentSearches(profileId) {
-      const data = getProfileData(profileId);
-      return Array.isArray(data.places?.recentSearches) ? data.places.recentSearches.slice(0, 10) : [];
+      const data = ensureStore().dataByProfileId[profileId];
+      if (!data) throw new Error('프로필을 찾을 수 없습니다.');
+      return clone(Array.isArray(data.places?.recentSearches) ? data.places.recentSearches.slice(0, 10) : []);
     }
 
     function readMyPlaces(profileId) {
-      const places = getProfileData(profileId).places || {};
+      const data = ensureStore().dataByProfileId[profileId];
+      if (!data) throw new Error('프로필을 찾을 수 없습니다.');
+      const places = data.places || {};
       return {
         home: places.home ? clone(places.home) : null,
         work: places.work ? clone(places.work) : null,
@@ -258,41 +386,64 @@
     function prependRide(profileId, ride, options = {}) {
       const store = ensureStore();
       if (!store.dataByProfileId[profileId]) throw new Error('프로필을 찾을 수 없습니다.');
-      const next = clone(store);
-      const rides = Array.isArray(next.dataByProfileId[profileId].rides) ? next.dataByProfileId[profileId].rides : [];
       const storedRide = clone(ride);
       if (options.retainDetailed !== true) delete storedRide.detailedSamples;
+      if (indexedRecords) return appendRecord(profileId, 'rides', storedRide).then(() => readRides(profileId));
+      if (recordEntries(profileId, 'rides') !== null) {
+        appendRecord(profileId, 'rides', storedRide);
+        return readRides(profileId);
+      }
+      const next = clone(store);
+      const rides = Array.isArray(next.dataByProfileId[profileId].rides) ? next.dataByProfileId[profileId].rides : [];
       next.dataByProfileId[profileId].rides = [storedRide, ...rides];
       persist(next);
       return clone(next.dataByProfileId[profileId].rides);
     }
 
     function readRides(profileId) {
-      const data = getProfileData(profileId);
-      return Array.isArray(data.rides) ? data.rides.slice() : [];
+      return recordsFor(profileId, 'rides');
     }
 
     function prependRacing(profileId, record, { sameCourse } = {}) {
+      if (indexedRecords) return (async () => {
+        const store = ensureStore();
+        if (!store.dataByProfileId[profileId]) throw new Error('프로필을 찾을 수 없습니다.');
+        const key = `${RECORD_ENTRY_PREFIX}${encodeURIComponent(profileId)}:racing:${Date.now().toString(36).padStart(10, '0')}:${defaultCreateId()}`;
+        const entry = { key, value: { record: clone(record), supersedes: [] } };
+        const entries = await recordStore.saveBest(entry, `${RECORD_ENTRY_PREFIX}${encodeURIComponent(profileId)}:racing:`, sameCourse);
+        indexedRecords = new Map(entries.map(saved => [saved.key, saved]));
+        notifyRecordsChanged();
+        return readRacing(profileId);
+      })();
       const store = ensureStore();
       if (!store.dataByProfileId[profileId]) throw new Error('프로필을 찾을 수 없습니다.');
-      const next = clone(store);
-      const racing = Array.isArray(next.dataByProfileId[profileId].racing) ? next.dataByProfileId[profileId].racing : [];
-      const comparable = typeof sameCourse === 'function' ? racing.filter(saved => sameCourse(saved, record)) : [];
-      if (comparable.some(saved => saved.completed !== false && Number(saved.movingTime) > 0 && Number(saved.movingTime) <= Number(record.movingTime))) {
+      const racing = racingEntriesFor(profileId);
+      const comparable = typeof sameCourse === 'function' ? racing.filter(saved => sameCourse(saved.record, record)) : [];
+      if (comparable.some(saved => saved.record.completed !== false && Number(saved.record.movingTime) > 0 && Number(saved.record.movingTime) <= Number(record.movingTime))) {
         throw new Error('기존 최고 기록을 이긴 기록만 저장할 수 있습니다.');
       }
-      next.dataByProfileId[profileId].racing = [clone(record), ...racing.filter(saved => !comparable.includes(saved))];
+      if (recordEntries(profileId, 'racing') !== null) {
+        const prefix = `${RECORD_ENTRY_PREFIX}${encodeURIComponent(profileId)}:racing:`;
+        const supersedes = [...new Set(comparable.flatMap(saved => [saved.id, ...saved.supersedes]))]
+          .filter(id => id.startsWith('base:') || storage.getItem(`${prefix}${id}`) !== null);
+        appendRecord(profileId, 'racing', { record: clone(record), supersedes });
+        for (const saved of comparable) if (saved.key) try { storage.removeItem?.(saved.key); } catch {}
+        return readRacing(profileId);
+      }
+      const next = clone(store);
+      next.dataByProfileId[profileId].racing = [clone(record), ...racing.filter(saved => !comparable.includes(saved)).map(saved => saved.record)];
       persist(next);
       return clone(next.dataByProfileId[profileId].racing);
     }
 
     function readRacing(profileId) {
-      const data = getProfileData(profileId);
-      return Array.isArray(data.racing) ? data.racing.slice() : [];
+      return recordsFor(profileId, 'racing');
     }
 
     return {
       initialize,
+      initializeRecords,
+      refreshRecords,
       getProfiles,
       readLastActiveProfileId,
       writeLastActiveProfileId,
@@ -310,6 +461,73 @@
       readRides,
       prependRacing,
       readRacing,
+    };
+  }
+
+  function createIndexedRecordStore(indexedDb = globalThis.indexedDB) {
+    let databasePromise;
+    function database() {
+      if (!indexedDb) return Promise.reject(new Error('IndexedDB를 사용할 수 없습니다.'));
+      if (!databasePromise) databasePromise = new Promise((resolve, reject) => {
+        const request = indexedDb.open('ridemate-records', 1);
+        request.onupgradeneeded = () => {
+          if (!request.result.objectStoreNames.contains('records')) request.result.createObjectStore('records', { keyPath: 'key' });
+        };
+        request.onsuccess = () => {
+          request.result.onversionchange = () => { request.result.close(); databasePromise = null; };
+          resolve(request.result);
+        };
+        request.onerror = () => reject(request.error || new Error('기록 저장소를 열 수 없습니다.'));
+      }).catch(error => { databasePromise = null; throw error; });
+      return databasePromise;
+    }
+    return {
+      async saveBest(entry, prefix, sameCourse) {
+        const db = await database();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction('records', 'readwrite');
+          const store = tx.objectStore('records');
+          let result, failure;
+          tx.oncomplete = () => resolve(result);
+          tx.onerror = tx.onabort = () => reject(failure || tx.error || new Error('최고 기록을 저장하지 못했습니다.'));
+          const request = store.getAll();
+          request.onsuccess = () => {
+            try {
+              const comparable = request.result.filter(saved => saved.key.startsWith(prefix)
+                && typeof sameCourse === 'function' && sameCourse(saved.value.record, entry.value.record));
+              if (comparable.some(saved => saved.value.record.completed !== false && Number(saved.value.record.movingTime) > 0
+                && Number(saved.value.record.movingTime) <= Number(entry.value.record.movingTime)))
+                throw new Error('기존 최고 기록을 이긴 기록만 저장할 수 있습니다.');
+              store.put(entry);
+              for (const saved of comparable) store.delete(saved.key);
+              const removed = new Set(comparable.map(saved => saved.key));
+              result = [...request.result.filter(saved => !removed.has(saved.key)), entry];
+            } catch (error) { failure = error; tx.abort(); }
+          };
+        });
+      },
+      async readAll() {
+        const db = await database();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction('records', 'readonly');
+          const request = tx.objectStore('records').getAll();
+          tx.oncomplete = () => resolve(request.result);
+          tx.onerror = () => reject(tx.error || new Error('기록을 읽을 수 없습니다.'));
+          tx.onabort = () => reject(tx.error || new Error('기록을 읽을 수 없습니다.'));
+        });
+      },
+      async write(entries, removed = []) {
+        const db = await database();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction('records', 'readwrite');
+          const store = tx.objectStore('records');
+          for (const entry of entries) store.put(entry);
+          for (const key of removed) store.delete(key);
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error || new Error('기록을 저장할 수 없습니다.'));
+          tx.onabort = () => reject(tx.error || new Error('기록을 저장할 수 없습니다.'));
+        });
+      },
     };
   }
 
@@ -439,10 +657,12 @@
 
   return {
     PROFILE_STORE_KEY,
+    RECORD_REVISION_KEY,
     PROFILE_SCHEMA_VERSION,
     DEFAULT_AVATAR,
     DEFAULT_SETTINGS,
     createProfileRepository,
+    createIndexedRecordStore,
     createProfileSession,
     createProfileController,
   };

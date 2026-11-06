@@ -26,16 +26,16 @@ test('production profile markup keeps selection and management controls as sibli
   assert.match(app, /<\/button><button class="profile-manage-control"/);
 });
 
-test('production persistence functions route through the active profile repository', () => {
+test('production persistence uses the active profile for searches and the ride owner for records', () => {
   const app = read('app.js');
   assert.match(app, /profileRepository\.readRecentSearches\(activeProfileId\)/);
   assert.match(app, /profileRepository\.replaceRecentSearches\(activeProfileId/);
-  assert.match(app, /profileRepository\.prependRide\(activeProfileId/);
+  assert.match(app, /profileRepository\.prependRide\(owner/);
 });
 
 test('production boot gates initMap behind profile confirmation', () => {
   const app = read('app.js');
   assert.match(app, /bootProfileSelection/);
-  assert.match(app, /createProfileSession\(profileRepository,\{startMap:\(\)=>initMap\(\)\}\)/);
+  assert.match(app, /createProfileSession\(profileRepository,\{startMap:async\(\)=>\{await profileRepository\.initializeRecords\(\);return initMap\(\)\}\}\)/);
   assert.doesNotMatch(app, /\(async\(\)=>\{try\{await initMap\(\)/);
 });

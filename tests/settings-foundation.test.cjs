@@ -211,6 +211,19 @@ test('wake lock rejection is harmless and disabling releases an acquired lock', 
   assert.equal(acquired.isActive(), false);
 });
 
+test('late wake lock acquisition cannot re-enable a disabled or changed profile', async () => {
+  let resolveFirst, releases = 0;
+  const document = { visibilityState: 'visible', addEventListener() {} };
+  const navigator = { wakeLock: { request: () => new Promise(resolve => { resolveFirst = resolve; }) } };
+  const controller = foundation.createWakeLockController({ navigator, document });
+  const enabling = controller.setEnabled(true);
+  await controller.setEnabled(false);
+  resolveFirst({ async release() { releases += 1; }, addEventListener() {} });
+  assert.equal(await enabling, false);
+  assert.equal(controller.isActive(), false);
+  assert.equal(releases, 1);
+});
+
 test('settings and photo UI use existing menu/profile surfaces', () => {
   const html = fs.readFileSync(require.resolve('../index.html'), 'utf8');
   const app = fs.readFileSync(require.resolve('../app.js'), 'utf8');

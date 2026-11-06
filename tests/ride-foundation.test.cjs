@@ -5,14 +5,12 @@ const {
   GHOST_DATA_VERSION,
   calculateBestKilometer,
   createFastObservationState,
-  createNavigationArrivalState,
   createRouteArrivalGate,
   createRouteArrivalState,
   createGpsSource,
   createRideSession,
   discardRide,
   ensureRideStarted,
-  evaluateNavigationArrival,
   evaluateRouteArrival,
   finishRide,
   haversineDistance,
@@ -341,82 +339,6 @@ test('motion exposes the beginning of the same low-motion period and resets it o
   assert.equal(ride.motion.stationaryCandidateSince, null);
 });
 
-test('arrival needs three candidate fixes spanning two seconds and stable low motion', () => {
-  let detector = createNavigationArrivalState();
-  const observe = (timestamp, distance, extra = {}) => {
-    const result = evaluateNavigationArrival(detector, {
-      timestamp,
-      selectedDistance: distance,
-      routeEndDistance: distance,
-      endpointOffset: 0,
-      remainingRouteDistance: distance,
-      accuracy: 3,
-      moving: false,
-      stationaryCandidateSince: 1000,
-      ...extra,
-    });
-    detector = result.state;
-    return result;
-  };
-  assert.equal(observe(1000, 2).arrived, false);
-  assert.equal(observe(2000, 2).arrived, false);
-  assert.equal(observe(3000, 2).arrived, true);
-});
-
-test('arrival rejects jitter, traffic-light stops, and poor off-route fixes', () => {
-  let detector = createNavigationArrivalState();
-  const observations = [
-    { timestamp: 0, selectedDistance: 2, routeEndDistance: 2, endpointOffset: 0, remainingRouteDistance: 2, accuracy: 3, moving: false, stationaryCandidateSince: 0 },
-    { timestamp: 1000, selectedDistance: 30, routeEndDistance: 30, endpointOffset: 0, remainingRouteDistance: 30, accuracy: 3, moving: false, stationaryCandidateSince: 0 },
-    { timestamp: 2000, selectedDistance: 2, routeEndDistance: 2, endpointOffset: 0, remainingRouteDistance: 2, accuracy: 20, moving: true, stationaryCandidateSince: null },
-    { timestamp: 3000, selectedDistance: 2, routeEndDistance: 2, endpointOffset: 0, remainingRouteDistance: 200, accuracy: 50, moving: false, stationaryCandidateSince: 0 },
-  ];
-  for (const observation of observations) {
-    const result = evaluateNavigationArrival(detector, observation);
-    detector = result.state;
-    assert.equal(result.arrived, false);
-  }
-});
-
-test('arrival confirms a closest-point passage only after movement away exceeds uncertainty', () => {
-  let detector = createNavigationArrivalState();
-  const distances = [12, 6, 2, 2, 2, 4, 6];
-  let arrived = false;
-  distances.forEach((distance, index) => {
-    const result = evaluateNavigationArrival(detector, {
-      timestamp: index * 1000,
-      selectedDistance: distance,
-      routeEndDistance: distance,
-      endpointOffset: 0,
-      remainingRouteDistance: Math.min(distance, 3),
-      accuracy: 3,
-      moving: true,
-      stationaryCandidateSince: null,
-    });
-    detector = result.state;
-    arrived ||= result.arrived;
-  });
-  assert.equal(arrived, true);
-});
-
-test('arrival accepts a legitimate route endpoint offset from the selected pin', () => {
-  let detector = createNavigationArrivalState();
-  let result;
-  for (let timestamp = 0; timestamp <= 2000; timestamp += 1000) {
-    result = evaluateNavigationArrival(detector, {
-      timestamp,
-      selectedDistance: 18,
-      routeEndDistance: 2,
-      endpointOffset: 20,
-      remainingRouteDistance: 2,
-      accuracy: 3,
-      moving: false,
-      stationaryCandidateSince: 0,
-    });
-    detector = result.state;
-  }
-  assert.equal(result.arrived, true);
-});
 
 test('route arrival gate is perpendicular to the final road approach and bounds a forward semicircle', () => {
   const route = [pointAtMeters(0, 0), pointAtMeters(30, 1000)];

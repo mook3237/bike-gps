@@ -11,7 +11,12 @@ export default async function handler(req,res){
  const requestedMode=req.query.route_mode;
  if(requestedMode!==undefined&&!defs.some(([mode])=>mode===requestedMode))return res.status(400).json({error:'유효한 경로 탐색 기준이 필요합니다.'});
  const errors=[],activeRequests=new Map(),KAKAO_TIMEOUT_MS=8000;
- const hasUsableGeometry=route=>{const points=[];const visit=value=>{if(points.length>1||value==null)return;if(Array.isArray(value)){if(value.length>=4&&value.every(Number.isFinite)){for(let index=0;index+1<value.length&&points.length<2;index+=2)points.push([value[index],value[index+1]])}else if(value.length>=2&&Number.isFinite(value[0])&&Number.isFinite(value[1]))points.push([value[0],value[1]]);else value.forEach(visit)}else if(typeof value==='object')Object.entries(value).forEach(([key,child])=>{if(/coordinates|points|vertexes|path|roads|sections|legs|steps/i.test(key))visit(child)})};visit(route);return points.length>1&&(points[0][0]!==points[1][0]||points[0][1]!==points[1][1])};
+ const hasUsableGeometry=route=>{
+   let first=null,moved=false;
+   const add=(x,y)=>{if(!Number.isFinite(x)||!Number.isFinite(y)||Math.abs(x)>180||Math.abs(y)>90)return;if(!first)first=[x,y];else if(first[0]!==x||first[1]!==y)moved=true};
+   const visit=value=>{if(moved||value==null)return;if(Array.isArray(value)){if(value.length>=4&&value.every(Number.isFinite)){for(let index=0;index+1<value.length&&!moved;index+=2)add(value[index],value[index+1])}else if(value.length>=2&&Number.isFinite(value[0])&&Number.isFinite(value[1]))add(value[0],value[1]);else value.forEach(visit)}else if(typeof value==='object')Object.entries(value).forEach(([key,child])=>{if(/coordinates|points|vertexes|path|roads|sections|legs|steps/i.test(key))visit(child)})};
+   visit(route);return moved;
+ };
  const one=async([mode,label])=>{
    const started=clock(),controller=new AbortController(),timer=setTimeout(()=>controller.abort(),KAKAO_TIMEOUT_MS);activeRequests.set(controller,timer);performance.modes[mode]={startMs:started-requestReceived,endMs:0,durationMs:0};
    try{
