@@ -4752,6 +4752,48 @@ test('Racing map place selection keeps racing context and map GPS while the card
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'place',endpoint:'racing-destination',racingActive:true,mapActive:true,starts:1,stops:0,subscribed:true});
 });
 
+test('Racing destination reselection keeps trip choices from place and one-way or round previews', async () => {
+  const context=loadApp('',true,true);
+  const results=await vm.runInContext(`(async()=>{
+    class LatLng {constructor(latitude,longitude){this.latitude=latitude;this.longitude=longitude}}
+    kakao={maps:{LatLng}};
+    state.map={getLevel:()=>4,getCenter:()=>({}),relayout(){},panTo(){}};
+    history={state:{},pushState(entry){this.state=entry},replaceState(entry){this.state=entry}};
+    saveRecentSearch=()=>{};renderRecentSearches=()=>{};drawRouteEndpointMarkers=()=>{};
+    startMapMovementGps=()=>{};stopMapMovementGps=()=>{};
+    const first={id:'first',name:'First',latitude:37,longitude:127};
+    const next={id:'next',name:'Next',latitude:37.01,longitude:127.01};
+    const results=[];
+    for(const stage of ['destination-discovery','one-way','round'])for(const via of ['map','search']){
+      state.screen=stage==='destination-discovery'?'place':'racing-route';
+      state.racingCourseSetup={stage:stage==='destination-discovery'?stage:'route-alternatives',tripType:stage,previousSelectedPlace:first};
+      state.editingEndpoint=stage==='destination-discovery'?'racing-destination':null;
+      state.navigationSearch=false;state.navigationRouteDraft=null;state.destination=null;state.routes=[];state.selectedRoute=null;
+      state.selectedPlace=first;
+      document.body.classList.add('racing-active');
+      const seq=state.routeSeq;
+      if(via==='search'){$('#searchEntry').onclick();await choosePlace(next)}else openPlace(next,true);
+      const card=ui.sheetContent.innerHTML;
+      let chosen=null;const confirm=confirmRacingDestination;
+      confirmRacingDestination=(place,trip)=>{chosen={id:place.id,trip}};
+      $('#racingRoundTripChoiceBtn').onclick?.();confirmRacingDestination=confirm;
+      results.push({stage,via,screen:state.screen,endpoint:state.editingEndpoint,
+        choices:card.includes('racingOneWayChoiceBtn')&&card.includes('racingRoundTripChoiceBtn'),
+        navigation:card.includes('id="setStart"')||card.includes('id="setEnd"'),
+        racing:document.body.classList.contains('racing-active'),chosen,
+        oldRequestInvalidated:stage==='destination-discovery'||state.routeSeq>seq});
+    }
+    return results;
+  })()`,context);
+  for(const result of results){
+    assert.equal(result.screen,'place',JSON.stringify(result));
+    assert.equal(result.endpoint,'racing-destination',JSON.stringify(result));
+    assert.equal(result.choices,true,JSON.stringify(result));assert.equal(result.navigation,false);
+    assert.equal(result.racing,true);assert.equal(result.oldRequestInvalidated,true);
+    assert.deepEqual(JSON.parse(JSON.stringify(result.chosen)),{id:'next',trip:'round'});
+  }
+});
+
 test('Racing destination setup stays isolated through shared place selection and complete route cards', async () => {
   const context=loadApp('',true,true);
   const result=await vm.runInContext(`(async()=>{

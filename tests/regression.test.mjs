@@ -210,7 +210,7 @@ test('bicycle route API turns network failures into a structured 502 response', 
     await handler({ method: 'GET', query: { start_x: '127', start_y: '37', end_x: '128', end_y: '38' } }, response);
     assert.equal(output.status, 502);
     assert.equal(Array.isArray(output.body.details), true);
-    assert.equal(output.body.details.length, 3);
+    assert.equal(output.body.details.length, 2);
   } finally {
     globalThis.fetch = originalFetch;
     if (originalKey === undefined) delete process.env.KAKAO_REST_API_KEY;
@@ -234,8 +234,8 @@ test('bicycle route modes stay parallel, bicycle-only, ordered, and timed', asyn
       start_x: '126.9780', start_y: '37.5665', end_x: '129.0756', end_y: '35.1796',
       via_x: '127.1,128.1', via_y: '37.1,36.1', v_name: '경유 1,경유 2',
     } }, response);
-    assert.equal(urls.length, 3, 'all Kakao requests must start before any response resolves');
-    assert.deepEqual(urls.map(url => new URL(url).searchParams.get('route_mode')), ['BIKE_ONLY', 'SHORTEST', 'ACCESSIBLE']);
+    assert.equal(urls.length, 2, 'both Kakao requests must start before any response resolves');
+    assert.deepEqual(urls.map(url => new URL(url).searchParams.get('route_mode')), ['BIKE_ONLY', 'SHORTEST']);
     for (const url of urls) {
       assert.equal(new URL(url).pathname, '/v2/routing/bicycle');
       assert.doesNotMatch(url, /\/v1\/directions|\/v2\/directions|car/i);
@@ -244,7 +244,7 @@ test('bicycle route modes stay parallel, bicycle-only, ordered, and timed', asyn
     pending.forEach(resolve => resolve({ok:true,status:200,json:async()=>({route:{properties:{totalDistance:10,totalTime:20},coordinates:[[127,37],[127.1,37.1]]}})}));
     await handling;
     assert.equal(output.status, 200);
-    assert.deepEqual(output.body.routes.map(route=>route.routeMode), ['BIKE_ONLY','SHORTEST','ACCESSIBLE']);
+    assert.deepEqual(output.body.routes.map(route=>route.routeMode), ['BIKE_ONLY','SHORTEST']);
     assert.equal(output.body.performance.execution, 'parallel');
     assert.equal(output.body.performance.receivedAt, 0);
     assert.equal(Number.isFinite(output.body.performance.serverTotalMs), true);
@@ -256,7 +256,7 @@ test('bicycle route modes stay parallel, bicycle-only, ordered, and timed', asyn
       output.body.performance.kakaoWaitingMs + output.body.performance.serverProcessingMs
       - output.body.performance.serverTotalMs
     ) < 0.01);
-    for (const mode of ['BIKE_ONLY','SHORTEST','ACCESSIBLE']) {
+    for (const mode of ['BIKE_ONLY','SHORTEST']) {
       const timing = output.body.performance.modes[mode];
       assert.equal(Number.isFinite(timing.startMs), true);
       assert.equal(Number.isFinite(timing.endMs), true);
@@ -284,7 +284,7 @@ test('bicycle total failure returns timing and never falls back to automobile ro
     const { output, response } = mockResponse();
     await handler({method:'GET',query:{start_x:'126.9780',start_y:'37.5665',end_x:'129.0756',end_y:'35.1796'}}, response);
     assert.equal(output.status, 502);
-    assert.equal(urls.length, 3);
+    assert.equal(urls.length, 2);
     assert.equal(urls.every(url => new URL(url).pathname === '/v2/routing/bicycle'), true);
     assert.equal(output.body.performance.execution, 'parallel');
     assert.equal(Number.isFinite(output.body.performance.responseReadyMs), true);
@@ -376,7 +376,7 @@ test('Kakao route requests have a bounded abort timeout', async () => {
     const handler=await apiHandler('api/bicycle-route.js'),{output,response}=mockResponse();
     await handler({method:'GET',query:{start_x:'127',start_y:'37',end_x:'127.1',end_y:'37.1'}},response);
     assert.equal(output.status,502);
-    assert.equal(signals.length,3);
+    assert.equal(signals.length,2);
     assert.equal(signals.every(signal=>signal?.aborted),true);
   }finally{globalThis.fetch=originalFetch;globalThis.setTimeout=originalSetTimeout;globalThis.clearTimeout=originalClearTimeout;if(originalKey===undefined)delete process.env.KAKAO_REST_API_KEY;else process.env.KAKAO_REST_API_KEY=originalKey}
 });
@@ -398,7 +398,7 @@ test('six: bicycle route API forwards ordered waypoint coordinates', async () =>
       via_x: '127.2,127.3', via_y: '37.2,37.3', v_name: '경유 1,경유 2',
     } }, response);
     assert.equal(output.status, 200);
-    assert.equal(urls.length, 3);
+    assert.equal(urls.length, 2);
     for (const url of urls) {
       const params = new URL(url).searchParams;
       assert.equal(params.get('via_x'), '127.2,127.3');

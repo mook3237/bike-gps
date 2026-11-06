@@ -64,7 +64,7 @@ await check('navigation overlay remains in the SPA', () => assert.match(html, /i
 await check('the live map is constructed once independently of record preview', () => assert.equal((app.match(/state\.map=new kakao\.maps\.Map\(/g) || []).length, 1));
 await check('Kakao configuration still comes from the existing API', () => assert.match(app, /fetch\('\/api\/config'\)/));
 await check('bicycle endpoint is unchanged', () => assert.match(bikeSource, /https:\/\/dapi\.kakao\.com\/v2\/routing\/bicycle/));
-await check('three route modes are unchanged', () => assert.match(bikeSource, /\[\['BIKE_ONLY'.*\['SHORTEST'.*\['ACCESSIBLE'/s));
+await check('new route choices use bike-only and shortest while explicit saved modes remain supported', () => assert.match(bikeSource, /requestedMode\?mode===requestedMode:mode==='BIKE_ONLY'\|\|mode==='SHORTEST'/));
 await check('SPA history still uses pushState and popstate', () => { assert.match(app, /history\.pushState/); assert.match(app, /addEventListener\('popstate'/); });
 await check('initial current-location acquisition remains', () => assert.match(app, /geolocation\.getCurrentPosition/));
 await check('ride storage is routed through the owning profile repository', () => assert.match(app, /profileRepository\.prependRide\(owner/));
@@ -147,7 +147,7 @@ await check('bicycle API rejects invalid coordinates', async () => assert.equal(
 await check('bicycle API keeps successful routes on partial failure', async () => {
   globalThis.fetch = async url => String(url).includes('SHORTEST') ? ({ ok: false, status: 429, json: async () => ({ msg: 'quota' }) }) : ({ ok: true, status: 200, json: async () => ({ route: { properties: { totalDistance: 1, totalTime: 2 }, coordinates: [[127,37],[127.001,37.001]] } }) });
   const out = await invoke(bike, { method: 'GET', query: { start_x: '127', start_y: '37', end_x: '128', end_y: '38' } });
-  assert.equal(out.status, 200); assert.equal(out.body.routes.length, 2); assert.equal(out.body.errors.length, 1);
+  assert.equal(out.status, 200); assert.deepEqual(out.body.routes.map(route => route.routeMode), ['BIKE_ONLY']); assert.equal(out.body.errors.length, 1);
 });
 await check('bicycle API returns 502 when all upstream HTTP calls fail', async () => {
   globalThis.fetch = async () => ({ ok: false, status: 500, json: async () => ({ msg: 'fail' }) });
@@ -156,7 +156,7 @@ await check('bicycle API returns 502 when all upstream HTTP calls fail', async (
 await check('bicycle API returns structured errors on network failure', async () => {
   globalThis.fetch = async () => { throw new Error('network'); };
   const out = await invoke(bike, { method: 'GET', query: { start_x: '127', start_y: '37', end_x: '128', end_y: '38' } });
-  assert.equal(out.status, 502); assert.equal(out.body.details.length, 3);
+  assert.equal(out.status, 502); assert.equal(out.body.details.length, 2);
 });
 await check('bicycle API handles non-JSON upstream errors', async () => {
   globalThis.fetch = async () => ({ ok: false, status: 502, json: async () => { throw new Error('non-json'); } });

@@ -29,7 +29,8 @@ export default async function handler(req,res){
    }catch(e){errors.push({mode,status:e?.name==='AbortError'?504:502,message:e?.name==='AbortError'?'경로 API 시간 초과':e.message||'경로 API 연결 실패'});return null}
    finally{clearTimeout(timer);activeRequests.delete(controller);const ended=clock(),timing=performance.modes[mode];timing.endMs=ended-requestReceived;timing.durationMs=ended-started}
  };
- const pending=(requestedMode?defs.filter(([mode])=>mode===requestedMode):defs).map(one);let routes;
+ // Keep explicit legacy modes for saved courses; new route choices use only these two modes.
+ const pending=defs.filter(([mode])=>requestedMode?mode===requestedMode:mode==='BIKE_ONLY'||mode==='SHORTEST').map(one);let routes;
  if(firstUsable){try{const route=await Promise.any(pending.map(request=>request.then(value=>value||Promise.reject(new Error('unusable route')))));routes=[route]}catch{routes=[]}finally{activeRequests.forEach((timer,controller)=>{clearTimeout(timer);controller.abort()});activeRequests.clear()}}
  else routes=(await Promise.all(pending)).filter(Boolean);
  if(!routes.length)return res.status(502).json({error:'자전거 경로를 찾을 수 없음',details:errors,performance:finishPerformance()});
