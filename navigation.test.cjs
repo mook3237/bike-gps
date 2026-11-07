@@ -924,7 +924,7 @@ test('route performance reports every requested browser and Kakao timing in cons
     state.destination={name:'부산',latitude:35.1796,longitude:129.0756};
     state.waypoints=[];
     fetch=async()=>({ok:true,json:async()=>testResponse});
-    clearRoutes=()=>{};renderScreen=()=>{};updateRouteFields=()=>{};clearSearchMarkers=()=>{};
+    clearRoutes=()=>{};renderScreen=screen=>{state.screen=screen};updateRouteFields=()=>{};clearSearchMarkers=()=>{};
     prepareRoutes=routes=>routes.map(route=>({...route,_points:[{latitude:37.5,longitude:127}],_steps:[]}));
     drawRoutes=()=>{};renderRouteCards=()=>{};
     loadRoutes();
