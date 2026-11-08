@@ -2495,13 +2495,15 @@ test('route edit controls stay visible through destination, waypoints, deletion,
   const context=loadApp();
   const result=await vm.runInContext(`(async()=>{
     const A={id:'A',name:'A'},B={id:'B',name:'B'},C={id:'C',name:'C'},D={id:'D',name:'D'},E={id:'E',name:'E'};
+    for(const [index,point] of [A,B,C,D,E].entries())Object.assign(point,{latitude:37+index/100,longitude:127});
+    fetchRoutes=async()=>[{id:'edited'}];prepareRoutes=routes=>routes;drawRoutes=()=>{};renderRouteCards=()=>{};history={pushState(){},replaceState(){}};
     const controls=()=>({addVisible:!$('#addWaypointBtn').classList.contains('hidden'),removes:$('#waypointFields').querySelectorAll('[data-waypoint-remove]').length});
     state.screen='route';state.departure=A;state.destination=B;state.navigationRouteDraft=null;
     state.waypoints=[];updateRouteFields();const destinationOnly=controls();
     state.waypoints=[C];updateRouteFields();const one=controls();
     state.waypoints=[C,D];updateRouteFields();const two=controls();
     state.waypoints=[C,D,E];updateRouteFields();const three=controls();
-    state.departure=null;await $('#waypointFields').querySelectorAll('[data-waypoint-remove]')[1].onclick({stopPropagation(){}});const afterDelete={...controls(),waypoints:state.waypoints.map(place=>place.id)};
+    await $('#waypointFields').querySelectorAll('[data-waypoint-remove]')[1].onclick({stopPropagation(){}});const afterDelete={...controls(),waypoints:state.waypoints.map(place=>place.id)};
     state.navigationRouteDraft={origin:A,waypoints:[C,D,E],destination:B};updateRouteFields();const preview={...controls(),removeWired:[...$('#waypointFields').querySelectorAll('[data-waypoint-remove]')].every(button=>typeof button.onclick==='function')};
     renderScreen('navigation',false);const navigation={editorHidden:$('#routeEditor').classList.contains('hidden')};
     return{destinationOnly,one,two,three,afterDelete,preview,navigation};
@@ -2528,7 +2530,7 @@ test('mode A renders shared drag rows and commits arbitrary reordered roles with
       box.querySelectorAll=selector=>selector==='.route-point-row'?rows:nativeQuery(selector);
       const startY=index*48+24,handle=handles[index];handle.dispatch('pointerdown',{clientY:startY});handle.dispatch('pointermove',{clientY:startY+delta});
       const during={confirmed:[state.departure.id,...state.waypoints.map(point=>point.id),state.destination.id],working:routePointDrag.orderedPoints.map(point=>point.id),dragTransform:rows[index].style.transform,neighborTransform:rows[index===2?1:index===0?1:2].style.transform,dragging:rows[index].classList.contains('dragging')};
-      await handle.dispatch('pointerup',{clientY:startY+delta});await confirmRoutePointEditor();
+      await handle.dispatch('pointerup',{clientY:startY+delta});
       return{html:box.innerHTML,handleCount:handles.length,during,after:[state.departure.id,...state.waypoints.map(point=>point.id),state.destination.id],clean:rows.every(row=>!row.style.transform&&!row.classList.contains('dragging'))};
     };
     return{intermediate:await run(2,-49),start:await run(0,49),destination:await run(3,-97),recalculations};
@@ -2556,10 +2558,10 @@ test('route editor plus creates an empty slot and blocks incomplete requests', a
     state.routes=[{id:'confirmed'}];state.selectedRoute=0;history={pushState(){},replaceState(){}};
     let requests=0;fetchRoutes=async()=>{requests++;return[]};
     openRoutePointEditor();const first=state.routePointEditorDraft.orderedPoints.length;
-    const confirmed=await confirmRoutePointEditor();
-    return{first,requests,confirmed,route:state.routes[0].id,screen:state.screen};
+    await Promise.resolve();
+    return{first,requests,route:state.routes[0].id,screen:state.screen};
   })()`,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)),{first:3,requests:0,confirmed:false,route:'confirmed',screen:'route-points'});
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{first:3,requests:0,route:'confirmed',screen:'route-points'});
 });
 
 test('route editor blocks the 06:12:51 late response after entering edit', async () => {
@@ -2818,21 +2820,63 @@ function routeEditorTestContext(){
   return context;
 }
 
-test('route editor slots fill from search and map without adding rows and enforce the five-slot limit',async()=>{
+test('route point selection automatically calculates and atomically commits without an editor confirm step',async()=>{
+  const context=routeEditorTestContext();
+  const result=await vm.runInContext(`(async()=>{
+    const confirmedRoutes=state.routes;
+    $('#addWaypointBtn').onclick();
+    const blankLabel=ui.routePointEditorFields.innerHTML.includes('<b>경로2</b>');
+    selectRoutePointSlot(2);
+    const pending=choosePlace(editorPoint('D',20),true);
+    const during={requests:editorRequests.length,sameRoutes:state.routes===confirmedRoutes,confirmed:state.waypoints.map(point=>point.id),screen:state.screen};
+    editorRequests[0]?.resolve([editorRoute('automatic')]);
+    const applied=await pending;
+    return{blankLabel,during,applied,screen:state.screen,route:state.routes[0]?.id,waypoints:state.waypoints.map(point=>point.id)};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    blankLabel:true,during:{requests:1,sameRoutes:true,confirmed:['C'],screen:'route-points'},applied:true,
+    screen:'route',route:'automatic',waypoints:['C','D']
+  });
+  assert.doesNotMatch(html,/id="confirmRoutePointEditorBtn"/);
+});
+
+test('confirmed departure destination and waypoint choices all auto-calculate through the same editor draft',async()=>{
+  for(const target of ['departure','waypoint','destination']){
+    const context=routeEditorTestContext();context.editorTarget=target;
+    const result=await vm.runInContext(`(async()=>{
+      const buttons={departure:ui.routeSelectionFields.querySelector('#departureField'),waypoint:$('#waypointFields').querySelector('[data-waypoint]'),destination:ui.routeSelectionFields.querySelector('#destinationField')};
+      buttons[editorTarget].onclick();
+      const selectedIndex=state.routePointEditorDraft.orderedPoints.indexOf(state.routePointEditorDraft.selection.point);
+      const pending=choosePlace(editorPoint('NEW',40));
+      const request=editorRequests[0],requested={a:request.a.id,b:request.b.id,waypoints:request.waypoints.map(point=>point.id)};
+      request.resolve([editorRoute(editorTarget+'-route')]);await pending;
+      return{selectedIndex,requested,screen:state.screen,departure:state.departure.id,destination:state.destination.id,waypoints:state.waypoints.map(point=>point.id)};
+    })()`,context);
+    const expected={
+      departure:{selectedIndex:0,requested:{a:'NEW',b:'B',waypoints:['C']},screen:'route',departure:'NEW',destination:'B',waypoints:['C']},
+      waypoint:{selectedIndex:1,requested:{a:'A',b:'B',waypoints:['NEW']},screen:'route',departure:'A',destination:'B',waypoints:['NEW']},
+      destination:{selectedIndex:2,requested:{a:'A',b:'NEW',waypoints:['C']},screen:'route',departure:'A',destination:'NEW',waypoints:['C']}
+    }[target];
+    assert.deepEqual(JSON.parse(JSON.stringify(result)),expected,target);
+  }
+});
+
+test('route editor slots auto-commit search and map choices in order and enforce the five-slot limit',async()=>{
   const context=routeEditorTestContext();
   const result=await vm.runInContext(`(async()=>{
     $('#addWaypointBtn').onclick();const first=state.routePointEditorDraft.orderedPoints.length;
-    selectRoutePointSlot(2);await choosePlace(editorPoint('search',20),true);
-    const fromSearch=state.routePointEditorDraft.orderedPoints.map(p=>p.id||'empty');
-    selectRoutePointSlot(1);$('#selectOnMapBtn').onclick();
-    openPlace(editorPoint('map',30),true,getMapPlaceActionContext());
-    const fromMap=state.routePointEditorDraft.orderedPoints.map(p=>p.id||'empty');
+    selectRoutePointSlot(2);const searchPending=choosePlace(editorPoint('search',20),true);
+    const fromSearch=state.routePointEditorDraft.orderedPoints.map(p=>p.id||'empty');editorRequests[0].resolve([editorRoute('search-route')]);await searchPending;
+    $('#addWaypointBtn').onclick();selectRoutePointSlot(3);$('#selectOnMapBtn').onclick();
+    const mapPending=openPlace(editorPoint('map',30),true,getMapPlaceActionContext());
+    const fromMap=state.routePointEditorDraft.orderedPoints.map(p=>p.id||'empty');editorRequests[1].resolve([editorRoute('map-route')]);await mapPending;
+    $('#addWaypointBtn').onclick();
     for(let i=0;i<8;i++)addRoutePointSlot();
     const count=state.routePointEditorDraft.orderedPoints.length-2,requests=editorRequests.length;
     return{first,fromSearch,fromMap,count,requests,confirmed:state.waypoints.map(p=>p.id),screen:state.screen,
-      navigation:state.navigationSearch,emptyMarkup:ui.routePointEditorFields.innerHTML.includes('경유지 입력')};
+      navigation:state.navigationSearch,emptyMarkup:ui.routePointEditorFields.innerHTML.includes('경로5')};
   })()`,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)),{first:4,fromSearch:['A','C','search','B'],fromMap:['A','map','search','B'],count:5,requests:0,confirmed:['C'],screen:'route-points',navigation:false,emptyMarkup:true});
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{first:4,fromSearch:['A','C','search','B'],fromMap:['A','C','search','map','B'],count:5,requests:2,confirmed:['C','search','map'],screen:'route-points',navigation:false,emptyMarkup:true});
 });
 
 test('route editor ignores late place and address results after cancel, deletion, target change and reorder',async()=>{
@@ -2860,20 +2904,17 @@ test('route editor ignores late place and address results after cancel, deletion
   }
 });
 
-test('route editor commits atomically, retains failures, and ignores cancelled or superseded route requests',async()=>{
-  for(const action of ['success','failure','cancel','change','reverse-success','old-failure']){
+test('route editor auto-commit retains failures and ignores cancelled or superseded route requests',async()=>{
+  for(const action of ['success','failure','cancel','reverse-success','old-failure']){
     const context=routeEditorTestContext();context.editorAction=action;
     const result=await vm.runInContext(`(async()=>{
-      const old=state.routes;openRoutePointEditor(false);selectRoutePointSlot(1);await choosePlace(editorPoint('D',20));
-      const first=confirmRoutePointEditor();const duplicate=await confirmRoutePointEditor();
+      const old=state.routes;openRoutePointEditor(false);selectRoutePointSlot(1);const first=choosePlace(editorPoint('D',20));
+      const duplicate=await calculateRoutePointDraft();
       const preserved=state.routes===old&&state.waypoints[0].id==='C'&&state.routePointEditorDraft!==null;
       const firstCount=editorRequests.length;
       if(editorAction==='cancel')cancelRoutePointEditor();
-      if(['change','reverse-success','old-failure'].includes(editorAction)){
-        selectRoutePointSlot(1);await choosePlace(editorPoint('E',30));
-      }
       if(['reverse-success','old-failure'].includes(editorAction)){
-        const second=confirmRoutePointEditor();editorRequests[1].resolve([editorRoute('newest')]);await second;
+        selectRoutePointSlot(1);const second=choosePlace(editorPoint('E',30));editorRequests[1].resolve([editorRoute('newest')]);await second;
       }
       if(editorAction==='failure'||editorAction==='old-failure')editorRequests[0].reject(Error('old failure'));
       else editorRequests[0].resolve([editorRoute('first')]);
@@ -2886,7 +2927,6 @@ test('route editor commits atomically, retains failures, and ignores cancelled o
     if(action==='success'){assert.equal(result.route,'first');assert.deepEqual([...result.waypoints],['D']);assert.equal(result.draft,null);assert.equal(result.firstResult,true)}
     if(action==='failure'){assert.equal(result.route,'confirmed');assert.deepEqual([...result.draft],['A','D','B']);assert.deepEqual([...result.notices],['old failure']);assert.equal(result.busy,false)}
     if(action==='cancel'){assert.equal(result.route,'confirmed');assert.equal(result.draft,null);assert.equal(result.firstResult,false)}
-    if(action==='change'){assert.equal(result.route,'confirmed');assert.deepEqual([...result.draft],['A','E','B']);assert.equal(result.busy,false)}
     if(action==='reverse-success'||action==='old-failure'){assert.equal(result.route,'newest');assert.deepEqual([...result.waypoints],['E']);assert.equal(result.draws,1)}
     if(action!=='failure')assert.deepEqual([...result.notices],[],action);
   }
@@ -2924,28 +2964,26 @@ function routeEditorAddressContext(){
   return context;
 }
 
-test('waypoint address callback preserves the confirmed route and destination pin before confirm, after cancel and after commit',async()=>{
+test('waypoint address callback shows the selected pin immediately and auto-commits while preserving the confirmed route',async()=>{
   for(const action of ['cancel','confirm']){
     const context=routeEditorAddressContext();context.addressEditorAction=action;
     const result=await vm.runInContext(`(async()=>{
       const originalRoute=state.routes,originalLine=state.routeLines[0],originalPin=addressDestinationPin();
+      let resolveRoute;fetchRoutes=(a,b,waypoints)=>new Promise(resolve=>resolveRoute=()=>resolve([{label:'edited',totalDistance:1000,totalTime:200,route:{coordinates:[[a.longitude,a.latitude],...waypoints.map(p=>[p.longitude,p.latitude]),[b.longitude,b.latitude]]}}]));
       openRoutePointEditor();selectRoutePointSlot(1);$('#selectOnMapBtn').onclick();
       openMapAddress(new kakao.maps.LatLng(37.005,127.005));addressReply();
       const before={destination:state.destination.id,waypoints:state.waypoints.length,draft:state.routePointEditorDraft.orderedPoints[1].name,
         sameRoutes:state.routes===originalRoute,sameLine:state.routeLines[0]===originalLine,lineAttached:originalLine.map===state.map,
-        samePin:addressDestinationPin()===originalPin,pinAttached:originalPin.map===state.map,
+        samePin:addressDestinationPin()===originalPin,pinAttached:originalPin.map===state.map,waypointPins:state.routeEndpointMarkers.filter(marker=>marker.content.className.includes('waypoint')).map(marker=>marker.position),
         position:addressDestinationPin().position};
-      if(addressEditorAction==='cancel')cancelRoutePointEditor();
-      else{
-        fetchRoutes=async(a,b,waypoints)=>[{label:'edited',totalDistance:1000,totalTime:200,route:{coordinates:[[a.longitude,a.latitude],...waypoints.map(p=>[p.longitude,p.latitude]),[b.longitude,b.latitude]]}}];
-        await confirmRoutePointEditor();
-      }
+      if(addressEditorAction==='cancel')cancelRoutePointEditor();else resolveRoute();
+      await Promise.resolve();await Promise.resolve();
       return{before,after:{screen:state.screen,destination:state.destination.id,waypoints:state.waypoints.map(p=>p.name),
         position:addressDestinationPin().position,waypointPins:state.routeEndpointMarkers.filter(marker=>marker.content.className.includes('waypoint')).map(marker=>marker.position),
         path:state.routeLines[0].path}};
     })()`,context);
     const value=JSON.parse(JSON.stringify(result));
-    assert.deepEqual(value.before,{destination:'B',waypoints:0,draft:'선택한 경유지',sameRoutes:true,sameLine:true,lineAttached:true,samePin:true,pinAttached:true,position:{latitude:37.01,longitude:127.01}},action);
+    assert.deepEqual(value.before,{destination:'B',waypoints:0,draft:'선택한 경유지',sameRoutes:true,sameLine:true,lineAttached:true,samePin:true,pinAttached:true,waypointPins:[{latitude:37.005,longitude:127.005}],position:{latitude:37.01,longitude:127.01}},action);
     assert.equal(value.after.screen,'route');assert.equal(value.after.destination,'B');
     assert.deepEqual(value.after.position,{latitude:37.01,longitude:127.01});
     if(action==='cancel'){assert.deepEqual(value.after.waypoints,[]);assert.deepEqual(value.after.waypointPins,[]);assert.equal(value.after.path.length,2)}
@@ -2967,22 +3005,22 @@ test('route address callback preserves confirmed destination pins while inspecti
 test('route editor stale failure and finally cannot clear a newer pending request',async()=>{
   const context=routeEditorTestContext();
   const result=await vm.runInContext(`(async()=>{
-    openRoutePointEditor(false);const old=confirmRoutePointEditor();
-    selectRoutePointSlot(1);await choosePlace(editorPoint('E',30));const current=confirmRoutePointEditor();
+    openRoutePointEditor(false);const old=calculateRoutePointDraft();
+    selectRoutePointSlot(1);const current=choosePlace(editorPoint('E',30));
     const request=state.routePointEditorDraft.request;editorRequests[0].reject(Error('stale failure'));await old;
-    const preserved=state.routePointEditorDraft.request===request&&$('#confirmRoutePointEditorBtn').disabled&&editorNotices.length===0;
+    const preserved=state.routePointEditorDraft.request===request&&editorNotices.length===0;
     editorRequests[1].resolve([editorRoute('newest')]);await current;
     return{preserved,route:state.routes[0].id,waypoints:state.waypoints.map(p=>p.id),notices:editorNotices};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{preserved:true,route:'newest',waypoints:['E'],notices:[]});
 });
 
-test('route swap control is removed while confirmed drag opens an uncommitted editor', async () => {
+test('route swap control is removed while confirmed drag automatically commits the reordered route', async () => {
   assert.doesNotMatch(html,/id="swapBtn"/);
   assert.doesNotMatch(appSource,/swapBtn/);
   const context=routeEditorTestContext();
-  const result=await vm.runInContext(`(async()=>{await commitConfirmedRoutePointOrder([state.destination,...state.waypoints,state.departure]);return{departure:state.departure.id,draft:state.routePointEditorDraft.orderedPoints.map(p=>p.id),requests:editorRequests.length,screen:state.screen}})()`,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)),{departure:'A',draft:['B','C','A'],requests:0,screen:'route-points'});
+  const result=await vm.runInContext(`(async()=>{const pending=commitConfirmedRoutePointOrder([state.destination,...state.waypoints,state.departure]);editorRequests[0].resolve([editorRoute('reordered')]);await pending;return{departure:state.departure.id,waypoints:state.waypoints.map(p=>p.id),destination:state.destination.id,requests:editorRequests.length,screen:state.screen}})()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{departure:'B',waypoints:['C'],destination:'A',requests:1,screen:'route'});
 });
 
 test('mode B hides semantic labels and route alternatives while exposing hit-testable drag controls', () => {
@@ -2992,14 +3030,14 @@ test('mode B hides semantic labels and route alternatives while exposing hit-tes
     state.screen='route';state.departure=A;state.waypoints=[C,D];state.destination=B;state.routes=[{id:'old'}];state.selectedRoute=0;history={pushState(){},replaceState(){}};
     renderScreen('route',false);updateRouteFields();const modeA={addWired:typeof $('#addWaypointBtn').onclick==='function',removeWired:[...$('#waypointFields').querySelectorAll('[data-waypoint-remove]')].every(button=>typeof button.onclick==='function'),startVisible:!$('#startNavBtn').classList.contains('hidden'),cancelVisible:!$('#cancelRoutePreviewBtn').classList.contains('hidden')};$('#addWaypointBtn').onclick();
     const editorHtml=$('#routePointEditorFields').innerHTML,dragHandles=[...$('#routePointEditorFields').querySelectorAll('[data-route-point-drag]')],actionControls=[...$('#routePointEditorFields').querySelectorAll('[data-route-point-remove]'),$('#routePointEditorFields').querySelector('[data-route-point-add]')];
-    return{modeA,screen:state.screen,points:state.routePointEditorDraft.orderedPoints.map(point=>point.id),cardsHidden:$('#routeCards').classList.contains('hidden'),startHidden:$('#startNavBtn').classList.contains('hidden'),modeACancelHidden:$('#cancelRoutePreviewBtn').classList.contains('hidden'),actionsVisible:!$('#routePointEditorActions').classList.contains('hidden'),dragCount:dragHandles.length,dragWired:dragHandles.every(button=>button.hasEventListener('pointerdown')&&button.hasEventListener('pointermove')&&button.hasEventListener('pointerup')&&button.hasEventListener('pointercancel')),actionsWired:actionControls.every(button=>typeof button.onclick==='function'),hasMoveButtons:editorHtml.includes('data-route-point-move'),hasSemanticLabels:editorHtml.includes('<small>출발')||editorHtml.includes('<small>경로')||editorHtml.includes('<small>도착'),names:['A','C','D','B'].every(name=>editorHtml.includes(name)),confirmWired:typeof $('#confirmRoutePointEditorBtn').onclick==='function',cancelWired:typeof $('#cancelRoutePointEditorBtn').onclick==='function'};
+    return{modeA,screen:state.screen,points:state.routePointEditorDraft.orderedPoints.map(point=>point.id),cardsHidden:$('#routeCards').classList.contains('hidden'),startHidden:$('#startNavBtn').classList.contains('hidden'),modeACancelHidden:$('#cancelRoutePreviewBtn').classList.contains('hidden'),actionsVisible:!$('#routePointEditorActions').classList.contains('hidden'),dragCount:dragHandles.length,dragWired:dragHandles.every(button=>button.hasEventListener('pointerdown')&&button.hasEventListener('pointermove')&&button.hasEventListener('pointerup')&&button.hasEventListener('pointercancel')),actionsWired:actionControls.every(button=>typeof button.onclick==='function'),hasMoveButtons:editorHtml.includes('data-route-point-move'),hasSemanticLabels:editorHtml.includes('<small>출발')||editorHtml.includes('<small>경로')||editorHtml.includes('<small>도착'),names:['A','C','D','B'].every(name=>editorHtml.includes(name)),cancelWired:typeof $('#cancelRoutePointEditorBtn').onclick==='function'};
   })()`,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)),{modeA:{addWired:true,removeWired:true,startVisible:true,cancelVisible:true},screen:'route-points',points:['A','C','D',null,'B'],cardsHidden:true,startHidden:true,modeACancelHidden:true,actionsVisible:true,dragCount:5,dragWired:true,actionsWired:true,hasMoveButtons:false,hasSemanticLabels:false,names:true,confirmWired:true,cancelWired:true});
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{modeA:{addWired:true,removeWired:true,startVisible:true,cancelVisible:true},screen:'route-points',points:['A','C','D',null,'B'],cardsHidden:true,startHidden:true,modeACancelHidden:true,actionsVisible:true,dragCount:5,dragWired:true,actionsWired:true,hasMoveButtons:false,hasSemanticLabels:false,names:true,cancelWired:true});
   assert.match(styles,/\.route-point-editor-actions[^\n]*pointer-events:auto|\.route-point-editor-actions,[^{]*\{pointer-events:auto\}/);
   assert.match(styles,/\.route-point-drag\{[^}]*pointer-events:auto[^}]*touch-action:none/);
 });
 
-test('mode B pointer drag reorders intermediate, start, and destination by final position on confirm', async () => {
+test('mode B pointer drag automatically commits intermediate, start, and destination reorder', async () => {
   const context=loadApp();
   const result=await vm.runInContext(`(async()=>{
     const A={id:'A',name:'A'},B={id:'B',name:'B'},C={id:'C',name:'C'},D={id:'D',name:'D'};
@@ -3008,8 +3046,7 @@ test('mode B pointer drag reorders intermediate, start, and destination by final
     const run=async(index,clientY)=>{
       state.departure=A;state.waypoints=[C,D];state.destination=B;state.routes=[{id:'old'}];state.selectedRoute=0;state.navigationRouteDraft=null;
       openRoutePointEditor(false);
-      const handle=[...$('#routePointEditorFields').querySelectorAll('[data-route-point-drag]')].find(item=>+item.dataset.routePointDrag===index);handle.dispatch('pointerdown',{clientY:0});handle.dispatch('pointermove',{clientY});const during=state.routePointEditorDraft.orderedPoints.map(point=>point.id);handle.dispatch('pointerup',{clientY});const dragEnded=routePointDrag===null;
-      await $('#confirmRoutePointEditorBtn').onclick();
+      const handle=[...$('#routePointEditorFields').querySelectorAll('[data-route-point-drag]')].find(item=>+item.dataset.routePointDrag===index);handle.dispatch('pointerdown',{clientY:0});handle.dispatch('pointermove',{clientY});const during=state.routePointEditorDraft.orderedPoints.map(point=>point.id);await handle.dispatch('pointerup',{clientY});const dragEnded=routePointDrag===null;
       return{departure:state.departure.id,waypoints:state.waypoints.map(point=>point.id),destination:state.destination.id,during,dragEnded};
     };
     return{intermediate:await run(2,-49),start:await run(0,49),destination:await run(3,-97)};

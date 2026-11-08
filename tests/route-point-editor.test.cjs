@@ -18,16 +18,15 @@ test('route point editor mobile controls and real history keep edits separate fr
     assert.deepEqual(await evaluate(`({screen:state.screen,rows:document.querySelectorAll('#routePointEditorFields [data-route-point]').length,
       empty:document.querySelector('[data-route-point-select="1"]').textContent,routeCount:state.routes.length,draws:editBrowser.draws,
       startHidden:document.querySelector('#startNavBtn').classList.contains('hidden'),actionsHidden:document.querySelector('#routePointEditorActions').classList.contains('hidden'),swap:!!document.querySelector('#swapBtn')})`),
-    {screen:'route-points',rows:3,empty:'경유지 입력',routeCount:0,draws:0,startHidden:true,actionsHidden:false,swap:false});
+    {screen:'route-points',rows:3,empty:'경로1',routeCount:0,draws:0,startHidden:true,actionsHidden:false,swap:false});
     await evaluate(`document.querySelector('[data-route-point-select="1"]').click()`);
     await evaluate(`new Promise(resolve=>{window.addEventListener('popstate',()=>setTimeout(resolve,0),{once:true});document.querySelector('#selectOnMapBtn').click()})`);
-    const selected=await evaluate(`(()=>{openPlace({id:'way',name:'지도에서 고른 장소',latitude:37.005,longitude:127.005},true);return{
+    const selected=await evaluate(`(()=>{globalThis.editorSelection=openPlace({id:'way',name:'지도에서 고른 장소',latitude:37.005,longitude:127.005},true);return{
       screen:state.screen,place:state.routePointEditorDraft.orderedPoints[1].id,
       rows:document.querySelectorAll('#routePointEditorFields [data-route-point]').length,confirmed:state.waypoints.length,requests:editBrowser.requests.length,navigation:state.navigationSearch}})()`);
-    assert.deepEqual(selected,{screen:'route-points',place:'way',rows:3,confirmed:0,requests:1,navigation:false});
-    await evaluate(`(()=>{globalThis.editorConfirm=confirmRoutePointEditor();return true})()`);
+    assert.deepEqual(selected,{screen:'route-points',place:'way',rows:3,confirmed:0,requests:2,navigation:false});
     assert.deepEqual(await evaluate(`({confirmed:state.waypoints.length,routes:state.routes.length,screen:state.screen})`),{confirmed:0,routes:0,screen:'route-points'});
-    assert.equal(await evaluate(`(async()=>{editBrowser.requests[1].resolve(editorReply());return await editorConfirm})()`),true);
+    assert.equal(await evaluate(`(async()=>{editBrowser.requests[1].resolve(editorReply());return await editorSelection})()`),true);
     assert.deepEqual(await evaluate(`({waypoints:state.waypoints.map(p=>p.id),routes:state.routes.length,screen:state.screen})`),{waypoints:['way'],routes:1,screen:'route'});
     await evaluate(`document.querySelector('#addWaypointBtn').click();for(let i=0;i<8;i++)document.querySelector('#routePointEditorFields [data-route-point-add]').click()`);
     for(const [width,height] of [[390,844],[844,390]]){
@@ -42,14 +41,15 @@ test('route point editor mobile controls and real history keep edits separate fr
         const overlap=(a,b)=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top;
         return {slots:state.routePointEditorDraft.orderedPoints.length-2,usesWidth:Math.abs(editor.width-fields.width)<2,
           actionsVisible:actions.bottom<=innerHeight&&actions.top>=0,editorAboveActions:fields.bottom<=actions.top,
-          blankVisible:blank.top>=fields.top&&blank.bottom<=fields.bottom,locateOverlap:overlap(editor,locate),bodyOverflow:document.documentElement.scrollWidth>innerWidth};
+          blankVisible:blank.top>=fields.top&&blank.bottom<=fields.bottom,locateOverlap:overlap(editor,locate),bodyOverflow:document.documentElement.scrollWidth>innerWidth,
+          confirmAbsent:!document.querySelector('#confirmRoutePointEditorBtn')};
       })()`);
-      assert.deepEqual(layout,{slots:5,usesWidth:true,actionsVisible:true,editorAboveActions:true,blankVisible:true,locateOverlap:false,bodyOverflow:false},`${width}x${height}`);
+      assert.deepEqual(layout,{slots:5,usesWidth:true,actionsVisible:true,editorAboveActions:true,blankVisible:true,locateOverlap:false,bodyOverflow:false,confirmAbsent:true},`${width}x${height}`);
     }
     const end=await evaluate(`(async()=>{
-      const count=editBrowser.requests.length,blocked=await confirmRoutePointEditor();cancelRoutePointEditor();
-      return{blocked,requests:editBrowser.requests.length-count,waypoints:state.waypoints.map(p=>p.id),screen:state.screen,routeCount:state.routes.length};
+      const count=editBrowser.requests.length;cancelRoutePointEditor();
+      return{requests:editBrowser.requests.length-count,waypoints:state.waypoints.map(p=>p.id),screen:state.screen,routeCount:state.routes.length};
     })()`);
-    assert.deepEqual(end,{blocked:false,requests:0,waypoints:['way'],screen:'route',routeCount:1});
+    assert.deepEqual(end,{requests:0,waypoints:['way'],screen:'route',routeCount:1});
   }});
 });
