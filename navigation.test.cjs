@@ -273,6 +273,18 @@ test('structured maneuver conflict is retained and geometry controls left or rig
   assert.equal(vm.runInContext('navigationInstruction(testSteps,0)', context), '좌회전');
 });
 
+test('structured right versus geometric straight is displayed straight and excluded from turn speech', () => {
+  const { context } = loadApp();
+  const points = cardinalTurn([0, 1], [0, 1]);
+  const route = prepareNavigationFixture(context, points, [{ point: points[1], guidance: '우회전' }]);
+  context.testSteps = route._steps;
+  assert.equal(route._steps[0]._structuredManeuver, '우회전');
+  assert.equal(route._steps[0]._geometryManeuver, '직진');
+  assert.equal(route._steps[0]._maneuverConflict, true);
+  assert.equal(vm.runInContext('navigationInstruction(testSteps,0)', context), '직진');
+  assert.equal(vm.runInContext('navigationVoiceGroups(testSteps).length', context), 0);
+});
+
 test('voice announces genuine turns only when route progress crosses 300m and 50m once', () => {
   const { context } = loadApp();
   const spoken = vm.runInContext(`(()=>{

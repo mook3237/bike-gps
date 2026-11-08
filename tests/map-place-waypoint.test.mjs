@@ -336,7 +336,7 @@ function loadApp(search = '', deferTimers = false, staticDom = false) {
     console, document, localStorage: { getItem() { return null; }, setItem() {} },
     AbortController, URLSearchParams, innerHeight: 800, innerWidth: 390,
     setTimeout(fn, delay = 0) { if (typeof fn !== 'function') return 1; const id=nextTimerId++; if (deferTimers) pendingTimers.push({id,fn,delay}); else fn(); return id; }, clearTimeout(id) { cancelledTimers.add(id); },
-    history: { pushState() {}, back() {} },
+    history: { pushState() {}, replaceState() {}, back() {} },
     navigator: { geolocation: { getCurrentPosition() {}, watchPosition(success) { nativeWatchStarts += 1; nativeWatchSuccess = success; return 1; }, clearWatch() {} } },
     fetch: async () => ({ ok: false, json: async () => ({ error: 'test' }) }),
   });
@@ -801,7 +801,7 @@ test('long press pins the exact address and uses state-based actions in every in
     `,context);
     assert.deepEqual(JSON.parse(JSON.stringify(result.requests)),[{x:127.0456789,y:37.6123456}],scenario.name);
     const selectedPins=JSON.parse(JSON.stringify(result.markers)).filter(marker=>marker[2]==='route-endpoint-marker destination');
-    assert.deepEqual(selectedPins,[[37.6123456,127.0456789,'route-endpoint-marker destination','<img src="assets/destination-pin.svg" alt="">','32px','44px',.5,1]],scenario.name);
+    assert.deepEqual(selectedPins,scenario.screen==='route'?[]:[[37.6123456,127.0456789,'route-endpoint-marker destination','<img src="assets/destination-pin.svg" alt="">','32px','44px',.5,1]],scenario.name);
     assert.equal(result.previewCalls,0,scenario.name);
     assert.equal(result.unchanged,true,scenario.name);
     for(const action of scenario.expected){
@@ -1023,7 +1023,7 @@ test('a route preview long press opens the existing navigation address card with
   assert.equal(result.screen,'navigation-place');
   assert.equal(result.sameDraft,true);
   assert.equal(result.sameDestination,true);
-  assert.deepEqual(JSON.parse(JSON.stringify(result.markers)),[{latitude:37.6123,longitude:127.0456,className:'route-endpoint-marker destination'}]);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.markers)),[], 'inspecting a candidate must not replace confirmed route pins');
   assert.match(result.html,/id="changeNavDestination"/);
   assert.match(result.html,/id="addNavWaypoint"/);
   assert.doesNotMatch(result.html,/id="setStart"|id="setEnd"/);
@@ -2576,6 +2576,230 @@ test('route editor blocks the 06:12:51 late response after entering edit', async
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'route-points',draws:0,routes:0,cards:true,startHidden:true,actionsVisible:true});
 });
 
+function routeFlowTestContext(mode='map'){
+  const context=routeEditorTestContext();context.flowTestMode=mode;
+  vm.runInContext(`
+    location={hash:'#'+flowTestMode};window.location=location;
+    flowStack=[{screen:flowTestMode}],flowIndex=0;
+    history={state:flowStack[0],pushState(entry,unused,hash){flowStack.splice(++flowIndex);flowStack.push(entry);this.state=entry;location.hash=hash},replaceState(entry,unused,hash){flowStack[flowIndex]=entry;this.state=entry;location.hash=hash},go(delta){flowIndex=Math.max(0,flowIndex+delta);this.state=flowStack[flowIndex];location.hash='#'+this.state.screen;handlePopState({state:this.state})},back(){this.go(-1)}};
+    state.screen=flowTestMode;state.currentLocation=state.departure;
+    kakao.maps.CustomOverlay=class{constructor(options){Object.assign(this,options)}setMap(map){this.map=map}};
+    renderRacingHud=()=>{};renderRacingSetupControls=()=>{};setGpsMarker=()=>{};
+    if(flowTestMode==='racing')state.racingCourseSetup={stage:'route-alternatives',origin:state.departure,destination:state.destination,tripType:'one-way'};
+    renderScreen(flowTestMode==='racing'?'racing-route':'route');updateRouteFields();
+    flowOriginal={routes:state.routes,departure:state.departure,destination:state.destination,waypoints:state.waypoints,setup:state.racingCourseSetup};
+  `,context);return context;
+}
+
+for(const mode of ['map','racing']){
+  test(`flow consistency: ${mode} place dismiss preserves the exact route and its history entry`,()=>{
+    const context=routeFlowTestContext(mode);
+    const result=vm.runInContext(`(()=>{
+      openPlace(editorPoint('new',50),true);
+      const card=ui.sheetContent.innerHTML,routeEntry=flowStack[flowIndex-1]?.screen;
+      history.back();
+      return{card,routeEntry,screen:state.screen,sameRoutes:state.routes===flowOriginal.routes,sameDestination:state.destination===flowOriginal.destination,sameWaypoints:state.waypoints===flowOriginal.waypoints,sameSetup:state.racingCourseSetup===flowOriginal.setup,history:history.state.screen,hash:location.hash};
+    })()`,context);
+    const screen=mode==='map'?'route':'racing-route';
+    assert.match(result.card,mode==='map'?/changeNavDestination/:/racingOneWayChoiceBtn/);
+    assert.equal(result.routeEntry,screen);assert.equal(result.screen,screen);
+    for(const key of ['sameRoutes','sameDestination','sameWaypoints','sameSetup'])assert.equal(result[key],true,key);
+    assert.equal(result.history,screen);assert.equal(result.hash,'#'+screen);
+  });
+  test(`flow consistency: ${mode} route cancel clears flow and discards late route responses`,async()=>{
+    const context=routeFlowTestContext(mode);
+    const result=await vm.runInContext(`(async()=>{
+      const pending=${mode==='map'?'loadRoutes()':'loadRacingCourseAlternatives()'};
+      $('#cancelRoutePreviewBtn').onclick();const before=editorDraws;
+      editorRequests.at(-1).resolve([editorRoute('late')]);await pending;
+      const root={screen:state.screen,history:history.state.screen,hash:location.hash,routes:state.routes.length,departure:state.departure,destination:state.destination,waypoints:state.waypoints.length,setup:state.racingCourseSetup,lateDraws:editorDraws-before};
+      openPlace(editorPoint('next',50),true);return{root,card:ui.sheetContent.innerHTML};
+    })()`,context);
+    assert.deepEqual(JSON.parse(JSON.stringify(result.root)),{screen:mode,history:mode,hash:'#'+mode,routes:0,departure:null,destination:null,waypoints:0,setup:null,lateDraws:0});
+    assert.match(result.card,mode==='map'?/id="setStart"/:/racingOneWayChoiceBtn/);
+  });
+  test(`flow consistency: stale racing history cannot change current ${mode} mode`,()=>{
+    const context=routeFlowTestContext(mode);
+    const result=vm.runInContext(`(()=>{state.racingCourseSetup=null;state.screen='${mode}';handlePopState({state:{screen:'racing-route',racingSetup:true}});return{screen:state.screen,history:history.state.screen,hash:location.hash,routes:state.routes.length,setup:state.racingCourseSetup}})()`,context);
+    assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:mode,history:mode,hash:'#'+mode,routes:0,setup:null});
+  });
+}
+
+test('flow consistency: normal map ignores residual route arrays when choosing place actions',()=>{
+  const context=routeFlowTestContext();
+  assert.equal(vm.runInContext(`state.screen='map';getMapPlaceActionContext()`,context),'initial');
+});
+
+for(const tripType of ['one-way','round'])test(`flow consistency: racing ${tripType} shows actual endpoints without navigation controls`,()=>{
+  const context=routeFlowTestContext('racing');context.flowTripType=tripType;
+  const result=vm.runInContext(`(()=>{state.racingCourseSetup.tripType=flowTripType;renderScreen('racing-route',false);return{fields:ui.routeSelectionFields.innerHTML,hidden:ui.routeEditor.classList.contains('hidden'),navigation:state.navigationSearch}})()`,context);
+  assert.equal(result.hidden,false);assert.equal(result.navigation,false);assert.match(result.fields,/A/);assert.match(result.fields,/B/);
+  assert.match(result.fields,tripType==='round'?/왕복/:/편도/);assert.doesNotMatch(result.fields,/data-route-point-drag|data-waypoint-remove/);
+});
+
+test('flow consistency: racing new destination GPS lookup is ignored after cancellation',async()=>{
+  const context=routeFlowTestContext('racing');
+  const result=await vm.runInContext(`(async()=>{openPlace(editorPoint('new'),true);let resolve;locate=()=>new Promise(done=>resolve=done);const pending=confirmRacingDestination(state.selectedPlace);cancelRacingCourseSelection();resolve(editorPoint('gps'));await pending;return{screen:state.screen,setup:state.racingCourseSetup,requests:editorRequests.length}})()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'racing',setup:null,requests:0});
+});
+
+for(const source of ['address','poi','search'])test(`flow consistency: late ${source} response cannot enter another mode`,async()=>{
+  const context=routeFlowTestContext();context.flowSource=source;
+  const result=await vm.runInContext(`(async()=>{
+    let deliver,pending;
+    if(flowSource==='address'){kakao.maps.services.Geocoder=class{coord2Address(x,y,callback){deliver=()=>callback([{address:{address_name:'late address'}}],'OK')}};openMapAddress(new kakao.maps.LatLng(37,127))}
+    if(flowSource==='poi'){lookupMapPlaces=()=>new Promise(resolve=>deliver=resolve);pending=handleMapClick({point:{x:20,y:20},latLng:new kakao.maps.LatLng(37,127)})}
+    if(flowSource==='search'){openSearch();searchPlaces=()=>new Promise(resolve=>deliver=resolve);pending=doSearch('late')}
+    $('#mapTabBtn').onclick();resumeRacingScreen();const before=state.screen;
+    if(flowSource==='address')deliver();else{deliver(flowSource==='poi'?{places:[editorPoint('late')],timing:{}}:[editorPoint('late')]);await pending}
+    return{screen:state.screen,before,place:state.selectedPlace,setup:state.racingCourseSetup};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'racing',before:'racing',place:null,setup:null});
+});
+
+test('flow consistency: ordinary destination change keeps prior route until the new preview is ready',async()=>{
+  const context=routeFlowTestContext();
+  const result=await vm.runInContext(`(async()=>{
+    openPlace(editorPoint('new',200),true);const pending=$('#changeNavDestination').onclick();
+    const preserved=state.routes===flowOriginal.routes&&state.destination===flowOriginal.destination;
+    editorRequests.at(-1).resolve([editorRoute('changed')]);await pending;
+    const after={screen:state.screen,destination:state.destination.id,previewDestination:state.navigationRouteDraft.destination.id,origin:editorRequests.at(-1).a.id};
+    history.back();return{preserved,after,restored:state.routes===flowOriginal.routes&&state.destination===flowOriginal.destination,screen:state.screen};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{preserved:true,after:{screen:'route',destination:'B',previewDestination:'new',origin:'A'},restored:true,screen:'route'});
+});
+
+test('flow consistency: keyboard closure defers a 348px route fit and fits once after restoration',()=>{
+  const context=routeFlowTestContext();
+  const result=vm.runInContext(`(()=>{
+    innerWidth=390;innerHeight=669;window.innerWidth=390;window.innerHeight=669;
+    window.visualViewport={width:390,height:669,offsetTop:0};
+    kakao.maps.LatLngBounds=class{constructor(){this.points=[]}extend(p){this.points.push(p)}isEmpty(){return !this.points.length}};
+    fitCalls=[];state.map.setBounds=(...args)=>fitCalls.push(args);fitSelectedRoute=()=>fitRouteOverview();
+    openSearch();window.visualViewport.height=348;renderScreen('route',false);fitRouteOverview();const shrunk=fitCalls.length;
+    window.visualViewport.height=669;refreshMapForViewport();refreshMapForViewport();
+    return{shrunk,restored:fitCalls.length};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{shrunk:0,restored:1});
+});
+
+test('flow consistency: abandoned round return requests cannot apply a course or report errors',async()=>{
+  for(const failure of [false,true]){
+    const context=routeFlowTestContext('racing');context.flowFailure=failure;
+    const result=await vm.runInContext(`(async()=>{
+      state.racingCourseSetup.outboundRoute=editorRoute('outbound');
+      let applied=0;applyRacingCourse=()=>{applied++;return true};
+      const pending=loadRacingReturnRoute(editorPoint('return',200));cancelRacingCourseSelection();
+      if(flowFailure)editorRequests.at(-1).reject(Error('stale failure'));else editorRequests.at(-1).resolve([editorRoute('return')]);
+      await pending;return{applied,notices:editorNotices.length,screen:state.screen,setup:state.racingCourseSetup};
+    })()`,context);
+    assert.deepEqual(JSON.parse(JSON.stringify(result)),{applied:0,notices:0,screen:'racing',setup:null});
+  }
+});
+
+test('flow consistency: latest racing choice wins reversed responses and back during calculation restores prior candidate',async()=>{
+  const context=routeFlowTestContext('racing');
+  const result=await vm.runInContext(`(async()=>{
+    locate=async()=>editorPoint('gps');openPlace(editorPoint('new',200),true);
+    const first=confirmRacingDestination(state.selectedPlace);await Promise.resolve();await Promise.resolve();
+    openPlace(editorPoint('newest',300),true);const second=confirmRacingDestination(state.selectedPlace);await Promise.resolve();await Promise.resolve();
+    editorRequests[1].resolve([editorRoute('newest')]);await second;editorRequests[0].resolve([editorRoute('obsolete')]);await first;
+    const newest=state.routes[0].id;
+    const before=state.routes;openPlace(editorPoint('third',400),true);const third=confirmRacingDestination(state.selectedPlace);await Promise.resolve();await Promise.resolve();
+    history.back();editorRequests[2].resolve([editorRoute('third')]);await third;
+    return{newest,screen:state.screen,restored:state.routes===before,id:state.routes[0].id,stage:state.racingCourseSetup.stage};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{newest:'newest',screen:'racing-route',restored:true,id:'newest',stage:'route-alternatives'});
+});
+
+test('flow consistency: route cancellation retires an active navigation preview subscription',async()=>{
+  const context=loadApp();installNavigationFlowEnvironment(context);
+  const result=await vm.runInContext(`(async()=>{
+    openNavigationPlace({id:'new',name:'New',latitude:37.04,longitude:127.04});
+    await $('#changeNavDestination').onclick();$('#cancelRoutePreviewBtn').onclick();
+    return{screen:state.screen,watch:state.nav.watchId,recalculating:state.nav.recalculating,destination:state.destination};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'map',watch:null,recalculating:false,destination:null});
+});
+
+test('flow consistency: cancelled general origin lookup cannot restore endpoints or start a request',async()=>{
+  const context=routeFlowTestContext();
+  const result=await vm.runInContext(`(async()=>{
+    state.departure=null;state.currentLocation=null;let resolve;locate=()=>new Promise(done=>resolve=done);
+    const pending=setDestination(editorPoint('new',100));$('#cancelRoutePreviewBtn').onclick();
+    resolve(editorPoint('late GPS'));await pending;
+    return{screen:state.screen,departure:state.departure,destination:state.destination,requests:editorRequests.length};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'map',departure:null,destination:null,requests:0});
+});
+
+test('flow consistency: cancelled keyboard route fit cannot change another screen',()=>{
+  const context=routeFlowTestContext();
+  const result=vm.runInContext(`(()=>{
+    openSearch();window.visualViewport.height=348;renderScreen('route',false);$('#cancelRoutePreviewBtn').onclick();
+    let fits=0;fitSelectedRoute=()=>{fits++};window.visualViewport.height=800;refreshMapForViewport();
+    return{screen:state.screen,fits};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'map',fits:0});
+});
+
+test('flow consistency: diagnostics distinguish route inspection, back and completed cancellation without extra addresses',()=>{
+  const context=routeFlowTestContext();
+  const result=vm.runInContext(`(()=>{
+    flowLogs=[];globalThis.RideMateDiagnostics={record(event,data){flowLogs.push({event,data})}};
+    openPlace(editorPoint('PRIVATE NAME'),true);const card=flowLogs.filter(e=>e.event==='screen').at(-1).data;
+    history.back();const back=flowLogs.filter(e=>e.event==='screen').at(-1).data;
+    $('#cancelRoutePreviewBtn').onclick();const cancel=flowLogs.filter(e=>e.event==='screen').at(-1).data;
+    responseIsCurrent('test-old-request',false);const response=flowLogs.at(-1);
+    return{card,back,cancel,response,privateNameLogged:JSON.stringify(flowLogs).includes('PRIVATE NAME')};
+  })()`,context);
+  assert.equal(result.card.mode,'route');assert.equal(result.card.reason,'map-place');assert.equal(result.card.from,'route');
+  assert.equal(result.back.reason,'back');assert.equal(result.back.to,'route');
+  assert.equal(result.cancel.historyScreen,'map');assert.equal(result.cancel.hash,'#map');assert.equal(result.cancel.to,'map');assert.equal(result.cancel.hasGeneralRoute,false);
+  assert.equal(result.cancel.destinationCount,0);assert.equal(result.cancel.waypointCount,0);assert.equal(result.privateNameLogged,false);
+  assert.equal(result.response.data.applied,false);assert.equal(result.response.data.reason,'stale');
+});
+
+test('flow consistency: choosing another racing place invalidates the prior pending GPS confirmation',async()=>{
+  const context=routeFlowTestContext('racing');
+  const result=await vm.runInContext(`(async()=>{
+    openPlace(editorPoint('old choice'),true);let resolve,requests=0;locate=()=>new Promise(done=>resolve=done);
+    fetchRoutes=async()=>{requests++;return[editorRoute('unexpected')]};
+    const pending=confirmRacingDestination(state.selectedPlace);openPlace(editorPoint('current choice'),true);
+    resolve(editorPoint('GPS'));await pending;
+    return{screen:state.screen,selected:state.selectedPlace.id,requests,tripChoices:ui.sheetContent.innerHTML.includes('racingOneWayChoiceBtn')};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'place',selected:'current choice',requests:0,tripChoices:true});
+});
+
+test('flow consistency: search from a general route retains its route context and ignores a previous preview',async()=>{
+  const context=routeFlowTestContext();
+  const result=await vm.runInContext(`(async()=>{
+    openSearch();await choosePlace(editorPoint('first choice',200));const card=ui.sheetContent.innerHTML;
+    const pending=beginNavigationRoutePreview('destination',state.selectedPlace);openNavigationPlace(editorPoint('current choice',300));
+    editorRequests.at(-1).resolve([editorRoute('obsolete')]);await pending;
+    return{card,screen:state.screen,selected:state.selectedPlace.id,sameRoute:state.routes===flowOriginal.routes,draft:state.navigationRouteDraft};
+  })()`,context);
+  assert.match(result.card,/changeNavDestination/);
+  assert.deepEqual({screen:result.screen,selected:result.selected,sameRoute:result.sameRoute,draft:result.draft},{screen:'navigation-place',selected:'current choice',sameRoute:true,draft:null});
+});
+
+for(const mode of ['map','racing'])test(`route return regression: ${mode} initial loading resumes once without extra history and ignores the original response`,async()=>{
+  const context=routeFlowTestContext(mode);
+  const result=await vm.runInContext(`(async()=>{
+    state.routes=[];state.selectedRoute=null;
+    const first=${mode==='map'?'loadRoutes()':'loadRacingCourseAlternatives()'};
+    const depth=flowIndex;openPlace(editorPoint('inspect',50),true);history.back();
+    const returned={screen:state.screen,requests:editorRequests.length,startHidden:ui.start.classList.contains('hidden'),history:history.state.screen,hash:location.hash,sameDepth:flowIndex===depth};
+    editorRequests[0].resolve([editorRoute('obsolete')]);await first;
+    const staleIgnored=state.routes.length===0&&ui.start.classList.contains('hidden');
+    if(editorRequests[1]){editorRequests[1].resolve([editorRoute('resumed')]);await Promise.resolve();await Promise.resolve()}
+    return{returned,staleIgnored,id:state.routes[0]?.id||null,startHidden:ui.start.classList.contains('hidden'),loading:ui.routeCards.innerHTML.includes('경로를 찾는 중')};
+  })()`,context);
+  const screen=mode==='map'?'route':'racing-route';
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{returned:{screen,requests:2,startHidden:true,history:screen,hash:'#'+screen,sameDepth:true},staleIgnored:true,id:'resumed',startHidden:false,loading:false});
+});
+
 function routeEditorTestContext(){
   const context=loadApp('',false,true);
   vm.runInContext(`
@@ -2729,14 +2953,14 @@ test('waypoint address callback preserves the confirmed route and destination pi
   }
 });
 
-test('ordinary address callback retains selected destination pin behavior outside waypoint editing',()=>{
+test('route address callback preserves confirmed destination pins while inspecting another place',()=>{
   for(const actionContext of ['initial','post-initial']){
     const context=routeEditorAddressContext();context.addressActionContext=actionContext;
     const result=vm.runInContext(`(()=>{
       const original=addressDestinationPin();openMapAddress(new kakao.maps.LatLng(37.005,127.005),{actionContext:addressActionContext});addressReply();
       return{oldDetached:original.map===null,position:addressDestinationPin().position,screen:state.screen};
     })()`,context);
-    assert.deepEqual(JSON.parse(JSON.stringify(result)),{oldDetached:true,position:{latitude:37.005,longitude:127.005},screen:actionContext==='initial'?'place':'navigation-place'});
+    assert.deepEqual(JSON.parse(JSON.stringify(result)),{oldDetached:false,position:{latitude:37.01,longitude:127.01},screen:actionContext==='initial'?'place':'navigation-place'});
   }
 });
 
@@ -2875,7 +3099,7 @@ test('screen transitions retire stale Racing course responses and refresh viewpo
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
     racingClass:false,ordinarySearchRacingClass:false,returnHidden:true,navMenuHidden:true,
-    setupPreserved:true,staleRouteApplied:false,viewportHeight:'800px',keyboard:{layoutHeight:'500px',inset:'0px',open:false},
+    setupPreserved:false,staleRouteApplied:false,viewportHeight:'800px',keyboard:{layoutHeight:'500px',inset:'0px',open:false},
   });
   assert.match(styles,/\.main-menu-drawer\{[^}]*width:min\(42vw,170px\)/);
   assert.match(styles,/#navMenu\{[^}]*width:50%/);
@@ -3749,7 +3973,7 @@ test('route exits reset route state for cancel, popstate, and the next place sel
   })()`,context);
   const clean={screen:'map',destination:null,waypoints:[],routes:0,selectedRoute:null,draft:null,original:null,selectedPlace:null,editingEndpoint:null,editingWaypointIndex:null,navigationSearch:false,navigationSearchMode:null,navSearchViewport:null,routeLines:0,markers:0,removedLines:1,removedMarkers:1};
   assert.deepEqual(JSON.parse(JSON.stringify(result.cancel)),{...clean,history:{back:0,push:0,replace:1}});
-  assert.deepEqual(JSON.parse(JSON.stringify(result.popstate)),{...clean,history:{back:0,push:0,replace:0}});
+  assert.deepEqual(JSON.parse(JSON.stringify(result.popstate)),{...clean,history:{back:0,push:0,replace:1}});
   assert.deepEqual(JSON.parse(JSON.stringify(result.nextPlace)),{screen:'place',selectedPlace:'X',destination:null,waypoints:[],routes:0,selectedRoute:null});
 });
 
