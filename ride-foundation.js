@@ -604,7 +604,7 @@
     return { latitude: origin.latitude + northMeters / 111195, longitude: origin.longitude + eastMeters / (111195 * latitudeScale) };
   }
 
-  function createRouteArrivalGate(route, alongDistance = null, { gateWidthM = 3, radiusM = 5, approachLengthM = 15 } = {}) {
+  function createRouteArrivalGate(route, alongDistance = null, { gateWidthM = 3, radiusM = 5, approachLengthM = 15, fullCircle = false } = {}) {
     if (!Array.isArray(route) || route.length < 2 || !route.every(point => Number.isFinite(point?.latitude) && Number.isFinite(point?.longitude))) return null;
     const totalDistance = routeDistance(route), along = Number.isFinite(alongDistance) ? Math.max(0, Math.min(totalDistance, alongDistance)) : totalDistance;
     if (totalDistance <= 0 || along <= 0) return null;
@@ -619,7 +619,7 @@
       const angle = -Math.PI / 2 + Math.PI * index / 18;
       return offsetPosition(center, radiusM * (forward.east * Math.cos(angle) + side.east * Math.sin(angle)), radiusM * (forward.north * Math.cos(angle) + side.north * Math.sin(angle)));
     });
-    return { center, lineStart, lineEnd, arcPoints, alongDistance: along, approachStartAlong: Math.max(0, along - Math.min(15, approachLengthM)), direction: forward, side, gateWidthM, radiusM, totalDistance };
+    return { center, lineStart, lineEnd, arcPoints, alongDistance: along, approachStartAlong: Math.max(0, along - Math.min(15, approachLengthM)), direction: forward, side, gateWidthM, radiusM, totalDistance, fullCircle };
   }
 
   function createRouteArrivalState() {
@@ -659,6 +659,36 @@
       }
     }
     if (inApproach) state.approached = true;
+    // The racing caller arms this circle only after its course and movement checks.
+    if (gate.fullCircle) {
+      let ratio = haversineDistance(position, gate.center) <= gate.radiusM ? 1 : null;
+      if (ratio === null && previous) {
+        const start = local(previous.position), dx = coordinates.east - start.east, dy = coordinates.north - start.north;
+        const a = dx * dx + dy * dy, b = 2 * (start.east * dx + start.north * dy);
+        const c = start.east * start.east + start.north * start.north - gate.radiusM * gate.radiusM;
+        const discriminant = b * b - 4 * a * c;
+        if (a > 0 && discriminant >= 0) {
+          const entry = (-b - Math.sqrt(discriminant)) / (2 * a);
+          if (entry >= 0 && entry <= 1) ratio = entry;
+        }
+      }
+      if (ratio !== null) {
+        const estimated = !!previous && ratio < 1;
+        const interpolate = key => estimated && Number.isFinite(previous[key]) && Number.isFinite(observation[key])
+          ? previous[key] + (observation[key] - previous[key]) * ratio : observation[key];
+        state.crossing = {
+          position: estimated ? { latitude: previous.position.latitude + (position.latitude - previous.position.latitude) * ratio,
+            longitude: previous.position.longitude + (position.longitude - previous.position.longitude) * ratio } : { latitude: position.latitude, longitude: position.longitude },
+          timestamp: estimated ? Math.round(previous.timestamp + (timestamp - previous.timestamp) * ratio) : timestamp,
+          distance: interpolate('distance'), movingTime: Number.isFinite(interpolate('movingTime')) ? Math.round(interpolate('movingTime')) : undefined,
+          filteredSpeed: interpolate('filteredSpeed'), moving: observation.moving === true, estimated,
+        };
+        state.arrived = true;
+      }
+      state.previous = { position: { latitude: position.latitude, longitude: position.longitude }, timestamp, accuracy,
+        distance: observation.distance, movingTime: observation.movingTime, filteredSpeed: observation.filteredSpeed };
+      return { state, arrived: state.arrived, reason: state.arrived ? 'entered-arrival-circle' : 'outside' };
+    }
     const progressAtGate = routeProgress >= gate.alongDistance - gate.gateWidthM;
     const span = previous ? forwardDistance - previous.forwardDistance : 0;
     if (previous?.inApproach && previous.forwardDistance <= 0 && forwardDistance >= -1e-6 && span > 0 && progressAtGate) {

@@ -2593,6 +2593,74 @@ function routeFlowTestContext(mode='map'){
   `,context);return context;
 }
 
+for(const kind of ['waypoint','destination'])for(const action of ['confirm','cancel','failure'])test(`place preview contract: ${kind} ${action} preserves confirmed points until explicit confirmation`,async()=>{
+  const context=routeFlowTestContext();Object.assign(context,{previewKind:kind,previewAction:action});
+  const result=await vm.runInContext(`(async()=>{
+    openPlace(editorPoint('NEW',50),true);const card=ui.sheetContent.innerHTML;
+    const pending=$('#'+(previewKind==='waypoint'?'addNavWaypoint':'changeNavDestination')).onclick();
+    const preserved=state.routes===flowOriginal.routes;
+    if(previewAction==='failure')editorRequests.at(-1).reject(Error('preview failed'));else editorRequests.at(-1).resolve([editorRoute('preview')]);
+    await pending;const label=ui.start.textContent;
+    if(previewAction==='confirm')$('#startNavBtn').onclick();
+    if(previewAction==='cancel')$('#cancelRoutePreviewBtn').onclick();
+    return{card,preserved,label,screen:state.screen,waypoints:state.waypoints.map(p=>p.id),destination:state.destination.id,route:state.routes[0].id,preview:!!state.navigationRouteDraft,history:history.state.screen};
+  })()`,context);
+  assert.match(result.card,/changeNavDestination/);assert.doesNotMatch(result.card,/id="setStart"/);assert.equal(result.preserved,true);
+  if(action==='failure'){assert.equal(result.route,'confirmed');assert.equal(result.destination,'B');return}
+  assert.equal(result.label,'확인');assert.equal(result.screen,'route');assert.equal(result.history,'route');assert.equal(result.preview,false);
+  assert.deepEqual([...result.waypoints],action==='confirm'&&kind==='waypoint'?['C','NEW']:['C']);
+  assert.equal(result.destination,action==='confirm'&&kind==='destination'?'NEW':'B');
+  assert.equal(result.route,action==='confirm'?'preview':'confirmed');
+});
+
+test('place preview contract: cancellation and newer selection reject late successful and failed responses',async()=>{
+  for(const action of ['cancel','replace'])for(const failed of [false,true]){
+    const context=routeFlowTestContext();context.previewAction=action;context.previewFailed=failed;
+    const result=await vm.runInContext(`(async()=>{
+      openPlace(editorPoint('old',50),true);const old=beginNavigationRoutePreview('destination',state.selectedPlace);
+      if(previewAction==='cancel')$('#cancelRoutePreviewBtn').onclick();
+      else{openPlace(editorPoint('new',60),true);const latest=beginNavigationRoutePreview('destination',state.selectedPlace);editorRequests[1].resolve([editorRoute('latest')]);await latest;}
+      if(previewFailed)editorRequests[0].reject(Error('obsolete failure'));else editorRequests[0].resolve([editorRoute('obsolete')]);await old;
+      return{route:state.routes[0].id,destination:state.destination.id,preview:state.navigationRouteDraft?.destination.id||null,screen:state.screen,notices:editorNotices};
+    })()`,context);
+    assert.deepEqual(JSON.parse(JSON.stringify(result)),{route:action==='cancel'?'confirmed':'latest',destination:'B',preview:action==='cancel'?null:'new',screen:'route',notices:[]});
+  }
+});
+
+test('racing finish circle contract: outside misses outages and rejected samples never create a crossing',()=>{
+  for(const scenario of ['outside','gap','jump','rejected','round-outbound']){
+    const context=loadApp('',false,true);context.circleScenario=scenario;
+    const result=vm.runInContext(`(()=>{
+      const point=(x,y=0)=>({longitude:x/111195,latitude:y/111195}),route=[point(0),point(100)];
+      state.racingPhase='active';state.racingSession=Racing.createRaceSession({route,target:Racing.createTargetSpeedTarget(5)});
+      state.racingCourse={tripType:circleScenario==='round-outbound'?'round':'one-way',route,checkpointAlong:[100],checkpoints:[route.at(-1)]};
+      const fix=(x,y,t)=>({timestamp:t,position:{...point(x,y),accuracy:3},quality:{fresh:true,monotonic:true,plausiblePosition:true}}),motion={moving:true,acceptedMovingTime:1000,rawSpeed:5};
+      const lateral=circleScenario==='outside'?5.1:0;
+      advanceRacingCheckpoint({currentRouteProgress:80},fix(circleScenario==='jump'?-100:90,lateral,10000),motion);
+      const next=fix(110,lateral,circleScenario==='gap'?20000:11000);
+      if(circleScenario==='rejected')next.quality.fresh=false;
+      return advanceRacingCheckpoint({currentRouteProgress:80},next,motion);
+    })()`,context);
+    assert.equal(result,false,scenario);
+  }
+});
+
+test('racing finish circle contract: armed arrivals accept every direction and skipped circle segments',()=>{
+  for(const [x,y,prior] of [[-4,0,null],[4,0,null],[0,4,null],[0,-4,null],[8,0,[-8,0]],[0,8,[0,-8]]]){
+    const context=loadApp('',false,true);Object.assign(context,{circleX:x,circleY:y,circlePrior:prior});
+    const result=vm.runInContext(`(()=>{
+      const point=(x,y=0)=>({longitude:x/111195,latitude:y/111195}),route=[point(0),point(100)];
+      state.racingPhase='active';state.racingSession=Racing.createRaceSession({route,target:Racing.createTargetSpeedTarget(5)});
+      state.racingCourse={tripType:'one-way',route,checkpointAlong:[100],checkpoints:[route.at(-1)]};
+      const fix=(x,y,t)=>({timestamp:t,position:{...point(100+x,y),accuracy:3},quality:{fresh:true,monotonic:true,plausiblePosition:true}}),motion={moving:true,acceptedMovingTime:1000,rawSpeed:5};
+      if(circlePrior)advanceRacingCheckpoint({currentRouteProgress:80},fix(...circlePrior,10000),motion);
+      const arrived=advanceRacingCheckpoint({currentRouteProgress:80},fix(circleX,circleY,11000),motion);
+      return{arrived,crossing:state.racingSession.finalArrivalDetector.crossing};
+    })()`,context);
+    assert.equal(result.arrived,true,JSON.stringify([x,y,prior]));assert.ok(result.crossing);assert.equal(result.crossing.estimated,!!prior);
+  }
+});
+
 for(const mode of ['map','racing']){
   test(`flow consistency: ${mode} place dismiss preserves the exact route and its history entry`,()=>{
     const context=routeFlowTestContext(mode);
@@ -2714,14 +2782,14 @@ test('flow consistency: latest racing choice wins reversed responses and back du
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{newest:'newest',screen:'racing-route',restored:true,id:'newest',stage:'route-alternatives'});
 });
 
-test('flow consistency: route cancellation retires an active navigation preview subscription',async()=>{
+test('flow consistency: cancelling a preview preserves the active navigation subscription',async()=>{
   const context=loadApp();installNavigationFlowEnvironment(context);
   const result=await vm.runInContext(`(async()=>{
     openNavigationPlace({id:'new',name:'New',latitude:37.04,longitude:127.04});
     await $('#changeNavDestination').onclick();$('#cancelRoutePreviewBtn').onclick();
     return{screen:state.screen,watch:state.nav.watchId,recalculating:state.nav.recalculating,destination:state.destination};
   })()`,context);
-  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'map',watch:null,recalculating:false,destination:null});
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{screen:'navigation',watch:88,recalculating:false,destination:{id:'destination',name:'Destination',latitude:37.03,longitude:127.03}});
 });
 
 test('flow consistency: cancelled general origin lookup cannot restore endpoints or start a request',async()=>{
@@ -4030,7 +4098,7 @@ test('alternate-route Cancel restores active navigation without resetting GPS HU
   assert.equal(context.testWatchStarts,0);
 });
 
-test('navigation menu add-route preview cancel returns to the clean main map', async () => {
+test('navigation menu add-route preview cancel restores the confirmed navigation route', async () => {
   const context=loadApp();
   installNavigationFlowEnvironment(context);
   vm.runInContext(`
@@ -4051,7 +4119,7 @@ test('navigation menu add-route preview cancel returns to the clean main map', a
 
   const result=vm.runInContext(`({screen:state.screen,routes:state.routes.length,routeLines:state.routeLines.length,markers:state.routeEndpointMarkers.length,waypoints:state.waypoints.length,destination:state.destination,selectedRoute:state.selectedRoute,sameLiveLocation:state.currentLocation===testLiveLocation,draft:state.navigationRouteDraft})`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    screen:'map',routes:0,routeLines:0,markers:0,waypoints:0,destination:null,selectedRoute:null,sameLiveLocation:true,draft:null
+    screen:'navigation',routes:1,routeLines:1,markers:2,waypoints:1,destination:JSON.parse(JSON.stringify(vm.runInContext('testOriginalDestination',context))),selectedRoute:0,sameLiveLocation:true,draft:null
   });
   assert.equal(context.testWatchStarts,0);
 });
@@ -4085,7 +4153,7 @@ test('navigation search place uses the common selection entry point and adds a s
   assert.equal(context.testWatchStarts,0);
 });
 
-test('navigation search place preview cancel returns to the clean main map', async () => {
+test('navigation search place preview cancel restores the confirmed navigation route', async () => {
   const context=loadApp();
   installNavigationFlowEnvironment(context);
   context.testMarkerPlace={id:'marker-cancel',name:'Marker Cancel',category:'Cafe',address:'Road',latitude:37.016,longitude:127.016};
@@ -4101,7 +4169,7 @@ test('navigation search place preview cancel returns to the clean main map', asy
 
   const result=vm.runInContext(`({screen:state.screen,routes:state.routes.length,routeLines:state.routeLines.length,markers:state.routeEndpointMarkers.length,waypoints:state.waypoints.length,destination:state.destination,selectedRoute:state.selectedRoute,sameLive:state.currentLocation===testMarkerLive,draft:state.navigationRouteDraft})`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    screen:'map',routes:0,routeLines:0,markers:0,waypoints:0,destination:null,selectedRoute:null,sameLive:true,draft:null
+    screen:'navigation',routes:1,routeLines:1,markers:2,waypoints:1,destination:JSON.parse(JSON.stringify(vm.runInContext('testOriginalDestination',context))),selectedRoute:0,sameLive:true,draft:null
   });
   assert.equal(context.testWatchStarts,0);
 });
@@ -5422,7 +5490,7 @@ test('Racing accepts a continuous five-metre finish crossing when route progress
     observeRacingOffRoute(fix(130,12000),{moving:true},{offRouteDistance:30});
     return{first,armed,second,reached:state.racingReachedDestination,reroutes,radius:state.racingSession.finalArrivalGate.radiusM};
   })()`,context);
-    assert.deepEqual(JSON.parse(JSON.stringify(result)),{first:false,armed:true,second:true,reached:true,reroutes:0,radius:5},`GPS accuracy ${accuracy}m`);
+    assert.deepEqual(JSON.parse(JSON.stringify(result)),{first:true,armed:true,second:false,reached:true,reroutes:0,radius:5},`GPS accuracy ${accuracy}m`);
   }
 });
 
@@ -5462,7 +5530,7 @@ test('Racing finish arming resets when the active route changes', () => {
     state.racingCourse={source:'new',tripType:'one-way',route,checkpointAlong:[100],checkpoints:[route.at(-1)]};
     const fix=(x,time)=>({timestamp:time,position:{...point(x),accuracy:3},quality:{fresh:true,monotonic:true,plausiblePosition:true}});
     const movement={moving:true,acceptedMovingTime:1000};
-    advanceRacingCheckpoint({currentRouteProgress:80},fix(98,10000),movement);
+    advanceRacingCheckpoint({currentRouteProgress:80},fix(94,10000),movement);
     const before=state.racingSession.finalArrivalArmed;
     const newRoute=[point(0),point(200)];state.racingSession.route=newRoute;
     state.racingCourse={...state.racingCourse,route:newRoute,checkpointAlong:[200],checkpoints:[newRoute.at(-1)]};
@@ -5477,7 +5545,7 @@ test('Racing finish arming resets when the active route changes', () => {
 });
 
 test('Racing armed finish still requires confirmed movement, usable GPS and a continuous crossing', () => {
-  for(const scenario of ['stopped','reverse','bad-gps','long-gap','uncredited','absent']){
+  for(const scenario of ['stopped','bad-gps','long-gap','uncredited','absent']){
     const context=loadApp('',false,true);context.testScenario=scenario;
     const result=vm.runInContext(`(()=>{
       const point=x=>({latitude:0,longitude:x/111195}),route=[point(0),point(100)];
@@ -5485,10 +5553,10 @@ test('Racing armed finish still requires confirmed movement, usable GPS and a co
       state.racingCourse={source:'new',tripType:'one-way',route,checkpointAlong:[100],checkpoints:[route.at(-1)]};
       const fix=(x,time,good=true)=>({timestamp:time,position:{...point(x),accuracy:3},quality:{fresh:good,monotonic:true,plausiblePosition:true}});
       const progress={currentRouteProgress:80};
-      const approach=testScenario==='reverse'?103:98;
+      const approach=90;
       const moving={moving:true,acceptedMovingTime:1000};
       advanceRacingCheckpoint(progress,fix(approach,10000),moving);
-      const crossed=testScenario==='stopped'?98:testScenario==='reverse'?98:103;
+      const crossed=testScenario==='stopped'?98:108;
       const time=testScenario==='long-gap'?20000:11000;
       const secondMotion=testScenario==='stopped'?{moving:false,acceptedMovingTime:0}:testScenario==='uncredited'?{moving:true,acceptedMovingTime:0}:testScenario==='absent'?null:moving;
       const completed=advanceRacingCheckpoint(progress,fix(crossed,time,testScenario!=='bad-gps'),secondMotion);
@@ -6012,8 +6080,8 @@ test('Racing does not finish from stationary GPS jitter across an already armed 
     const startedAt=state.racingCapture.startedAt;
     const send=(elapsed,meters,speed=0)=>{testNow=startedAt+elapsed;emitNativePosition({timestamp:testNow,coords:{...racePoint(meters),accuracy:8,speed,heading:90}})};
     for(let meters=10;meters<=90;meters+=10)send(meters*200,meters,5);
-    send(19200,97,3);
-    for(let elapsed=20200;elapsed<=28200;elapsed+=1000)send(elapsed,98,0);
+    send(18800,94,3);
+    for(let elapsed=20200;elapsed<=28200;elapsed+=1000)send(elapsed,94,0);
     const armed=state.racingSession.finalArrivalArmed,stopped=!state.racingCapture.ride.motion.moving;
     const movingTimeBefore=state.racingCapture.ride.movingTime;
     for(const [elapsed,meters] of [[29200,99],[30200,102],[31200,98],[32200,101]])send(elapsed,meters,0);
@@ -6033,7 +6101,7 @@ test('Racing does not finish from zero-speed GPS jitter immediately after stoppi
     const startedAt=state.racingCapture.startedAt;
     const send=(elapsed,meters,speed)=>{testNow=startedAt+elapsed;emitNativePosition({timestamp:testNow,coords:{...racePoint(meters),accuracy:3,speed,heading:90}})};
     for(let meters=10;meters<=90;meters+=10)send(meters*200,meters,5);
-    send(19200,98,3);send(20200,102,0);
+    send(18800,94,3);send(20200,102,0);
     const last=state.racingCapture.ride.detailedSamples.at(-1);
     return{armed:state.racingSession.finalArrivalArmed,completed:state.racingReachedDestination,phase:state.racingPhase,
       lastSpeed:last.speed,lastMoving:last.moving,lastAcceptedMovingTime:last.acceptedMovingTime};
@@ -6052,7 +6120,7 @@ for (const scenario of [
   {name:'normal finish aligns crossing time, endpoint and saved Ghost samples',meters:102,completed:true},
   {name:'normal continuous finish with 8m GPS accuracy',meters:102,approachAccuracy:8,accuracy:8,completed:true},
   {name:'dense 1m fixes include uncredited distance at the finish',meters:101,step:1,completed:true},
-  {name:'stopping before the finish does not complete',meters:99,completed:false},
+  {name:'stopping outside the 5m finish circle does not complete',meters:94,completed:false},
   {name:'a parallel path outside the selected route does not complete',meters:102,lateral:6,completed:false},
   {name:'a stale finish fix does not complete',meters:102,receivedDelay:4000,completed:false},
   {name:'finish proximity without an approach does not complete',meters:102,omitApproach:true,completed:false},
@@ -6095,11 +6163,12 @@ for (const scenario of [
     }
     if(scenario.completed){
       assert.equal(result.phase,'completion-pending');
-      assert.ok(Math.abs(result.endedAt-20000)<1);assert.ok(Math.abs(result.elapsedTime-20000)<1);assert.ok(Math.abs(result.movingTime-20000)<1);
-      assert.ok(Math.abs(result.lastRecordedMeters-100)<.01);assert.ok(Math.abs(result.distance-100)<.02);
+      const endMeters=scenario.step?95:scenario.meters===108?95:scenario.meters,endTime=endMeters*200;
+      assert.ok(Math.abs(result.endedAt-endTime)<1,JSON.stringify(result));assert.ok(Math.abs(result.elapsedTime-endTime)<1);assert.ok(Math.abs(result.movingTime-endTime)<1);
+      assert.ok(Math.abs(result.lastRecordedMeters-endMeters)<.01);assert.ok(Math.abs(result.distance-endMeters)<.02);
       assert.equal(result.samplesWithinFinish,true);assert.equal(result.lastSampleTime,result.movingTime);
       assert.ok(Math.abs(result.ghostAt19Seconds-95)<.02);
-      assert.ok(Math.abs(result.ghostAtFinish-100)<.02);assert.ok(Math.abs(result.finalTimeDifference-1500)<1);
+      assert.ok(Math.abs(result.ghostAtFinish-Math.min(100,endMeters))<.02);assert.ok(Math.abs(result.finalTimeDifference-(21500-endTime))<1);
     }
   });
 }
@@ -6125,9 +6194,9 @@ test('Racing arrival audit: skipped turnaround and finish keep one coherent save
   assert.equal(result.completed,true,JSON.stringify(result));assert.equal(result.phase,'completion-pending');assert.equal(result.unchanged,true);
   assert.equal(result.turnCount,1);assert.equal(result.confirmedOnce,true);assert.equal(result.turnAt,20000);assert.equal(result.turnTime,20000);
   assert.ok(Math.abs(result.turnMeters-100)<.01);assert.ok(Math.abs(result.turnDistance-100)<.02);
-  assert.equal(result.elapsed,43200);assert.equal(result.movingTime,43200);assert.ok(Math.abs(result.distance-216)<.03);
-  assert.ok(Math.abs(result.end.longitude*111195)<.01);assert.equal(result.end.movingTime,result.movingTime);assert.equal(result.end.distance,result.distance);
-  assert.ok(Math.abs(result.ghostAtTurn-100)<.02);assert.ok(Math.abs(result.ghostAtFinish-216)<.03);assert.equal(result.bounded,true);
+  assert.equal(result.elapsed,42200);assert.equal(result.movingTime,42200);assert.ok(Math.abs(result.distance-211)<.03);
+  assert.ok(Math.abs(result.end.longitude*111195-5)<.01);assert.equal(result.end.movingTime,result.movingTime);assert.equal(result.end.distance,result.distance);
+  assert.ok(Math.abs(result.ghostAtTurn-100)<.02);assert.ok(Math.abs(result.ghostAtFinish-211)<.03);assert.equal(result.bounded,true);
 });
 
 test('Racing countdown waits for valid GPS, rejects expired cached GPS, and starts once at the shared position', () => {

@@ -36,6 +36,28 @@ test('route flows keep real browser history, visible actions, route pins and mod
       assert.equal(result.sameRoute,true);assert.equal(result.destination,'도착 B');assert.deepEqual(result.waypoints,['경유 C']);
       assert.match(result.fields,/출발 A/);assert.match(result.fields,/도착 B/);
     });
+    await t.test('map place previews require confirmation and cancel restores visible confirmed geometry',async()=>{
+      const result=await evaluate(`(async()=>{
+        const originalFetch=fetchRoutes,original=state.routes,points=state.waypoints.slice(),destination=state.destination;
+        const results=[];
+        for(const kind of ['waypoint','destination']){
+          openPlace(flowPoint('temporary',600),true);
+          let reply;fetchRoutes=(a,b,w)=>new Promise(resolve=>reply=()=>resolve([{...flowRaw(a,b),route:{coordinates:[[a.longitude,a.latitude],...w.map(p=>[p.longitude,p.latitude]),[b.longitude,b.latitude]]}}]));
+          const pending=document.getElementById(kind==='waypoint'?'addNavWaypoint':'changeNavDestination').onclick();
+          const preserved=state.routes.length===original.length&&state.routes.every((r,i)=>r===original[i])&&state.routeLines.some(l=>l.map===state.map);
+          reply();await pending;
+          results.push({preserved,label:document.getElementById('startNavBtn').textContent,confirm:flowVisible('startNavBtn'),cancel:flowVisible('cancelRoutePreviewBtn'),lines:state.routeLines.filter(l=>l.map===state.map).length,pins:state.routeEndpointMarkers.filter(p=>p.map===state.map).length});
+          document.getElementById('cancelRoutePreviewBtn').click();
+          if(state.routes.length!==original.length||state.routes.some((r,i)=>r!==original[i])||state.destination!==destination||state.waypoints.length!==points.length||state.waypoints.some((p,i)=>p!==points[i])){fetchRoutes=originalFetch;throw Error('preview cancel lost confirmed route');}
+        }
+        fetchRoutes=originalFetch;
+        openPlace(flowPoint('committed waypoint',600),true);await document.getElementById('addNavWaypoint').onclick();document.getElementById('startNavBtn').click();
+        const committed={screen:state.screen,history:history.state.screen,hash:location.hash,waypoints:state.waypoints.map(p=>p.id),label:document.getElementById('startNavBtn').textContent};
+        return{results,committed};
+      })()`);
+      assert.deepEqual(result.results,[{preserved:true,label:'확인',confirm:true,cancel:true,lines:1,pins:4},{preserved:true,label:'확인',confirm:true,cancel:true,lines:1,pins:3}]);
+      assert.deepEqual(result.committed,{screen:'route',history:'route',hash:'#route',waypoints:['경유 C','committed waypoint'],label:'안내 시작'});
+    });
     await t.test('general cancel rewinds the selection history and the next place has general map actions',async()=>{
       const result=await evaluate(`(async()=>{
         await flowBack(()=>document.getElementById('cancelRoutePreviewBtn').click());const root=flowSnapshot();
