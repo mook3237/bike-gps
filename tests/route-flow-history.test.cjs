@@ -25,12 +25,18 @@ test('route flows keep real browser history, visible actions, route pins and mod
 
     await t.test('general route address card pushes history and back restores the same route and pins',async()=>{
       const result=await evaluate(`(async()=>{
-        kakao.maps.services.Geocoder=class{coord2Address(x,y,callback){callback([{address:{address_name:'다른 장소'}}],'OK')}};
-        const length=history.length;openMapAddress(new kakao.maps.LatLng(37.003,127));
+        let addressResponse,calculations=0;const originalFetch=fetchRoutes;
+        fetchRoutes=(...args)=>{calculations++;return originalFetch(...args)};
+        kakao.maps.services.Geocoder=class{coord2Address(x,y,callback){addressResponse=()=>callback([{address:{address_name:'다른 장소'}}],'OK')}};
+        const length=history.length;await handleMapClick({point:{x:10,y:10},latLng:new kakao.maps.LatLng(37.003,127)});
+        const pin=mapInspectionPin,immediate={visible:pin?.map===state.map,latitude:pin?.position.getLat(),longitude:pin?.position.getLng(),anchor:pin?.yAnchor,screen:state.screen,calculations};
+        addressResponse();
         const card={change:flowVisible('changeNavDestination'),add:flowVisible('addNavWaypoint'),start:flowVisible('setStart'),pushed:history.length===length+1,pinsUnchanged:flowOriginal.pins.every((p,i)=>state.routeEndpointMarkers[i]===p&&p.map===state.map)};
         await flowBack(()=>history.back());
-        return{card,...flowSnapshot(),sameRoute:state.routes===flowOriginal.routes,fields:document.getElementById('routeSelectionFields').textContent};
+        fetchRoutes=originalFetch;
+        return{immediate,pinRemoved:pin.map===null,card,...flowSnapshot(),sameRoute:state.routes===flowOriginal.routes,fields:document.getElementById('routeSelectionFields').textContent};
       })()`);
+      assert.deepEqual(result.immediate,{visible:true,latitude:37.003,longitude:127,anchor:1,screen:'route',calculations:0});assert.equal(result.pinRemoved,true);
       assert.deepEqual(result.card,{change:true,add:true,start:false,pushed:true,pinsUnchanged:true});
       assert.equal(result.screen,'route');assert.equal(result.history,'route');assert.equal(result.hash,'#route');
       assert.equal(result.sameRoute,true);assert.equal(result.destination,'도착 B');assert.deepEqual(result.waypoints,['경유 C']);

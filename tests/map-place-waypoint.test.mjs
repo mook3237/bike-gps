@@ -3059,6 +3059,69 @@ test('waypoint address callback shows the selected pin immediately and auto-comm
   }
 });
 
+test('map inspection pin appears at the tapped coordinate before address lookup without calculating a route',async()=>{
+  const context=routeEditorAddressContext();
+  const result=await vm.runInContext(`(async()=>{
+    let requests=0;fetchRoutes=()=>{requests++;throw Error('inspection must not calculate')};
+    const routes=state.routes,line=state.routeLines[0],destination=addressDestinationPin();
+    await handleMapClick({point:{x:10,y:10},latLng:new kakao.maps.LatLng(37.005,127.005)});
+    const pin=mapInspectionPin;
+    const before={pin:pin?.position||null,anchor:pin?.yAnchor,requests,screen:state.screen,sameRoute:state.routes===routes,sameLine:state.routeLines[0]===line,sameDestination:addressDestinationPin()===destination};
+    addressReply();
+    const card={position:state.selectedPlace,buttons:ui.sheetContent.innerHTML,pinAttached:pin.map===state.map};
+    handlePopState({state:{screen:'route'}});
+    return{before,card,after:{screen:state.screen,pinRemoved:pin.map===null,sameRoute:state.routes===routes,destination:state.destination.id,requests}};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.before)),{pin:{latitude:37.005,longitude:127.005},anchor:1,requests:0,screen:'route',sameRoute:true,sameLine:true,sameDestination:true});
+  assert.equal(result.card.position.latitude,37.005);assert.equal(result.card.position.longitude,127.005);assert.equal(result.card.pinAttached,true);
+  assert.match(result.card.buttons,/changeNavDestination/);assert.match(result.card.buttons,/addNavWaypoint/);assert.doesNotMatch(result.card.buttons,/id="setStart"/);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.after)),{screen:'route',pinRemoved:true,sameRoute:true,destination:'B',requests:0});
+});
+
+test('map inspection pin replaces previous taps and ignores stale address responses and lookup failure',async()=>{
+  const context=routeEditorAddressContext();
+  const result=await vm.runInContext(`(async()=>{
+    await handleMapClick({point:{x:10,y:10},latLng:new kakao.maps.LatLng(37.005,127.005)});const first=mapInspectionPin,old=addressReply;
+    await handleMapClick({point:{x:20,y:20},latLng:new kakao.maps.LatLng(37.006,127.006)});const second=mapInspectionPin;
+    old();const staleIgnored=state.screen==='route'&&mapInspectionPin===second&&first.map===null;
+    addressReply();const selected=state.selectedPlace.latitude;
+    handlePopState({state:{screen:'route'}});
+    kakao.maps.services.Geocoder=class{coord2Address(x,y,callback){addressFailure=()=>callback([],'ZERO_RESULT')}};
+    await handleMapClick({point:{x:30,y:30},latLng:new kakao.maps.LatLng(37.007,127.007)});const failedPin=mapInspectionPin;addressFailure();
+    return{staleIgnored,selected,secondRemoved:second.map===null,failureRemoved:failedPin.map===null,pin:mapInspectionPin,screen:state.screen,destination:state.destination.id};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{staleIgnored:true,selected:37.006,secondRemoved:true,failureRemoved:true,pin:null,screen:'route',destination:'B'});
+});
+
+test('map inspection pin in active navigation leaves confirmed route and watcher intact and clears on back',async()=>{
+  const context=loadApp();installNavigationFlowEnvironment(context);
+  const result=await vm.runInContext(`(async()=>{
+    kakao.maps.services={Status:{OK:'OK'},Geocoder:class{coord2Address(x,y,callback){inspectionReply=()=>callback([{address:{address_name:'터치한 주소'}}],'OK')}}};
+    kakao.maps.LatLng.prototype.getLat=function(){return this.latitude};kakao.maps.LatLng.prototype.getLng=function(){return this.longitude};
+    let requests=0;fetchRoutes=async()=>{requests++;return[]};
+    const routes=state.routes,destination=state.destination,waypoints=state.waypoints,watch=state.nav.watchId;
+    await handleMapClick({point:{x:10,y:10},latLng:new kakao.maps.LatLng(37.005,127.005)});
+    const pin=mapInspectionPin,immediate=pin?.map===state.map;inspectionReply();
+    const buttons=ui.sheetContent.innerHTML;
+    history.back();
+    return{immediate,buttons,screen:state.screen,removed:pin.map===null,requests,sameRoutes:state.routes===routes,sameDestination:state.destination===destination,sameWaypoints:state.waypoints===waypoints,sameWatch:state.nav.watchId===watch};
+  })()`,context);
+  assert.match(result.buttons,/changeNavDestination/);assert.match(result.buttons,/addNavWaypoint/);
+  assert.deepEqual({...result,buttons:undefined},{immediate:true,buttons:undefined,screen:'navigation',removed:true,requests:0,sameRoutes:true,sameDestination:true,sameWaypoints:true,sameWatch:true});
+});
+
+test('map inspection pin survives a superseded pending route preview response',async()=>{
+  const context=routeFlowTestContext();
+  const result=await vm.runInContext(`(async()=>{
+    kakao.maps.services.Geocoder=class{coord2Address(x,y,callback){inspectionReply=()=>callback([{address:{address_name:'새 터치 위치'}}],'OK')}};
+    openPlace(editorPoint('old',50),true);const pending=beginNavigationRoutePreview('destination',state.selectedPlace);
+    await handleMapClick({point:{x:10,y:10},latLng:new kakao.maps.LatLng(37.005,127.005)});
+    const pin=mapInspectionPin;editorRequests[0].resolve([editorRoute('obsolete')]);await pending;inspectionReply();
+    return{route:state.routes[0].id,pinAttached:pin.map===state.map,selected:state.selectedPlace.latitude,screen:state.screen,draft:state.navigationRouteDraft};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{route:'confirmed',pinAttached:true,selected:37.005,screen:'navigation-place',draft:null});
+});
+
 test('route address callback preserves confirmed destination pins while inspecting another place',()=>{
   for(const actionContext of ['initial','post-initial']){
     const context=routeEditorAddressContext();context.addressActionContext=actionContext;
