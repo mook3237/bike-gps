@@ -261,8 +261,8 @@ test('settings and photo UI use existing menu/profile surfaces', () => {
   assert.match(html, /id="profilePhotoInput"[^>]*accept="image\/\*"/);
   assert.match(html, /id="appSettingsScreen"/);
   assert.match(html, /data-setting="distanceUnit"/);
-  assert.match(html, /주행 중 화면 항상 켜기/);
-  assert.match(html, /배터리 절약이 필요하면 끌 수 있습니다\./);
+  assert.match(html, /주행 중 화면 끄기/);
+  assert.match(html, /켜면 화면 꺼짐 방지를 해제합니다\./);
   assert.match(app, /function openProfileSelection\(\)[\s\S]*?profileController\.returnToSelection\(\)/);
   assert.match(app, /mainMenuProfile'\)\.onclick=openProfileSelection/);
   assert.match(app, /data-menu-item="app-settings"/);

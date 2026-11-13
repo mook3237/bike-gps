@@ -59,21 +59,24 @@ test('wake lock default policy uses real setting handlers and preserves opt-out 
     profileSession={getSelectedProfileId:()=>selected};selected=first;
     wakeLockController=RideMateSettings.createWakeLockController({navigator:{wakeLock:{request:async()=>{requests++;return{addEventListener(){},release:async()=>{releases++}}}}},document:{visibilityState:'visible',addEventListener(){}}});
     const settle=async()=>{await Promise.resolve();await Promise.resolve()};
+    const wakeControl={type:'checkbox',dataset:{setting:'keepScreenAwake'}},shortControl={type:'checkbox',dataset:{setting:'saveShortRides'}},queryAll=document.querySelectorAll.bind(document);
+    document.querySelectorAll=selector=>selector==='[data-setting]'?[wakeControl,shortControl]:queryAll(selector);
     showMapScreen();await settle();
-    const initial={enabled:activeSettings().keepScreenAwake,active:wakeLockController.isActive(),requests};
-    const disabling=updateAppSetting({type:'checkbox',checked:false,dataset:{setting:'keepScreenAwake'}});
+    renderAppSettings();const initial={enabled:activeSettings().keepScreenAwake,active:wakeLockController.isActive(),requests,checked:wakeControl.checked,other:shortControl.checked};
+    const disabling=updateAppSetting({type:'checkbox',checked:true,dataset:{setting:'keepScreenAwake'}});
     const immediateRelease=releases===1&&!wakeLockController.isActive();await disabling;
     profileRepository=makeRepository();profileRepository.initialize();showMapScreen();await settle();
-    const reconnect={enabled:activeSettings().keepScreenAwake,requests};
+    renderAppSettings();const reconnect={enabled:activeSettings().keepScreenAwake,requests,checked:wakeControl.checked};
     showProfileScreen();selected=second;showMapScreen();await settle();
     showProfileScreen();selected=first;showMapScreen();await settle();
-    const switched={enabled:activeSettings().keepScreenAwake,active:wakeLockController.isActive(),requests};
-    await updateAppSetting({type:'checkbox',checked:true,dataset:{setting:'keepScreenAwake'}});
-    return{initial,immediateRelease,reconnect,switched,reenabled:{enabled:activeSettings().keepScreenAwake,active:wakeLockController.isActive(),requests}};
+    renderAppSettings();const switched={enabled:activeSettings().keepScreenAwake,active:wakeLockController.isActive(),requests,checked:wakeControl.checked};
+    await updateAppSetting({type:'checkbox',checked:false,dataset:{setting:'keepScreenAwake'}});
+    await updateAppSetting({type:'checkbox',checked:true,dataset:{setting:'saveShortRides'}});renderAppSettings();
+    return{initial,immediateRelease,reconnect,switched,reenabled:{enabled:activeSettings().keepScreenAwake,active:wakeLockController.isActive(),requests,checked:wakeControl.checked,other:shortControl.checked}};
   })()`,context);
   assert.deepEqual(JSON.parse(JSON.stringify(result)),{
-    initial:{enabled:true,active:true,requests:1},immediateRelease:true,
-    reconnect:{enabled:false,requests:1},switched:{enabled:false,active:false,requests:2},reenabled:{enabled:true,active:true,requests:3},
+    initial:{enabled:true,active:true,requests:1,checked:false,other:false},immediateRelease:true,
+    reconnect:{enabled:false,requests:1,checked:true},switched:{enabled:false,active:false,requests:2,checked:true},reenabled:{enabled:true,active:true,requests:3,checked:false,other:true},
   });
 });
 
