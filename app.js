@@ -15,6 +15,8 @@ let pendingRideSaveInFlight=false;
 let racingTargetFrame=null,racingTargetVisual=null,racingTargetCameraPending=false;
 const racingRouteDrawCache=new WeakMap();
 let recordRouteMap=null,recordRouteLine=null,recordRouteMarkers=[],recordRouteBounds=null,recordDetailSelection=null,recordListScrollTop=0,recordListKind='riding';
+let recordMutationInFlight=null;
+let recordActionDialogState=null;
 let mainMenuHistoryClosing=false,myPlacesHistoryClosing=false,settingsHistoryClosing=false,recordsHistoryClosing=false,ridingMenuHistoryClosing=false,ridingMenuAfterClose=null,myPlacesBaseScreen='map',settingsBaseScreen='map',recordsBaseScreen='map',myPlaceSelection=null,pendingFavoriteEdit=null,favoriteSequence=0,searchLandingMode='recent';
 const PROFILE_AVATARS={rider:'🚴',bike:'🚲',helmet:'⛑️',leaf:'🌿'};
 const profilePhotoUrls=new Set();
@@ -982,23 +984,61 @@ function setRecordDetailTab(tab){
   recordDetailSelection.tab=tab;
   for(const name of ['summary','splits']){const active=name===tab;$('#recordTab'+name).setAttribute('aria-selected',String(active));$('#recordPanel'+name).classList.toggle('hidden',!active)}
 }
-function renderRecordDetail(record,racing=false){
+function renderRecordDetail(record,racing=false,target=null){
+  closeRecordActionDialog();
   const detail=$('#recordDetail');
-  if(!record){renderRecordRouteMap(null);recordDetailSelection=null;detail.classList.add('hidden');detail.innerHTML='';$('#recordsList').classList.remove('hidden');$('#recordsTitle').textContent=recordListKind==='racing'?'레이싱 기록':'라이딩 기록';$('#recordsScreen').scrollTop=recordListScrollTop;return false}
-  recordDetailSelection={record,racing,tab:'summary',scrollTop:0};
+  if(!record){renderRecordRouteMap(null);recordDetailSelection=null;$('#recordDeleteBtn').classList.add('hidden');detail.classList.add('hidden');detail.innerHTML='';$('#recordsList').classList.remove('hidden');$('#recordsTitle').textContent=recordListKind==='racing'?'레이싱 기록':'라이딩 기록';$('#recordsScreen').scrollTop=recordListScrollTop;return false}
+  const owner=activeProfileId;
+  recordDetailSelection={record,racing,tab:'summary',scrollTop:0,owner,target:target||profileRepository?.recordTarget?.(owner,racing?'racing':'rides',record)};
   const valid=value=>Number.isFinite(value)&&value>=0,average=record.averageMovingSpeed??record.averageSpeed;
   const pace=Number.isFinite(record.averageMovingPace)&&record.averageMovingPace>0?record.averageMovingPace:valid(record.distance)&&record.distance>0&&valid(record.movingTime)&&record.movingTime>0?record.movingTime/record.distance:null;
   const values=[['총거리',recordDisplayDistance(record.distance)],['이동 시간',recordDisplayDuration(record.movingTime)],['평균 속도',recordDisplaySpeed(average)],['최고 속도',recordDisplaySpeed(record.maxSpeed)],['평균 페이스',pace==null?'—':formatRidingPace(pace)]];
   const date=new Date(record.endedAt||record.startedAt),dateText=Number.isFinite(date.getTime())?date.toLocaleString('ko-KR'):'날짜 없음';
   const comparison=racing?`<p class="record-comparison">${record.completed===false?'미완주':'완주'}${Number.isFinite(record.finalDistanceDifference)?` · ${esc(racingComparisonText({distanceDifference:record.finalDistanceDifference,timeDifference:record.finalTimeDifference},'distance').text)}`:''}${Number.isFinite(record.finalTimeDifference)?` · ${esc(racingComparisonText({distanceDifference:record.finalDistanceDifference,timeDifference:record.finalTimeDifference},'time').text)}`:''}</p>`:'';
-  detail.innerHTML=`<div class="record-meta"><span class="record-kind">${racing?'레이싱':'일반 라이딩'}</span><span>${esc(dateText)}</span></div><h2>${esc(record.name||'주행 기록')}</h2><div class="record-detail-stats">${values.map(([label,value])=>`<div><small>${label}</small><b>${esc(value)}</b></div>`).join('')}</div>${comparison}<div class="record-tabs" role="tablist" aria-label="기록 상세"><button id="recordTabsummary" type="button" role="tab" aria-controls="recordPanelsummary" aria-selected="true">기록 요약</button><button id="recordTabsplits" type="button" role="tab" aria-controls="recordPanelsplits" aria-selected="false">구간 분석(1km)</button></div><section id="recordPanelsummary" role="tabpanel" aria-labelledby="recordTabsummary"><dl class="record-summary-list">${values.map(([label,value])=>`<div><dt>${label}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl></section><section id="recordPanelsplits" class="hidden" role="tabpanel" aria-labelledby="recordTabsplits">${recordSplitTable(record)}</section>`;
+  detail.innerHTML=`<div class="record-meta"><span class="record-kind">${racing?'레이싱':'일반 라이딩'}</span><span>${esc(dateText)}</span></div><div class="record-name-row"><h2 id="recordName">${esc(record.name||'주행 기록')}</h2><button id="recordRenameBtn" class="record-action" type="button" aria-label="기록 이름 변경">이름 변경</button></div>${racing?'<p class="record-note">레이싱 기록 삭제는 최고 기록·Ghost 삭제 정책이 정해진 뒤 지원합니다.</p>':!recordDetailSelection.target?'<p class="record-note">안전하게 식별할 수 없는 기록은 이름 변경과 삭제를 지원하지 않습니다.</p>':''}<div class="record-detail-stats">${values.map(([label,value])=>`<div><small>${label}</small><b>${esc(value)}</b></div>`).join('')}</div>${comparison}<div class="record-tabs" role="tablist" aria-label="기록 상세"><button id="recordTabsummary" type="button" role="tab" aria-controls="recordPanelsummary" aria-selected="true">기록 요약</button><button id="recordTabsplits" type="button" role="tab" aria-controls="recordPanelsplits" aria-selected="false">구간 분석(1km)</button></div><section id="recordPanelsummary" role="tabpanel" aria-labelledby="recordTabsummary"><dl class="record-summary-list">${values.map(([label,value])=>`<div><dt>${label}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl></section><section id="recordPanelsplits" class="hidden" role="tabpanel" aria-labelledby="recordTabsplits">${recordSplitTable(record)}</section>`;
   detail.classList.remove('hidden');$('#recordsList').classList.add('hidden');$('#recordsTitle').textContent='기록 상세';$('#recordsScreen').scrollTop=0;
   $('#recordTabsummary').onclick=()=>setRecordDetailTab('summary');$('#recordTabsplits').onclick=()=>setRecordDetailTab('splits');
+  $('#recordName').classList.toggle('record-name-legacy',RideMateProfiles.recordNameLength(record.name||'주행 기록')>13);
+  $('#recordRenameBtn').onclick=renameSelectedRecord;$('#recordDeleteBtn').onclick=deleteSelectedRecord;
+  $('#recordDeleteBtn').classList.remove('hidden');syncRecordMutationControls();
   renderRecordRouteMap(record);return true;
 }
-function openRecordDetail(record,racing){recordListScrollTop=$('#recordsScreen').scrollTop;if(!history.state?.recordDetail)history.pushState({...history.state,recordDetail:true},'');renderRecordDetail(record,racing)}
+function syncRecordMutationControls(){const selection=recordDetailSelection;if(!selection)return;$('#recordRenameBtn').disabled=!!recordMutationInFlight||!selection.target;$('#recordDeleteBtn').disabled=!!recordMutationInFlight||!selection.target||selection.racing;$('#recordDeleteBtn').title=selection.racing?'레이싱 기록 삭제 정책이 정해지지 않았습니다.':''}
+
+function recordNameError(value){if(!value.trim())return '기록 이름을 입력해주세요.';const length=RideMateProfiles.recordNameLength(value);if(length===null)return '이 브라우저는 글자 묶음 계산을 지원하지 않습니다.';return length>13||/[\r\n\t]/.test(value)?'기록 이름은 공백 포함 최대 13자로 입력해주세요.':''}
+function closeRecordActionDialog(){recordActionDialogState=null;$('#recordActionDialog').classList.add('hidden');$('#recordActionDialog').setAttribute('aria-hidden','true')}
+function openRecordActionDialog(remove=false){
+  const selection=recordDetailSelection;if(!selection?.target||selection.owner!==activeProfileId||recordMutationInFlight||recordActionDialogState||remove&&selection.racing)return false;
+  recordActionDialogState={selection,repository:profileRepository,remove,lastValue:selection.record.name||'주행 기록'};
+  $('#recordActionTitle').textContent=remove?'주행 기록 삭제':'기록 이름 변경';$('#recordActionDescription').textContent=remove?'이 주행 기록을 삭제할까요? 삭제한 기록은 복구할 수 없습니다.':'공백을 포함해 최대 13자로 입력해주세요.';
+  $('#recordNameField').classList.toggle('hidden',remove);$('#recordNameHint').classList.toggle('hidden',remove);$('#recordNameInput').value=recordActionDialogState.lastValue;
+  $('#recordNameHint').textContent='최대 13자 · 공백 포함, 이모지는 보이는 한 묶음을 1자로 계산합니다.';
+  $('#recordActionError').textContent='';$('#recordActionSubmit').textContent=remove?'삭제':'저장';$('#recordActionSubmit').disabled=!remove&&!!recordNameError($('#recordNameInput').value);$('#recordActionCancel').disabled=false;
+  $('#recordActionDialog').classList.remove('hidden');$('#recordActionDialog').setAttribute('aria-hidden','false');(remove?$('#recordActionCancel'):$('#recordNameInput')).focus();return true;
+}
+function recordNameBeforeInput(event){if(!recordActionDialogState||event.isComposing||!event.data)return;const input=$('#recordNameInput'),candidate=input.value.slice(0,input.selectionStart)+event.data+input.value.slice(input.selectionEnd);const error=recordNameError(candidate);if(error){event.preventDefault();$('#recordActionError').textContent=error}}
+function recordNameInputChanged(event){const dialog=recordActionDialogState;if(!dialog||event?.isComposing)return;const input=$('#recordNameInput'),error=recordNameError(input.value);if(error&&input.value.length&&RideMateProfiles.recordNameLength(input.value)>=RideMateProfiles.recordNameLength(dialog.lastValue))input.value=dialog.lastValue;else dialog.lastValue=input.value;$('#recordActionError').textContent=error;$('#recordActionSubmit').disabled=!!recordNameError(input.value)}
+async function submitRecordAction(event){event?.preventDefault();const dialog=recordActionDialogState;if(!dialog||recordMutationInFlight)return false;if(recordDetailSelection!==dialog.selection||activeProfileId!==dialog.selection.owner){closeRecordActionDialog();return false}const name=dialog.remove?null:$('#recordNameInput').value,error=dialog.remove?'':recordNameError(name);if(error){$('#recordActionError').textContent=error;return false}$('#recordActionSubmit').disabled=true;$('#recordActionCancel').disabled=true;const result=await mutateSelectedRecord(dialog.selection,dialog.repository,dialog.remove,name);if(recordActionDialogState===dialog){if(result)closeRecordActionDialog();else{$('#recordActionSubmit').disabled=false;$('#recordActionCancel').disabled=false}}return result}
+async function mutateSelectedRecord(selection,repository,remove,name){
+  if(!selection?.target||selection.owner!==activeProfileId||recordMutationInFlight||remove&&selection.racing)return false;
+  const operation={selection};recordMutationInFlight=operation;syncRecordMutationControls();
+  const current=()=>recordDetailSelection===selection&&activeProfileId===selection.owner&&!$('#recordsScreen').classList.contains('hidden');
+  try{
+    const saved=await repository.changeRecord(selection.target,name);ridingStoredStatsCache=null;
+    if(!current())return true;
+    const tab=selection.tab,scroll=$('#recordsScreen').scrollTop;
+    renderRecords(selection.racing?'racing':'riding');
+    if(remove){if(history.state?.recordDetail){recordsHistoryClosing=true;history.back()}}
+    else{renderRecordDetail(saved,selection.racing,{...selection.target,expected:JSON.stringify(saved)});setRecordDetailTab(tab);$('#recordsScreen').scrollTop=scroll}
+    return true;
+  }catch(error){if(current()){$('#recordActionError').textContent=error.message||'기록 변경을 저장하지 못했습니다.';toast(error.message||'기록 변경을 저장하지 못했습니다.')}return false}
+  finally{if(recordMutationInFlight===operation)recordMutationInFlight=null;syncRecordMutationControls()}
+}
+function renameSelectedRecord(){return openRecordActionDialog(false)}
+function deleteSelectedRecord(){return openRecordActionDialog(true)}
+function openRecordDetail(record,racing,target=null){recordListScrollTop=$('#recordsScreen').scrollTop;if(!history.state?.recordDetail)history.pushState({...history.state,recordDetail:true},'');renderRecordDetail(record,racing,target)}
 function backFromRecords(){if(recordDetailSelection){if(history.state?.recordDetail)history.back();else renderRecordDetail(null);return}closeRecordsScreen()}
-function renderRecords(kind){recordListKind=kind;const racing=kind==='racing',records=racing?readStoredRacing():readStoredRides();$('#recordsTitle').textContent=racing?'레이싱 기록':'라이딩 기록';renderRecordDetail(null);$('#recordsList').innerHTML=records.map((record,index)=>{const date=new Date(record.endedAt||record.startedAt),dateText=Number.isFinite(date.getTime())?date.toLocaleString('ko-KR'):'날짜 없음',duration=formatRidingDuration(record.elapsedTime??record.duration??0),challenge=racing?`<button class="record-challenge-btn" type="button" data-racing-challenge="${index}">이 기록으로 레이싱</button>`:'';return`<article class="favorite-item"><button class="record-open-btn" type="button" data-record-detail="${index}"><strong>${esc(record.name||dateText)}</strong><span>${esc(fmtKm(record.distance||0))} · ${esc(duration)}</span></button>${challenge}</article>`}).join('')||`<p class="my-places-empty">저장된 ${racing?'레이싱':'라이딩'} 기록이 없습니다.</p>`;$('#recordsList').querySelectorAll('[data-record-detail]').forEach(button=>button.onclick=()=>openRecordDetail(records[+button.dataset.recordDetail],racing));if(racing)$('#recordsList').querySelectorAll('[data-racing-challenge]').forEach(button=>button.onclick=()=>challengeRacingRecord(+button.dataset.racingChallenge))}
+function renderRecords(kind){recordListKind=kind;const racing=kind==='racing',entries=profileRepository?.recordDetails?.(activeProfileId,racing?'racing':'rides'),records=entries?entries.map(entry=>entry.record):racing?readStoredRacing():readStoredRides();$('#recordsTitle').textContent=racing?'레이싱 기록':'라이딩 기록';renderRecordDetail(null);$('#recordsList').innerHTML=records.map((record,index)=>{const date=new Date(record.endedAt||record.startedAt),dateText=Number.isFinite(date.getTime())?date.toLocaleString('ko-KR'):'날짜 없음',duration=formatRidingDuration(record.elapsedTime??record.duration??0),challenge=racing?`<button class="record-challenge-btn" type="button" data-racing-challenge="${index}">이 기록으로 레이싱</button>`:'';return`<article class="favorite-item"><button class="record-open-btn" type="button" data-record-detail="${index}"><strong>${esc(record.name||dateText)}</strong><span>${esc(fmtKm(record.distance||0))} · ${esc(duration)}</span></button>${challenge}</article>`}).join('')||`<p class="my-places-empty">저장된 ${racing?'레이싱':'라이딩'} 기록이 없습니다.</p>`;$('#recordsList').querySelectorAll('[data-record-detail]').forEach(button=>button.onclick=()=>openRecordDetail(records[+button.dataset.recordDetail],racing,entries?.[+button.dataset.recordDetail]?.target));if(racing)$('#recordsList').querySelectorAll('[data-racing-challenge]').forEach(button=>button.onclick=()=>challengeRacingRecord(+button.dataset.racingChallenge))}
 function openRecordsScreen(kind){recordsBaseScreen=state.screen;closeMainMenu(true);renderRecords(kind);const screen=$('#recordsScreen');screen.classList.remove('hidden');screen.setAttribute('aria-hidden','false');history.replaceState({...history.state,screen:recordsBaseScreen,mainMenu:false,records:kind},'',`#${kind}-records`)}
 function closeRecordsScreen(fromHistory=false){const screen=$('#recordsScreen');if(screen.classList.contains('hidden'))return;renderRecordDetail(null);screen.classList.add('hidden');screen.setAttribute('aria-hidden','true');if(!fromHistory&&history.state?.records){recordsHistoryClosing=true;history.back()}}
 function renderAppSettings(){const settings=activeSettings();$$('[data-setting]').forEach(control=>{const key=control.dataset.setting;if(control.type==='checkbox')control.checked=settings[key]===true;else control.value=settings[key]});const summary=$('#voiceVolumeSummary');if(summary)summary.textContent=`현재 음량: ${settings.voiceVolumePercent}%`}
@@ -1126,6 +1166,13 @@ $('#myPlacesBack').onclick=()=>closeMyPlaces();
 $('#addFavoriteBtn').onclick=()=>startMyPlaceSelection('favorite-new');
 $('#favoriteEditorForm').onsubmit=saveFavoriteName;
 $('#favoriteEditorCancel').onclick=closeFavoriteEditor;
+$('#recordActionForm').onsubmit=submitRecordAction;
+$('#recordActionCancel').onclick=()=>{if(!recordMutationInFlight)closeRecordActionDialog()};
+$('#recordNameInput').addEventListener('beforeinput',recordNameBeforeInput);
+$('#recordNameInput').addEventListener('input',recordNameInputChanged);
+$('#recordNameInput').addEventListener('compositionend',recordNameInputChanged);
+$('#recordNameInput').addEventListener('paste',event=>recordNameBeforeInput({data:event.clipboardData?.getData('text')||'',preventDefault:()=>event.preventDefault()}));
+$('#recordActionDialog').addEventListener('keydown',event=>{if(event.key==='Escape'&&!recordMutationInFlight){event.preventDefault();closeRecordActionDialog()}});
 $('#ridingBoardTabBtn').onclick=()=>renderScreen('riding-board');
 $('#racingTabBtn').onclick=resumeRacingScreen;
 $('#mapTabBtn').onclick=()=>{discardRouteFlow('map');};

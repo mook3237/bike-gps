@@ -62,7 +62,7 @@ test('settings are validated and remain isolated per profile', () => {
   const second = repo.addProfile('둘째');
 
   assert.deepEqual(repo.readSettings('profile-a'), {
-    distanceUnit: 'km', keepScreenAwake: false, saveShortRides: false, clockFormat: 'device', voiceVolumePercent: 100,
+    distanceUnit: 'km', keepScreenAwake: true, saveShortRides: false, clockFormat: 'device', voiceVolumePercent: 100,
   });
   repo.updateSettings('profile-a', { distanceUnit: 'mi', keepScreenAwake: true, clockFormat: '24h', voiceVolumePercent: 25 });
   repo.updateSettings(second.id, { distanceUnit: 'invalid', saveShortRides: true, clockFormat: 'invalid', voiceVolumePercent: 101 });
@@ -71,8 +71,39 @@ test('settings are validated and remain isolated per profile', () => {
     distanceUnit: 'mi', keepScreenAwake: true, saveShortRides: false, clockFormat: '24h', voiceVolumePercent: 25,
   });
   assert.deepEqual(repo.readSettings(second.id), {
-    distanceUnit: 'km', keepScreenAwake: false, saveShortRides: true, clockFormat: 'device', voiceVolumePercent: 100,
+    distanceUnit: 'km', keepScreenAwake: true, saveShortRides: true, clockFormat: 'device', voiceVolumePercent: 100,
   });
+});
+
+test('existing profiles enable wake lock once and preserve later opt-outs after reload and profile switches', () => {
+  const storage = memoryStorage(), key = 'ridemate_profile_store_v1';
+  const old = {
+    schemaVersion: 1,
+    profiles: [{ id: 'a' }, { id: 'b' }],
+    dataByProfileId: {
+      a: { settings: { keepScreenAwake: false, distanceUnit: 'mi' }, rides: [{ id: 'saved' }] },
+      b: { settings: {} },
+    },
+    migration: { legacyV1: { completed: true } },
+  };
+  storage.setItem(key, JSON.stringify(old));
+  const repo = createProfileRepository(storage);
+  repo.initialize();
+  assert.equal(repo.readSettings('a').keepScreenAwake, true);
+  assert.equal(repo.readSettings('b').keepScreenAwake, true);
+  const migrated = JSON.parse(storage.getItem(key));
+  assert.equal(migrated.migration.wakeLockDefaultOnV1.completed, true);
+  assert.deepEqual(migrated.migration.legacyV1, old.migration.legacyV1);
+  assert.deepEqual(migrated.dataByProfileId.a.rides, old.dataByProfileId.a.rides);
+  assert.equal(repo.readSettings('a').distanceUnit, 'mi');
+  repo.updateSettings('a', { keepScreenAwake: false });
+  const reconnected = createProfileRepository(storage);
+  reconnected.initialize();
+  const beforeReads = storage.getItem(key);
+  assert.equal(reconnected.readSettings('a').keepScreenAwake, false);
+  assert.equal(reconnected.readSettings('b').keepScreenAwake, true);
+  assert.equal(reconnected.readSettings('a').keepScreenAwake, false);
+  assert.equal(storage.getItem(key), beforeReads);
 });
 
 test('voice volume accepts zero through one hundred and rejects malformed stored values', () => {
@@ -230,6 +261,8 @@ test('settings and photo UI use existing menu/profile surfaces', () => {
   assert.match(html, /id="profilePhotoInput"[^>]*accept="image\/\*"/);
   assert.match(html, /id="appSettingsScreen"/);
   assert.match(html, /data-setting="distanceUnit"/);
+  assert.match(html, /주행 중 화면 항상 켜기/);
+  assert.match(html, /배터리 절약이 필요하면 끌 수 있습니다\./);
   assert.match(app, /function openProfileSelection\(\)[\s\S]*?profileController\.returnToSelection\(\)/);
   assert.match(app, /mainMenuProfile'\)\.onclick=openProfileSelection/);
   assert.match(app, /data-menu-item="app-settings"/);

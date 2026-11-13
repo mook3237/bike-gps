@@ -159,14 +159,26 @@
 .record-route-map{height:260px;margin-top:14px;border:1px solid #294257;border-radius:16px;overflow:hidden}
 
 /* Saved record details use their own map and scrolling surface. */
-#recordsScreen{background:#080d14;color:#f4f7fc;overscroll-behavior:contain}
-#recordsScreen>.app-settings-header{position:sticky;top:calc(-8px - env(safe-area-inset-top));z-index:2;background:#080d14}
+#recordsScreen{background:#07131f;color:#f4f7fc;overscroll-behavior:contain}
+#recordsScreen>.app-settings-header{position:sticky;top:calc(-8px - env(safe-area-inset-top));z-index:2;background:#07131f}
+#recordsScreen>.app-settings-header h1{flex:1}
+#recordsScreen .app-settings-back{background:#0d2132;color:#fff;border:1px solid #294257}
+#recordsScreen .favorite-item{border-color:#294257;background:#0d2132;border-radius:16px;padding:16px;margin-bottom:12px}
+.record-name-row{display:flex;flex-direction:column;align-items:stretch;min-width:0}.record-name-row h2{width:100%;min-width:0;white-space:nowrap;overflow:visible;overflow-wrap:normal!important}.record-name-row>.record-action{align-self:flex-end}
+.record-name-row h2.record-name-legacy{white-space:normal;overflow-wrap:anywhere!important}
+#recordActionDialog{position:fixed;z-index:80;background:#02070dbf;top:var(--visual-viewport-top,0px);bottom:auto;height:var(--visual-viewport-height,100dvh)}
+#recordActionDialog .dialog{background:#0d2132;color:#f4f7fc;border:1px solid #294257;max-height:100%;overflow-y:auto}
+#recordActionDialog p{color:#aab6c6;line-height:1.5;font-size:14px}
+#recordActionDialog input{background:#07131f;color:#fff;border-color:#294257;min-width:0;width:100%}
+#recordActionDialog #recordActionError{color:#ffabab;min-height:1.5em}
+#recordActionDialog button{min-height:44px}#recordActionDialog button:disabled{opacity:.5}
+.record-action{min-height:44px;padding:8px 12px;border:1px solid #294257;border-radius:12px;background:#0d2132;color:#8bbaff;font-weight:700;flex-shrink:0}.record-action:disabled{opacity:.45;cursor:default}.record-delete{color:#ffabab}
 #recordsScreen>.app-settings-content{max-width:680px;min-width:0;margin:12px auto;padding:0;border:0;background:transparent}
 #recordsScreen .record-detail{margin:0;padding:0;border:0;border-radius:0;background:transparent}
 #recordsScreen .record-detail h2{margin:12px 0 18px;color:#fff;font-size:clamp(21px,5.5vw,28px);overflow-wrap:anywhere}
 .record-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#aab6c6;font-size:13px}
 .record-kind{padding:5px 12px;border-radius:20px;background:#17314d;color:#8bbaff;font-weight:700}
-#recordsScreen .record-detail-stats{grid-template-columns:repeat(3,minmax(0,1fr));padding:8px;gap:6px;border-radius:18px;background:#151b24}
+#recordsScreen .record-detail-stats{grid-template-columns:repeat(3,minmax(0,1fr));padding:8px;gap:6px;border:1px solid #294257;border-radius:18px;background:#0d2132}
 #recordsScreen .record-detail-stats>div{padding:12px 4px;border:0;background:transparent}
 #recordsScreen .record-detail-stats>div:last-child{grid-column:span 2}
 #recordsScreen .record-detail-stats b{font-size:clamp(15px,4.3vw,22px);line-height:1.35}
@@ -178,10 +190,10 @@
 .record-summary-list dt{color:#aab6c6}.record-summary-list dd{margin:0;text-align:right;overflow-wrap:anywhere}
 #recordPanelsplits h3{font-size:20px;margin:16px 0 6px}.record-caption{margin:0 0 12px}
 .record-table-scroll{max-width:100%;overflow-x:auto;border:1px solid #293342;border-radius:12px;-webkit-overflow-scrolling:touch}
-.record-splits{border-collapse:collapse;width:100%;table-layout:fixed;font-size:clamp(11px,3vw,13px);font-variant-numeric:tabular-nums}
-.record-splits th,.record-splits td{padding:14px 4px;text-align:right;border-bottom:1px solid #293342;overflow-wrap:anywhere}
+.record-splits{border-collapse:collapse;width:100%;min-width:460px;font-size:13px;font-variant-numeric:tabular-nums}
+.record-splits th,.record-splits td{padding:14px 8px;text-align:right;border-bottom:1px solid #294257;white-space:nowrap}
 .record-splits th:first-child{width:26%}
-.record-splits thead{background:#19212c;color:#c8d2e0}.record-splits th:first-child{text-align:left}
+.record-splits thead{background:#122b40;color:#c8d2e0}.record-splits th:first-child{text-align:left}
 .record-splits tbody tr:last-child{background:#112536}.record-estimated{display:block;color:#a9cbff;font-size:11px;font-weight:400;margin-top:5px}
 .record-map-section{margin:24px 0 16px}.record-map-section h2{font-size:20px;color:#f4f7fc;margin:0 0 12px}
 .record-map-preview{position:relative}.record-map-preview .record-route-map{height:clamp(190px,32vh,280px);margin:0}

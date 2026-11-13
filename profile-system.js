@@ -10,9 +10,11 @@
   const LEGACY_RECENT_KEY = 'ridemate_recent_searches';
   const LEGACY_RIDES_KEY = 'ridemate_rides';
   const DEFAULT_AVATAR = Object.freeze({ type: 'icon', iconId: 'rider' });
-  const DEFAULT_SETTINGS = Object.freeze({ distanceUnit: 'km', keepScreenAwake: false, saveShortRides: false, clockFormat: 'device', voiceVolumePercent: 100 });
+  const DEFAULT_SETTINGS = Object.freeze({ distanceUnit: 'km', keepScreenAwake: true, saveShortRides: false, clockFormat: 'device', voiceVolumePercent: 100 });
 
   const clone = value => JSON.parse(JSON.stringify(value));
+  const recordNameSegmenter = typeof globalThis.Intl?.Segmenter === 'function' ? new Intl.Segmenter('ko', { granularity: 'grapheme' }) : null;
+  function recordNameLength(name) { return recordNameSegmenter ? [...recordNameSegmenter.segment(String(name))].length : null; }
 
   function defaultCreateId() {
     if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
@@ -64,7 +66,7 @@
   function normalizeSettings(settings = {}) {
     return {
       distanceUnit: settings.distanceUnit === 'mi' ? 'mi' : 'km',
-      keepScreenAwake: settings.keepScreenAwake === true,
+      keepScreenAwake: settings.keepScreenAwake !== false,
       saveShortRides: settings.saveShortRides === true,
       clockFormat: ['12h', '24h'].includes(settings.clockFormat) ? settings.clockFormat : 'device',
       voiceVolumePercent: Number.isFinite(settings.voiceVolumePercent) && settings.voiceVolumePercent >= 0 && settings.voiceVolumePercent <= 100 ? settings.voiceVolumePercent : 100,
@@ -203,7 +205,14 @@
         let parsed;
         try { parsed = JSON.parse(raw); } catch { throw new Error('프로필 저장 데이터를 읽을 수 없습니다.'); }
         if (!validateStore(parsed)) throw new Error('프로필 저장 데이터 형식이 올바르지 않습니다.');
-        currentStore = parsed;
+        if (parsed.migration?.wakeLockDefaultOnV1?.completed !== true) {
+          for (const profile of parsed.profiles) {
+            const data = parsed.dataByProfileId[profile.id];
+            if (data) data.settings = { ...data.settings, keepScreenAwake: true };
+          }
+          parsed.migration = { ...parsed.migration, wakeLockDefaultOnV1: { completed: true, completedAt: now() } };
+          persist(parsed);
+        } else currentStore = parsed;
         return clone(currentStore);
       }
 
@@ -226,6 +235,7 @@
         dataByProfileId: { [id]: data },
         ...(recordStore && rides.items.length ? { legacyRidesPendingProfileId: id } : {}),
         migration: {
+          wakeLockDefaultOnV1: { completed: true, completedAt: timestamp },
           legacyV1: {
             completed: true,
             completedAt: timestamp,
@@ -440,6 +450,73 @@
       return recordsFor(profileId, 'racing');
     }
 
+    function recordDetails(profileId, kind) {
+      if (!['rides', 'racing'].includes(kind)) return [];
+      const data = ensureStore().dataByProfileId[profileId];
+      if (!data) return [];
+      const entries = kind === 'racing' ? racingEntriesFor(profileId) : [
+        ...(recordEntries(profileId, kind) || []).reverse().map(entry => ({ key: entry.key, record: entry.value })),
+        ...(data.rides || []).map(value => ({ key: null, record: value })),
+      ];
+      return entries.map(entry => {
+        const expected = JSON.stringify(entry.record);
+        const safe = !!entry.key || entries.filter(other => !other.key && JSON.stringify(other.record) === expected).length === 1;
+        return { record: clone(entry.record), target: safe ? { profileId, kind, key: entry.key, expected } : null };
+      });
+    }
+
+    function recordTarget(profileId, kind, record) {
+      const matches = recordDetails(profileId, kind).filter(entry => JSON.stringify(entry.record) === JSON.stringify(record));
+      if (matches.length !== 1) return null;
+      return matches[0].target;
+    }
+
+    async function changeRecord(target, name = null) {
+      if (!target || !['rides', 'racing'].includes(target.kind)) throw new Error('기록을 안전하게 식별할 수 없습니다. 목록을 다시 열어주세요.');
+      const { profileId, kind, key, expected } = target;
+      if (name === null && kind === 'racing') throw new Error('레이싱 기록 삭제 정책이 정해지지 않았습니다.');
+      if (name !== null) {
+        name = String(name);
+        const length = recordNameLength(name);
+        if (length === null) throw new Error('이 브라우저는 글자 묶음 계산을 지원하지 않습니다.');
+        if (!name.trim() || length > 13 || /[\r\n\t]/.test(name)) throw new Error('기록 이름은 공백 포함 최대 13자로 입력해주세요.');
+        name = name.trim();
+      }
+      const store = ensureStore();
+      if (!store.dataByProfileId[profileId]) throw new Error('프로필을 찾을 수 없습니다.');
+      const update = value => {
+        const record = kind === 'racing' ? value.record : value;
+        if (JSON.stringify(record) !== expected) throw new Error('기록이 변경되었습니다. 목록을 다시 열어주세요.');
+        return name === null ? null : kind === 'racing' ? { ...value, record: { ...record, name } } : { ...record, name };
+      };
+      if (key) {
+        const prefix = `${RECORD_ENTRY_PREFIX}${encodeURIComponent(profileId)}:${kind}:`;
+        if (!key.startsWith(prefix)) throw new Error('기록 소유자가 일치하지 않습니다.');
+        if (indexedRecords) {
+          const entry = await recordStore.changeRecord(key, update);
+          if (entry) indexedRecords.set(key, entry); else indexedRecords.delete(key);
+          notifyRecordsChanged();
+        } else {
+          const raw = storage.getItem(key);
+          if (raw === null) throw new Error('기록을 찾을 수 없습니다.');
+          const value = update(JSON.parse(raw));
+          if (value === null) {
+            if (!storage.removeItem) throw new Error('기록을 삭제할 수 없습니다.');
+            storage.removeItem(key);
+          } else storage.setItem(key, JSON.stringify(value));
+        }
+      } else {
+        const values = store.dataByProfileId[profileId][kind] || [];
+        const matches = values.map((value, index) => JSON.stringify(value) === expected ? index : -1).filter(index => index >= 0);
+        if (matches.length !== 1) throw new Error('기록을 안전하게 식별할 수 없습니다. 목록을 다시 열어주세요.');
+        const next = clone(store), records = next.dataByProfileId[profileId][kind];
+        const index = matches[0];
+        if (name === null) records.splice(index, 1); else records[index] = { ...records[index], name };
+        persist(next);
+      }
+      return name === null ? null : { ...JSON.parse(expected), name };
+    }
+
     return {
       initialize,
       initializeRecords,
@@ -461,6 +538,9 @@
       readRides,
       prependRacing,
       readRacing,
+      recordTarget,
+      recordDetails,
+      changeRecord,
     };
   }
 
@@ -482,6 +562,24 @@
       return databasePromise;
     }
     return {
+      async changeRecord(key, update) {
+        const db = await database();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction('records', 'readwrite'), store = tx.objectStore('records');
+          let entry = null, failure;
+          tx.oncomplete = () => resolve(entry);
+          tx.onerror = tx.onabort = () => reject(failure || tx.error || new Error('기록 변경을 저장하지 못했습니다.'));
+          const request = store.get(key);
+          request.onsuccess = () => {
+            try {
+              if (!request.result) throw new Error('기록을 찾을 수 없습니다.');
+              const value = update(request.result.value);
+              if (value === null) store.delete(key);
+              else { entry = { ...request.result, value }; store.put(entry); }
+            } catch (error) { failure = error; tx.abort(); }
+          };
+        });
+      },
       async saveBest(entry, prefix, sameCourse) {
         const db = await database();
         return new Promise((resolve, reject) => {
@@ -661,6 +759,7 @@
     PROFILE_SCHEMA_VERSION,
     DEFAULT_AVATAR,
     DEFAULT_SETTINGS,
+    recordNameLength,
     createProfileRepository,
     createIndexedRecordStore,
     createProfileSession,

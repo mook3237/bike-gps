@@ -59,16 +59,17 @@ test('saved record detail renders real values and preserves map, history and sto
     });
 
     await t.test('mobile layout contains summary, table, map and controls within the viewport', async () => {
+      await evaluate(`setRecordDetailTab('splits')`);
       const layout=await evaluate(`(()=>{
         const screen=document.querySelector('#recordsScreen'),table=document.querySelector('.record-table-scroll');
         return {screenOverflow:screen.scrollWidth>screen.clientWidth,bodyOverflow:document.documentElement.scrollWidth>innerWidth,
           tableContained:table.getBoundingClientRect().right<=innerWidth,
-          tableFits:table.scrollWidth===table.clientWidth,
+          tableScrollable:table.scrollWidth>=table.clientWidth&&getComputedStyle(table).overflowX==='auto',
           summaryContained:document.querySelector('.record-detail-stats').getBoundingClientRect().right<=innerWidth,
           mapContained:document.querySelector('#recordMapPreview').getBoundingClientRect().right<=innerWidth,
           buttons:[...document.querySelectorAll('.record-tabs button')].every(node=>node.getBoundingClientRect().height>=44)};
       })()`);
-      assert.deepEqual(layout,{screenOverflow:false,bodyOverflow:false,tableContained:true,tableFits:true,summaryContained:true,mapContained:true,buttons:true});
+      assert.deepEqual(layout,{screenOverflow:false,bodyOverflow:false,tableContained:true,tableScrollable:true,summaryContained:true,mapContained:true,buttons:true});
       await evaluate(`document.querySelector('#recordsScreen').scrollTop=0`);
       const screenshot=await client.send('Page.captureScreenshot',{format:'png'});
       fs.writeFileSync(path.join(os.tmpdir(),'ridemate-record-detail-mobile.png'),Buffer.from(screenshot.data,'base64'));

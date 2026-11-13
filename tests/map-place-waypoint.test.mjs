@@ -48,6 +48,35 @@ test('kilometer split final boundary preserves racing crossing estimate and actu
   }
 });
 
+test('wake lock default policy uses real setting handlers and preserves opt-out through reconnect and profile switching', async () => {
+  const context=loadApp('',false,true);
+  const result=await vm.runInContext(`(async()=>{
+    const values=new Map(),storage={getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,value)};
+    let id=0,requests=0,releases=0,selected;
+    const makeRepository=()=>RideMateProfiles.createProfileRepository(storage,{createId:()=> 'wake-'+(++id)});
+    profileRepository=makeRepository();profileRepository.initialize();
+    const first=profileRepository.getProfiles()[0].id,second=profileRepository.addProfile('둘째').id;
+    profileSession={getSelectedProfileId:()=>selected};selected=first;
+    wakeLockController=RideMateSettings.createWakeLockController({navigator:{wakeLock:{request:async()=>{requests++;return{addEventListener(){},release:async()=>{releases++}}}}},document:{visibilityState:'visible',addEventListener(){}}});
+    const settle=async()=>{await Promise.resolve();await Promise.resolve()};
+    showMapScreen();await settle();
+    const initial={enabled:activeSettings().keepScreenAwake,active:wakeLockController.isActive(),requests};
+    const disabling=updateAppSetting({type:'checkbox',checked:false,dataset:{setting:'keepScreenAwake'}});
+    const immediateRelease=releases===1&&!wakeLockController.isActive();await disabling;
+    profileRepository=makeRepository();profileRepository.initialize();showMapScreen();await settle();
+    const reconnect={enabled:activeSettings().keepScreenAwake,requests};
+    showProfileScreen();selected=second;showMapScreen();await settle();
+    showProfileScreen();selected=first;showMapScreen();await settle();
+    const switched={enabled:activeSettings().keepScreenAwake,active:wakeLockController.isActive(),requests};
+    await updateAppSetting({type:'checkbox',checked:true,dataset:{setting:'keepScreenAwake'}});
+    return{initial,immediateRelease,reconnect,switched,reenabled:{enabled:activeSettings().keepScreenAwake,active:wakeLockController.isActive(),requests}};
+  })()`,context);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)),{
+    initial:{enabled:true,active:true,requests:1},immediateRelease:true,
+    reconnect:{enabled:false,requests:1},switched:{enabled:false,active:false,requests:2},reenabled:{enabled:true,active:true,requests:3},
+  });
+});
+
 test('settings diagnostic log button copies racing events and offers selectable text when clipboard fails', async () => {
   const context=loadApp('',true,true);
   vm.runInContext(fs.readFileSync(new URL('../diagnostics.js',import.meta.url),'utf8'),context);
